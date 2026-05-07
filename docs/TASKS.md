@@ -20,12 +20,14 @@ Phased build plan. Check off as work moves. **End of Phase 3 = working product.*
 
 ## Phase 1 — Manual ingest end-to-end
 
-- [ ] Wrapper functions for each scrapers-lib tier1 module (rss / reddit / youtube / article)
+- [ ] Wrapper functions for each scrapers-lib tier1 module in use: `rss` (covers news sites + Reddit subreddits) and `youtube`. `tier1.article` available for direct-URL fallbacks if needed. `tier1.reddit` paused pending PRAW reapproval.
 - [ ] "Ingest now" button on Sources page (per-source + run-all)
 - [ ] Write to `raw_items` and `items`; honor exact-match dedup
 - [ ] Update `sources.last_fetched_at` and error tracking
 - [ ] Dashboard shows raw item list (latest 50)
-- [ ] **Smoke test scrapers-lib on 2–3 representative sources from each type before adding all 31**
+- [ ] **Verify the 6 YouTube channels** via `tier1.youtube` (RSS feeds were pre-verified 2026-05-07; YouTube is unverified).
+- [ ] **Re-verify all 24 RSS feeds** under real-ingest conditions before enabling scheduled runs (network/health changes over time).
+- [ ] During first real-ingest run, sanity-check a handful of items per source type for shape correctness.
 
 ## Phase 2 — Local LLM enrichment
 

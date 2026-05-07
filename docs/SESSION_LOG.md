@@ -17,6 +17,7 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Updated `ARCHITECTURE.md` data flow + external dependencies sections.
 - Added PRAW-rejected note to `OPEN_QUESTIONS.md` under new "Blocked by external party" section.
 - Softened "Community Sentiment" row in `PRD.md` (post-level, not comment-level).
+- Pre-close audit: also updated `CLAUDE.md` (scrapers-lib usage block) and `TASKS.md` Phase 1 (wrapper modules + verification status) to remove staleness from the Reddit pivot. These are the docs the next session reads first.
 
 **State at end of session:**
 - 30 sources locked: 13 news RSS + 11 Reddit RSS + 6 YouTube. **24 RSS feeds verified live (~898 entries available right now)**; 6 YouTube channels still unverified.
