@@ -19,11 +19,13 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Created `.gitignore` for Python.
 - Made initial commit: design-phase scaffold (no code yet).
 - Created `sources.yaml` template; user then provided the actual list and it was populated: **13 RSS news sites + 11 subreddits + 6 YouTube channels = 30 sources**. RSS feed URLs are best-guess from standard CMS patterns; **Phase 1 smoke test must verify each** (1–3 likely need correction). Apparent duplicate of `r/Games` in the user's input was deduplicated. Counts differ slightly from PRD planning targets (15/10/6) — left PRD unchanged since the source list naturally evolves.
-- Pre-flight verification of all 13 RSS feed URLs via WebFetch (limited tool — generic UA, easily WAF-blocked). Results:
-  - **Confirmed live (4):** PC Gamer, Kotaku, Game Developer, TheGamer.
-  - **Actionable redirect (1):** VentureBeat games feed permanently redirects (308) to gamesbeat.com — renamed source to "GamesBeat" and updated URL.
-  - **Inconclusive (8):** IGN, GameSpot, Polygon, Eurogamer, Game Informer, GamesIndustry.biz, RPS, VG247. WebFetch returned 403 / "unable to fetch" — almost certainly tool-side WAF blocking, NOT dead feeds. scrapers-lib's tier1 `rss` module with a proper browser-like UA will likely succeed.
-- **Phase 1 smoke test must still verify all 13 feeds** under real scrapers-lib conditions; that is the authoritative check. This pre-screen only ruled out the obvious dead/redirected cases.
+- Pre-flight verification of all 13 RSS feed URLs done in two passes:
+  - **Pass 1 (WebFetch, generic UA):** 4 confirmed live, 1 redirect found (VentureBeat → GamesBeat), 8 inconclusive (403 / blocked by WAFs). WebFetch's UA was too restrictive to be authoritative.
+  - **Pass 2 (scrapers-lib tier1.rss, in scrapers-lib's venv):** 11/13 worked on first try; 2 needed URL corrections found via alternates probe:
+    - **Game Informer** `/feed` (404) → `/rss.xml` (✓ 50 entries).
+    - **GamesBeat** `/feed` (403) → `/feed/` with trailing slash (✓ 10 entries).
+  - **Final result: 13/13 RSS feeds confirmed working under scrapers-lib's actual fetcher** (~635 aggregate entries available). sources.yaml updated with the two URL fixes.
+- Phase 1 smoke test should still re-verify before locking in (network conditions / source health change), but architectural type (`rss`) is confirmed correct for all 13 sites and the URL set is clean.
 - Made follow-up commits. Session closed cleanly.
 
 **Phase 0 start mode confirmed by user:** option (a) — begin skeleton next session with placeholder layout; port the claude.ai/design UI template in later as a swap-in.

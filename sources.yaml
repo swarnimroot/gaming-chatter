@@ -10,8 +10,9 @@
 #   enabled:  true | false      (false = listed in UI but skipped during ingest)
 #
 # Notes:
-# - RSS feed URLs below are best-guess based on standard CMS patterns.
-#   The Phase 1 smoke test will verify each; some may need correction.
+# - All 13 RSS feed URLs verified working against scrapers-lib's tier1.rss
+#   module on 2026-05-07 (635 entries fetched in aggregate). Phase 1 smoke
+#   test should still re-verify before locking in.
 # - Counts: 13 RSS · 11 reddit · 6 youtube  (= 30 sources)
 
 sources:
@@ -48,16 +49,17 @@ sources:
 
   - name: "Game Informer"
     type: rss
-    url: "https://www.gameinformer.com/feed"
+    url: "https://www.gameinformer.com/rss.xml"
     enabled: true
 
   - name: "GamesBeat"
     type: rss
-    url: "https://gamesbeat.com/feed"
+    url: "https://gamesbeat.com/feed/"
     enabled: true
     # VentureBeat's games coverage was spun off to GamesBeat (separate domain).
     # The old URL https://venturebeat.com/category/games/feed/ permanently
-    # redirects (308) to https://gamesbeat.com/feed.
+    # redirects (308) to https://gamesbeat.com/feed/.
+    # NOTE: trailing slash is required — /feed (no slash) returns 403.
 
   - name: "GamesIndustry.biz"
     type: rss
