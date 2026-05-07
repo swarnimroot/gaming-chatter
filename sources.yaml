@@ -51,10 +51,13 @@ sources:
     url: "https://www.gameinformer.com/feed"
     enabled: true
 
-  - name: "VentureBeat — Games"
+  - name: "GamesBeat"
     type: rss
-    url: "https://venturebeat.com/category/games/feed/"
+    url: "https://gamesbeat.com/feed"
     enabled: true
+    # VentureBeat's games coverage was spun off to GamesBeat (separate domain).
+    # The old URL https://venturebeat.com/category/games/feed/ permanently
+    # redirects (308) to https://gamesbeat.com/feed.
 
   - name: "GamesIndustry.biz"
     type: rss
