@@ -17,7 +17,11 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Initialized git repo (`git init`).
 - Wrote all 8 design docs (this file + CLAUDE.md, README.md, PRD, ARCHITECTURE, DECISIONS, TASKS, OPEN_QUESTIONS).
 - Created `.gitignore` for Python.
-- Made initial commit: design-phase scaffold (no code yet). Session closed cleanly.
+- Made initial commit: design-phase scaffold (no code yet).
+- Created `sources.yaml` template (schema documented, EXAMPLE entries to be replaced with the user's 15 RSS + 10 reddit + 6 YouTube list before Phase 1).
+- Made follow-up commit with the sources.yaml template. Session closed cleanly.
+
+**Phase 0 start mode confirmed by user:** option (a) — begin skeleton next session with placeholder layout; port the claude.ai/design UI template in later as a swap-in.
 
 **State at end of session:**
 - Design phase complete. No code yet.

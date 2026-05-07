@@ -1,0 +1,32 @@
+# Source registry for gaming-chatter
+#
+# Schema per entry:
+#   name:     human label (shown in UI)
+#   type:     rss | reddit | youtube
+#   url:      full URL          (required for type: rss)
+#   handle:   short identifier  (required for type: reddit | youtube)
+#               - reddit:  subreddit name without "r/"        e.g. "Games"
+#               - youtube: channel handle with "@" or channel ID e.g. "@SkillUp"
+#   enabled:  true | false      (false = listed in UI but skipped during ingest)
+#
+# Replace the EXAMPLE entries below with your real list.
+# Target counts: 15 RSS · 10 reddit · 6 youtube.
+
+sources:
+  # ───── News sites (RSS) ─────
+  - name: "EXAMPLE — replace with your news sites"
+    type: rss
+    url: "https://example.com/feed.xml"
+    enabled: true
+
+  # ───── Subreddits ─────
+  - name: "EXAMPLE — replace with your subreddits"
+    type: reddit
+    handle: "gaming"
+    enabled: true
+
+  # ───── YouTube channels ─────
+  - name: "EXAMPLE — replace with your YouTube channels"
+    type: youtube
+    handle: "@example"
+    enabled: true
