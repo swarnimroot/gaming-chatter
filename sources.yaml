@@ -176,5 +176,5 @@ sources:
 
   - name: "Gameranx (YouTube)"
     type: youtube
-    handle: "@gameranx"
+    handle: "@GameranxTV"
     enabled: true

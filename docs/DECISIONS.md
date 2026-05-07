@@ -4,6 +4,17 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-07 — YouTube ingest = channel-feed RSS, not transcripts (at ingest time)
+**Decision:** YouTube sources are ingested via each channel's public Atom feed (`https://www.youtube.com/feeds/videos.xml?channel_id=UC...`) through `scrapers_lib.tier1.rss`, not through `tier1.youtube`. We get one item per video (title, URL, published date, channel author). **Transcript fetching is deferred to Phase 2 enrichment**, when Ollama actually needs the text to summarize.
+**Why:** `tier1.youtube` doesn't accept `@handle` and returns transcript *chunks* (≈60s windows) per video — the wrong shape for an "items" feed. `tier1.rss` against the channel feed gives us the same per-video metadata we get from news sites, and it's free of YouTube bot-gate (`BlockedError`). Transcripts are large; pulling them at ingest would inflate the DB and burn requests on videos we may never enrich.
+**Resolver:** `app/services/scrapers.py:resolve_youtube_feed` scrapes the channel page once for `channelId`, caches per-process. Verified across all 6 YouTube sources (after correcting `@gameranx` → `@GameranxTV` in `sources.yaml`).
+**Rejected:** (a) Calling `tier1.youtube` per video at ingest time — wrong granularity, slow, expensive; (b) Storing channel_ids in `sources.yaml` — adds a manual maintenance step the resolver removes; (c) YouTube Data API — needs a key, exceeds personal-local scope.
+
+## 2026-05-07 — Source list correction: `@gameranx` → `@GameranxTV`
+**Decision:** Corrected the Gameranx YouTube handle in `sources.yaml`. The original `@gameranx` 404s on YouTube; the real channel is `@GameranxTV` (channel_id `UCpFHkjOa7ia6bH5_6cDsDXg`). Caught during Phase 1 real-ingest verification — Phase 0 source-list lock-in had only verified RSS feeds, leaving YouTube channels unverified.
+**Why:** Empirical: 5 of 6 YouTube channels resolved fine; only Gameranx 404'd. Direct probe confirmed handle was wrong, not a UA / bot-gate issue.
+**Consequence:** Reinforces that source-list verification must happen against the real ingest path, not just by visual inspection of `sources.yaml`. Future YouTube additions should be ingest-tested before being considered locked.
+
 ## 2026-05-07 — Reddit ingest = RSS via tier1.rss, not PRAW
 **Decision:** Drop PRAW dependency for Reddit. Each subreddit's official RSS feed (`https://www.reddit.com/r/<sub>/.rss`) is consumed via scrapers-lib's existing `tier1.rss` module. All 11 subreddits use `type: rss` in `sources.yaml`.
 **Why:** User's Reddit API application was rejected on 2026-05-07; PRAW unusable. Reddit's RSS endpoint is public, no auth, and reuses the same fetcher path as news sites. Architectural change is config-only.

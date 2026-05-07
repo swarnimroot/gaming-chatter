@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Dashboard &mdash; gaming-chatter{% endblock %}
+{% block content %}
+<h1>Latest items ({{ items|length }})</h1>
+
+{% if not items %}
+  <p>No items yet. Run an ingest from the <a href="/sources">Sources</a> page.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Published</th><th>Source</th><th>Title</th></tr>
+  </thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td>{{ it.published_at.strftime("%Y-%m-%d %H:%M") if it.published_at else "&mdash;" | safe }}</td>
+      <td>{{ sources_by_id[it.source_id].name if it.source_id in sources_by_id else "?" }}</td>
+      <td><a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

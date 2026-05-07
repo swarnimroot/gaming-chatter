@@ -1,0 +1,6 @@
+/* placeholder — UI template will replace this in Phase 1 */
+body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+nav { margin-bottom: 1.5rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
+code { font-size: 0.85em; }

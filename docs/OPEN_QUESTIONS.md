@@ -23,7 +23,7 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 ## Risks to validate during build
 
-- **scrapers-lib smoke test on real gaming sources.** Tier1 looks well-shaped on paper. Verification = first action of Phase 1.
+- ~~**scrapers-lib smoke test on real gaming sources.**~~ **Validated 2026-05-07** — Phase 1 real ingest hit 30/30 sources successfully (~973 items). `tier1.rss` works for both news feeds and YouTube channel feeds; `RawMention` shape maps cleanly to our `items` model. See SESSION_LOG.md and DECISIONS.md.
 - **Article extractor (justext) per-source overrides.** Some publishers (paywalls, JS-heavy) may need site-specific selectors. Plan for 2–3 sites needing custom logic.
 - **Trend-detection signal-to-noise.** Same story phrased 5 ways across sources is the hard part. Embedding-cluster + LLM-label hybrid is the bet; quality unproven until Phase 3.
 - **Synthesis "useful vs. slop" quality bar.** Failure mode: report reads like a generic aggregator. Mitigate with explicit rubrics + few-shot examples + eval pass.

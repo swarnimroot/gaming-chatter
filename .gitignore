@@ -38,6 +38,7 @@ desktop.ini
 *.db-journal
 *.db-shm
 *.db-wal
+*.log
 data/
 logs/
 reports_cache/

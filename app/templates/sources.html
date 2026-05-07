@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Sources &mdash; gaming-chatter{% endblock %}
+{% block content %}
+<h1>Sources ({{ sources|length }})</h1>
+
+<form method="post" action="/sources/ingest-all" style="margin-bottom: 1rem;">
+  <button type="submit">Ingest all (background)</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Type</th>
+      <th>URL / Handle</th>
+      <th>Enabled</th>
+      <th>Last fetched</th>
+      <th>Errors</th>
+      <th>Last error</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in sources %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{{ s.type }}</td>
+      <td><code>{{ s.url_or_handle }}</code></td>
+      <td>{{ "yes" if s.enabled else "no" }}</td>
+      <td>{{ s.last_fetched_at.strftime("%Y-%m-%d %H:%M") if s.last_fetched_at else "&mdash;" | safe }}</td>
+      <td>{{ s.error_count }}</td>
+      <td><small>{{ s.last_error or "" }}</small></td>
+      <td>
+        <form method="post" action="/sources/{{ s.id }}/ingest" style="margin:0;">
+          <button type="submit">Ingest</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
