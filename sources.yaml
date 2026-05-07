@@ -9,24 +9,161 @@
 #               - youtube: channel handle with "@" or channel ID e.g. "@SkillUp"
 #   enabled:  true | false      (false = listed in UI but skipped during ingest)
 #
-# Replace the EXAMPLE entries below with your real list.
-# Target counts: 15 RSS · 10 reddit · 6 youtube.
+# Notes:
+# - RSS feed URLs below are best-guess based on standard CMS patterns.
+#   The Phase 1 smoke test will verify each; some may need correction.
+# - Counts: 13 RSS · 11 reddit · 6 youtube  (= 30 sources)
 
 sources:
-  # ───── News sites (RSS) ─────
-  - name: "EXAMPLE — replace with your news sites"
+  # ───── News sites (RSS) — 13 ─────
+  - name: "IGN"
     type: rss
-    url: "https://example.com/feed.xml"
+    url: "https://feeds.ign.com/ign/all"
     enabled: true
 
-  # ───── Subreddits ─────
-  - name: "EXAMPLE — replace with your subreddits"
+  - name: "GameSpot"
+    type: rss
+    url: "https://www.gamespot.com/feeds/mashup/"
+    enabled: true
+
+  - name: "Polygon"
+    type: rss
+    url: "https://www.polygon.com/rss/index.xml"
+    enabled: true
+
+  - name: "PC Gamer"
+    type: rss
+    url: "https://www.pcgamer.com/rss/"
+    enabled: true
+
+  - name: "Kotaku"
+    type: rss
+    url: "https://kotaku.com/rss"
+    enabled: true
+
+  - name: "Eurogamer"
+    type: rss
+    url: "https://www.eurogamer.net/feed"
+    enabled: true
+
+  - name: "Game Informer"
+    type: rss
+    url: "https://www.gameinformer.com/feed"
+    enabled: true
+
+  - name: "VentureBeat — Games"
+    type: rss
+    url: "https://venturebeat.com/category/games/feed/"
+    enabled: true
+
+  - name: "GamesIndustry.biz"
+    type: rss
+    url: "https://www.gamesindustry.biz/feed"
+    enabled: true
+
+  - name: "Game Developer"
+    type: rss
+    url: "https://www.gamedeveloper.com/rss.xml"
+    enabled: true
+
+  - name: "Rock Paper Shotgun"
+    type: rss
+    url: "https://www.rockpapershotgun.com/feed"
+    enabled: true
+
+  - name: "VG247"
+    type: rss
+    url: "https://www.vg247.com/feed"
+    enabled: true
+
+  - name: "TheGamer"
+    type: rss
+    url: "https://www.thegamer.com/feed/"
+    enabled: true
+
+  # ───── Subreddits — 11 ─────
+  - name: "r/Games"
     type: reddit
-    handle: "gaming"
+    handle: "Games"
     enabled: true
 
-  # ───── YouTube channels ─────
-  - name: "EXAMPLE — replace with your YouTube channels"
+  - name: "r/Gaming"
+    type: reddit
+    handle: "Gaming"
+    enabled: true
+
+  - name: "r/VideoGameNews"
+    type: reddit
+    handle: "VideoGameNews"
+    enabled: true
+
+  - name: "r/GamingLeaksAndRumours"
+    type: reddit
+    handle: "GamingLeaksAndRumours"
+    enabled: true
+
+  - name: "r/PCGaming"
+    type: reddit
+    handle: "PCGaming"
+    enabled: true
+
+  - name: "r/XboxSeriesX"
+    type: reddit
+    handle: "XboxSeriesX"
+    enabled: true
+
+  - name: "r/MMORPG"
+    type: reddit
+    handle: "MMORPG"
+    enabled: true
+
+  - name: "r/IndieGaming"
+    type: reddit
+    handle: "IndieGaming"
+    enabled: true
+
+  - name: "r/GachaGaming"
+    type: reddit
+    handle: "GachaGaming"
+    enabled: true
+
+  - name: "r/GameDev"
+    type: reddit
+    handle: "GameDev"
+    enabled: true
+
+  - name: "r/GamesIndustry"
+    type: reddit
+    handle: "GamesIndustry"
+    enabled: true
+
+  # ───── YouTube channels — 6 ─────
+  - name: "IGN (YouTube)"
     type: youtube
-    handle: "@example"
+    handle: "@IGN"
+    enabled: true
+
+  - name: "GameSpot (YouTube)"
+    type: youtube
+    handle: "@GameSpot"
+    enabled: true
+
+  - name: "Game Informer (YouTube)"
+    type: youtube
+    handle: "@gameinformer"
+    enabled: true
+
+  - name: "YongYea (YouTube)"
+    type: youtube
+    handle: "@YongYea"
+    enabled: true
+
+  - name: "PC Gamer (YouTube)"
+    type: youtube
+    handle: "@PCGamer"
+    enabled: true
+
+  - name: "Gameranx (YouTube)"
+    type: youtube
+    handle: "@gameranx"
     enabled: true

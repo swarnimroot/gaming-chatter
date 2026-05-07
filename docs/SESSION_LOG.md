@@ -18,8 +18,8 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Wrote all 8 design docs (this file + CLAUDE.md, README.md, PRD, ARCHITECTURE, DECISIONS, TASKS, OPEN_QUESTIONS).
 - Created `.gitignore` for Python.
 - Made initial commit: design-phase scaffold (no code yet).
-- Created `sources.yaml` template (schema documented, EXAMPLE entries to be replaced with the user's 15 RSS + 10 reddit + 6 YouTube list before Phase 1).
-- Made follow-up commit with the sources.yaml template. Session closed cleanly.
+- Created `sources.yaml` template; user then provided the actual list and it was populated: **13 RSS news sites + 11 subreddits + 6 YouTube channels = 30 sources**. RSS feed URLs are best-guess from standard CMS patterns; **Phase 1 smoke test must verify each** (1–3 likely need correction). Apparent duplicate of `r/Games` in the user's input was deduplicated. Counts differ slightly from PRD planning targets (15/10/6) — left PRD unchanged since the source list naturally evolves.
+- Made follow-up commits. Session closed cleanly.
 
 **Phase 0 start mode confirmed by user:** option (a) — begin skeleton next session with placeholder layout; port the claude.ai/design UI template in later as a swap-in.
 
@@ -29,9 +29,9 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Phase 0 ready to start. Can begin in parallel with UI template delivery using minimal placeholders.
 
 **Next session should:**
-1. (User to provide) UI template from claude.ai/design.
-2. (User to provide) `sources.yaml` — 15 news sites, 10 subreddits, 6 YouTube channels.
-3. Begin Phase 0 from `TASKS.md`.
+1. (User to provide) UI template from claude.ai/design — when ready; not blocking Phase 0 skeleton.
+2. Begin Phase 0 from `TASKS.md` with placeholder layout.
+3. **Phase 1 first action: smoke-test every RSS feed URL in `sources.yaml`** before relying on them.
 4. Append progress to this file at session end.
 
 **Open / blocked:**
