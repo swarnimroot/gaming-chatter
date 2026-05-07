@@ -4,6 +4,23 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-07 — Reddit ingest = RSS via tier1.rss, not PRAW
+**Decision:** Drop PRAW dependency for Reddit. Each subreddit's official RSS feed (`https://www.reddit.com/r/<sub>/.rss`) is consumed via scrapers-lib's existing `tier1.rss` module. All 11 subreddits use `type: rss` in `sources.yaml`.
+**Why:** User's Reddit API application was rejected on 2026-05-07; PRAW unusable. Reddit's RSS endpoint is public, no auth, and reuses the same fetcher path as news sites. Architectural change is config-only.
+**Consequences:**
+- **Lose:** comment threads, upvote/comment counts, comment-level sentiment.
+- **Keep:** post titles, post bodies (self-posts), URLs, authors, timestamps.
+- **Cap:** Reddit serves max 25 items per subreddit RSS; daily ingest mitigates by sampling daily.
+- "Community sentiment" report section becomes shallower (post-level, not comment-level).
+- Reversible: flip `type: rss` back to `type: reddit` per subreddit if PRAW becomes available; scrapers-lib's `tier1.reddit` module still exists.
+**Rejected:** Drop Reddit from v1 entirely (loses too much signal); HTML scraping (fragile + ToS gray area); anonymous JSON endpoint (rate-limited + may break without notice).
+
+## 2026-05-07 — Source list cleanup: r/VideoGameNews → r/GamingNews; r/XboxSeriesX → r/Xbox
+**Decision:** During Reddit RSS verification, two subreddits needed replacement.
+- **r/VideoGameNews** returned HTTP 403 (private / quarantined / non-existent). Replaced with **r/GamingNews** — verified working, news-focused (latest post sample: "62% of hardcore players no longer buy full-price games").
+- **r/XboxSeriesX** ingested fine but its top mod-pinned post is "This sub has moved to r/Xbox." Replaced with **r/Xbox** to track the active community.
+**Why:** Empirically verified via scrapers-lib; user approved both swaps.
+
 ## 2026-05-06 — Build all 8 design docs as part of the design phase
 **Decision:** Author CLAUDE.md, README, PRD, ARCHITECTURE, DECISIONS, TASKS, SESSION_LOG, OPEN_QUESTIONS now, before any code is written.
 **Why:** Lock decisions in writing before they drift. Set up handoff for new Claude sessions so design choices aren't relitigated each time.

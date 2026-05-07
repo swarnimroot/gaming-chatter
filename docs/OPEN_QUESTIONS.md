@@ -7,7 +7,11 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 ## Pending external delivery
 
 - **UI template** — being built in claude.ai/design. Will be ported to Jinja partials in Phase 0. Until delivered, Phase 0 placeholder templates are minimal.
-- **Source list** — user has the 15 news sites + 10 subreddits + 6 YouTube channels. Needed at start of Phase 1 as `sources.yaml`.
+- ~~Source list~~ — provided 2026-05-07; populated and verified in `sources.yaml`.
+
+## Blocked by external party
+
+- **PRAW (official Reddit API) — application rejected 2026-05-07.** Pivoted to Reddit's public RSS endpoint via `tier1.rss` (see `DECISIONS.md`). If/when API access is granted: switch the 11 subreddit entries in `sources.yaml` from `type: rss` back to `type: reddit` and we regain comment threads, upvote/comment counts, and comment-level sentiment. No code refactor needed — `scrapers-lib`'s `tier1.reddit` module still exists; this is a config-level switch.
 
 ## Deferred to relevant phase
 

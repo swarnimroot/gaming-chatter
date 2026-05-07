@@ -26,7 +26,7 @@ One: me. Local, no auth, no sharing (initial scope).
 | Industry Risks | Layoffs, regulatory, platform shifts (rubric refined in Phase 3) |
 | Market Momentum | Release cadence, hype curves, sales chatter |
 | WoW/MoM Trends | Entity-mention deltas across windows |
-| Community Sentiment | Reddit + YouTube vibe (rubric refined in Phase 3) |
+| Community Sentiment | Reddit post titles + bodies + YouTube descriptions; comment-thread depth deferred until PRAW is reapproved (rubric refined in Phase 3) |
 | Watch-List | Emerging stories with rising trajectory but low absolute volume |
 
 ## Non-goals (initial scope)

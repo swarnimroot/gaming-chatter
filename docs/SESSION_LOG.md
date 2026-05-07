@@ -4,6 +4,36 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-07 — Reddit pivot to RSS (PRAW unavailable)
+
+**Done:**
+- User reported Reddit API application was rejected — PRAW unusable.
+- Probed Reddit's per-subreddit RSS endpoint (`/r/<sub>/.rss`) via scrapers-lib's `tier1.rss`; confirmed it works without auth (25 entries per sub, hot view).
+- Probed variants for r/VideoGameNews (returned 403); selected **r/GamingNews** as replacement (verified 25 entries, news-focused).
+- Confirmed r/XboxSeriesX is mod-deprecated (top pinned post is "This sub has moved to r/Xbox") — switched to **r/Xbox**.
+- Final 11-sub verification: all 11 working under scrapers-lib (~263 aggregate entries).
+- Pivoted all 11 subreddit entries in `sources.yaml` from `type: reddit` → `type: rss` with Reddit RSS URLs.
+- Logged the architectural pivot in `DECISIONS.md` (two new entries: pivot + source-list cleanup).
+- Updated `ARCHITECTURE.md` data flow + external dependencies sections.
+- Added PRAW-rejected note to `OPEN_QUESTIONS.md` under new "Blocked by external party" section.
+- Softened "Community Sentiment" row in `PRD.md` (post-level, not comment-level).
+
+**State at end of session:**
+- 30 sources locked: 13 news RSS + 11 Reddit RSS + 6 YouTube. **24 RSS feeds verified live (~898 entries available right now)**; 6 YouTube channels still unverified.
+- Reddit comment-thread + upvote/velocity signal lost until PRAW comes back. Reversible the moment it does — config-only switch.
+
+**Next session should:**
+1. (User to provide) UI template from claude.ai/design — when ready; not blocking Phase 0.
+2. Begin Phase 0 from `TASKS.md` with placeholder layout.
+3. **Phase 1: verify the 6 YouTube channels via scrapers-lib's `tier1.youtube` before locking source list.**
+4. Phase 1: re-verify all 24 RSS feeds under real ingest conditions (network/health changes over time).
+5. Append progress to this file at session end.
+
+**Open / blocked:**
+See `OPEN_QUESTIONS.md` (now includes PRAW rejection note).
+
+---
+
 ## 2026-05-06 — Design session #1 (planning + docs scaffold)
 
 **Done:**

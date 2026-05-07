@@ -18,7 +18,7 @@ No worker queue. No separate scheduler service. No container.
 sources (DB, seeded from sources.yaml)
         │
         ▼
-scrapers-lib tier1 (rss / reddit-PRAW / youtube / article-justext)
+scrapers-lib tier1 (rss [news sites + reddit feeds] / youtube / article-justext)
         │
         ▼
 raw_items  ──▶  items (normalized + exact-match dedup)
@@ -83,7 +83,7 @@ UI template is being built externally in **claude.ai/design** and will be ported
 
 ## External dependencies
 
-- **scrapers-lib** at `..\scrapers-lib` (Python lib). Uses `tier1` modules: `rss`, `reddit` (PRAW — official Reddit API), `youtube` (incl. transcripts), `article` (justext). Tier2/Tier3 unused.
+- **scrapers-lib** at `..\scrapers-lib` (Python lib). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (incl. transcripts), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
 - **Ollama** at `http://localhost:11434`. Models: a 14B for enrichment + a small embedding model (e.g. `nomic-embed-text`).
 - **Anthropic API** via SDK + env var. Used only in the weekly synthesis pass.
 

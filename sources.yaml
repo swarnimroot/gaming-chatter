@@ -10,10 +10,14 @@
 #   enabled:  true | false      (false = listed in UI but skipped during ingest)
 #
 # Notes:
-# - All 13 RSS feed URLs verified working against scrapers-lib's tier1.rss
-#   module on 2026-05-07 (635 entries fetched in aggregate). Phase 1 smoke
-#   test should still re-verify before locking in.
-# - Counts: 13 RSS · 11 reddit · 6 youtube  (= 30 sources)
+# - All 13 news-site RSS feeds verified working against scrapers-lib's
+#   tier1.rss module on 2026-05-07 (~635 entries fetched in aggregate).
+# - All 11 subreddits ingest via Reddit's public RSS endpoint (no PRAW —
+#   API application was rejected; see DECISIONS.md 2026-05-07). Verified
+#   working on 2026-05-07 (~263 aggregate entries).
+# - YouTube channels (6) NOT yet verified — Phase 1 task.
+# - Phase 1 smoke test should still re-verify all feeds before locking in.
+# - Counts: 24 RSS (13 news + 11 reddit) · 6 youtube  (= 30 sources)
 
 sources:
   # ───── News sites (RSS) — 13 ─────
@@ -86,60 +90,62 @@ sources:
     url: "https://www.thegamer.com/feed/"
     enabled: true
 
-  # ───── Subreddits — 11 ─────
+  # ───── Subreddits — 11 (via Reddit RSS, not PRAW; see DECISIONS.md 2026-05-07) ─────
   - name: "r/Games"
-    type: reddit
-    handle: "Games"
+    type: rss
+    url: "https://www.reddit.com/r/Games/.rss"
     enabled: true
 
   - name: "r/Gaming"
-    type: reddit
-    handle: "Gaming"
+    type: rss
+    url: "https://www.reddit.com/r/Gaming/.rss"
     enabled: true
 
-  - name: "r/VideoGameNews"
-    type: reddit
-    handle: "VideoGameNews"
+  - name: "r/GamingNews"
+    type: rss
+    url: "https://www.reddit.com/r/GamingNews/.rss"
     enabled: true
+    # Replaces r/VideoGameNews (returned 403 — private/quarantined/non-existent).
 
   - name: "r/GamingLeaksAndRumours"
-    type: reddit
-    handle: "GamingLeaksAndRumours"
+    type: rss
+    url: "https://www.reddit.com/r/GamingLeaksAndRumours/.rss"
     enabled: true
 
   - name: "r/PCGaming"
-    type: reddit
-    handle: "PCGaming"
+    type: rss
+    url: "https://www.reddit.com/r/PCGaming/.rss"
     enabled: true
 
-  - name: "r/XboxSeriesX"
-    type: reddit
-    handle: "XboxSeriesX"
+  - name: "r/Xbox"
+    type: rss
+    url: "https://www.reddit.com/r/Xbox/.rss"
     enabled: true
+    # Replaces r/XboxSeriesX, which was deprecated by mods (community moved here).
 
   - name: "r/MMORPG"
-    type: reddit
-    handle: "MMORPG"
+    type: rss
+    url: "https://www.reddit.com/r/MMORPG/.rss"
     enabled: true
 
   - name: "r/IndieGaming"
-    type: reddit
-    handle: "IndieGaming"
+    type: rss
+    url: "https://www.reddit.com/r/IndieGaming/.rss"
     enabled: true
 
   - name: "r/GachaGaming"
-    type: reddit
-    handle: "GachaGaming"
+    type: rss
+    url: "https://www.reddit.com/r/GachaGaming/.rss"
     enabled: true
 
   - name: "r/GameDev"
-    type: reddit
-    handle: "GameDev"
+    type: rss
+    url: "https://www.reddit.com/r/GameDev/.rss"
     enabled: true
 
   - name: "r/GamesIndustry"
-    type: reddit
-    handle: "GamesIndustry"
+    type: rss
+    url: "https://www.reddit.com/r/GamesIndustry/.rss"
     enabled: true
 
   # ───── YouTube channels — 6 ─────
