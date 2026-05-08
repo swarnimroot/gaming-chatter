@@ -23,10 +23,10 @@ One: me. Local, no auth, no sharing (initial scope).
 |---|---|
 | Biggest Story | Single most important thing this week |
 | Hottest Games | Ranked by mention velocity × signal |
-| Industry Risks | Layoffs, regulatory, platform shifts (rubric refined in Phase 3) |
+| Industry Risks | Layoffs, regulatory, platform shifts (rubric to be locked in Phase 3c) |
 | Market Momentum | Release cadence, hype curves, sales chatter |
 | WoW/MoM Trends | Entity-mention deltas across windows |
-| Community Sentiment | Reddit post titles + bodies + YouTube descriptions; comment-thread depth deferred until PRAW is reapproved (rubric refined in Phase 3) |
+| Community Sentiment | Reddit post titles + bodies + YouTube descriptions (PRAW rejected 2026-05-07 → RSS-only; comment-thread depth not available unless PRAW reapproves); rubric to be locked in Phase 3c |
 | Watch-List | Emerging stories with rising trajectory but low absolute volume |
 
 ## Non-goals (initial scope)

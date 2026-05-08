@@ -3,7 +3,7 @@
 Personal gaming-news aggregator. Daily ingest from 15 news sites + 10 subreddits + 6 YouTube channels → Monday-morning weekly exec summary + live dashboard. Local-only, single user.
 
 ## Status
-Design phase. No code yet. UI template pending external delivery from claude.ai/design.
+Phases 0–3b shipped (2026-05-08). 988 items ingested · 908 ok-enriched + embedded (768-dim) · 63 clusters ranked by `source_count × member_count / (1 + days_since_latest)`. Phase 3c (Anthropic synthesis) and 3d (report UI) are the next deliverables. claude.ai/design UI template still pending — non-blocking; placeholder Jinja templates are in place.
 
 ## Read first
 - `docs/PRD.md` — what we're building and why

@@ -24,7 +24,7 @@ scrapers-lib tier1 (rss [news sites + reddit feeds] / youtube / article-justext)
 raw_items  ──▶  items (normalized + exact-match dedup)
                     │
                     ▼
-            enrichments  (Ollama 14B → tldr, entities, category, sentiment, embedding)
+            enrichments  (Ollama qwen2.5:7b → tldr, entities, category, sentiment; nomic-embed-text → 768-dim embedding)
                     │
                     ▼
             clusters     (numpy cosine similarity + Ollama cluster labels)
@@ -43,8 +43,8 @@ raw_items  ──▶  items (normalized + exact-match dedup)
 | `sources` | id, name, type (rss/reddit/youtube), url_or_handle, enabled, last_fetched_at, last_error, error_count |
 | `raw_items` | source_id, external_id (dedup key), raw_payload (JSON blob), fetched_at |
 | `items` | normalized: title, url, body_text, author, published_at, score, comment_count, fingerprint |
-| `enrichments` | item_id, tldr, entities (games/companies/people JSON), category, sentiment_score, sentiment_summary, embedding (BLOB) |
-| `clusters` | week_id, label, centroid (BLOB), member_item_ids, member_count |
+| `enrichments` | item_id, tldr, entities (games/companies/people JSON), category, sentiment_score, sentiment_summary, embedding (BLOB), status (`ok`/`failed`/`skipped`), error |
+| `clusters` | week_id, label, centroid (BLOB), member_item_ids, member_count, source_count, latest_published_at, score (Phase 3b) |
 | `weekly_reports` | week_start, week_end, markdown_content, html_content, generated_at, status |
 | `run_log` | job_type, source_id, started_at, completed_at, status, items_processed, error |
 
@@ -54,17 +54,19 @@ Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **sema
 
 | Stage | Where | Cost | Trigger |
 |---|---|---|---|
-| Per-item enrichment (TL;DR, entities, category, sentiment, embedding) | Ollama 14B local | $0 | After each daily ingest |
-| Weekly clustering + cluster labels | numpy + Ollama | $0 | Monday before report |
-| Synthesis (exec summary sections) | Anthropic Sonnet | ~$0.05/run | Monday 8am + on-demand |
+| Per-item enrichment (TL;DR, entities, category, sentiment) | Ollama `qwen2.5:7b` local | $0 | After each daily ingest |
+| Per-item embedding (768-dim) | Ollama `nomic-embed-text` local | $0 | After each daily ingest |
+| Weekly clustering (cosine connected-components @ 0.85) + cluster labels | numpy + Ollama `qwen2.5:7b` | $0 | Monday before report |
+| Cluster ranking (Phase 3b) | numpy in-process: `source_count × member_count / (1 + days_since_latest)` | $0 | Same pass as clustering |
+| Synthesis (exec summary sections) | Anthropic (Sonnet 4.6 or Opus 4.7 — TBD Phase 3c) | ~$0.05–0.30/run | Monday 8am + on-demand |
 
-Volume: ~400 items/day × ~5–10s on Ollama 14B ≈ 30–60 min daily enrichment. Synthesis runs on already-distilled inputs.
+Measured volume from Phase 2 backfill (988-item run, 2026-05-07): enrichment ~7s/item on `qwen2.5:7b`, embedding ~2.3s/item on `nomic-embed-text`. Phase split (enrich-all then embed-all) avoids per-item model swap. **Why 7B not 14B:** VRAM math against the 12GB RTX 5070 — 14B Q4 sits at the edge with model-swap thrash risk; 7B is comfortable and genuinely sufficient for structured extraction. Promotion to 14B reserved if synthesis quality regresses. See DECISIONS 2026-05-07.
 
 ## Trend detection
 
 - **WoW/MoM** = entity-mention counts week-over-week, month-over-month, by game/company/category
 - **Hottest games** = entity-mention velocity (acceleration × signal score)
-- **Biggest story** = cluster with highest cross-source presence × Reddit signal × recency
+- **Biggest story** = top-scored cluster from Phase 3b ranking: `score = source_count × member_count / (1 + days_since_latest)`. Reddit upvote/comment weighting was rejected during 3b because Reddit RSS doesn't carry score data; reconsider only if PRAW reapproves
 - **Watch-list** = entities with rising trajectory but low absolute volume late in the week
 - The LLM **narrates the numbers**; it does not invent them
 
@@ -84,7 +86,7 @@ UI template is being built externally in **claude.ai/design** and will be ported
 ## External dependencies
 
 - **scrapers-lib** at `..\scrapers-lib` (Python lib). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (incl. transcripts), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
-- **Ollama** at `http://localhost:11434`. Models: a 14B for enrichment + a small embedding model (e.g. `nomic-embed-text`).
+- **Ollama** at `http://localhost:11434`. Models locked: `qwen2.5:7b` for per-item enrichment + cluster labels (chose 7B over 14B for VRAM headroom on the 12GB RTX 5070 — see DECISIONS 2026-05-07), `nomic-embed-text` for 768-dim embeddings. Both kept resident via `OLLAMA_KEEP_ALIVE=24h`.
 - **Anthropic API** via SDK + env var. Used only in the weekly synthesis pass.
 
 ## Alternatives considered & rejected
