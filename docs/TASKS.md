@@ -31,12 +31,23 @@ Phased build plan. Check off as work moves. **End of Phase 3 = working product.*
 
 ## Phase 2 — Local LLM enrichment
 
-- [ ] Ollama HTTP client + model selection (14B for enrichment + embedding model)
-- [ ] Per-item enrichment prompt → structured JSON (tldr, entities, category, sentiment)
-- [ ] Embedding generation per item
-- [ ] "Enrich pending items" trigger
-- [ ] Dashboard shows enriched feed (TL;DRs visible)
-- [ ] Prompt-quality sanity check on real ingested items before locking the prompt
+- [x] Ollama HTTP client + model selection — `app/services/ollama.py` (httpx, JSON-mode). **Chose `qwen2.5:7b` over 14B** for VRAM headroom on the 12GB 5070; embed model = `nomic-embed-text` (768-dim). See DECISIONS.md 2026-05-07.
+- [x] Per-item enrichment prompt → structured JSON (tldr, entities, category, sentiment) — Pydantic-validated, category enum locked to news/leak/launch/industry/community/opinion/patch.
+- [x] Embedding generation per item — `embed_text()` returns fp32 numpy bytes; stored as BLOB.
+- [x] "Enrich pending items" trigger — `POST /enrich/pending` + `POST /embed/pending`, both with `?sync=true&limit=N` for sanity gates. Auto-chained after `/sources/ingest-all` via BackgroundTasks.
+- [x] Dashboard shows enriched feed (TL;DRs visible) — TL;DR under title, category chip, sentiment score per item; "Enrich pending (N)" button at top.
+- [x] Prompt-quality sanity check on real ingested items before locking the prompt — 10/10 enriched cleanly, 2 prompt fixes applied (Reddit username exclusion, skip empty bodies).
+- [x] **Run full backlog enrichment + embedding.** 815/988 ok, 173 skipped, 0 failed (after retry pass). All 815 have embeddings. Embed pass took ~30 min, slower than projected. See SESSION_LOG 2026-05-07.
+- [x] Spot-check enrichments across category types after batch run; flag systemic issues if any. — Two failure modes found and fixed in `ollama.py` (added `'review'` category; dict→list `field_validator` on `Entities`). 1.9% underscored-handle bleed accepted. Skip composition includes news-site RSS teasers, not just Reddit link-posts → escalates Phase 2.5.
+
+## Phase 2.5 — Article body-fetch for skipped items
+
+Phase 2's 200-char skip threshold dropped 17.5% of corpus (173/988). Sampling showed many are news-site RSS teasers, not just Reddit link-posts. Recovering them before Phase 3 keeps clustering accurate. Promoted from "deferred maybe" to **must-do before Phase 3** (DECISIONS 2026-05-07).
+
+- [x] `app/services/article_fetch.py` wrapping `scrapers_lib.tier1.article`. Calls tier1 directly with a 1s inter-request delay (matches existing `app/services/scrapers.py` convention; scrapers-lib `core` not used here). Reddit URLs and YouTube items are explicitly excluded — see DECISIONS 2026-05-07.
+- [x] One-shot runner `scripts/run_article_fetch.py` (pattern after `run_enrich_batch.py`) that iterates `enrichments.status='skipped'`, fetches body via `item.url`, updates `items.body_text`, then chains `enrich_pending(retry_failed=True)` + `embed_pending()`.
+- [x] Recovery quality bar: ≥40% of skipped items flip to `ok` (revised down from 80% once the 72 Reddit link-posts among the 173 were identified as structurally unrecoverable via trafilatura — see DECISIONS 2026-05-07). **Achieved: 94/173 = 54.3%, or 94/95 = 98.9% of the addressable subset.** 1 fetch errored, 1 enrichment failed on a thin-content list-article. Final corpus: 908 ok / 79 skipped / 1 failed; coverage 82.5% → 91.9%.
+- [ ] Decide whether to fold `tier1.article` into the regular ingest pipeline going forward, or keep it as a remediation pass — depends on Phase 3 cluster-quality observations + scheduled-ingest rate-limit behavior. **Currently leaning: keep as remediation pass** (skipped rate is bounded, daily ingest stays fast, no scrape-rate exposure during normal operation).
 
 ## Phase 3 — Clustering + synthesis report
 

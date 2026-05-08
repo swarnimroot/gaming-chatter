@@ -4,6 +4,140 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-07 — Phase 2.5 closed; 908/988 enriched (91.9%); ready for Phase 3
+
+**Done:**
+- Built `app/services/article_fetch.py` — `fetch_skipped_bodies()` calls `scrapers_lib.tier1.article` (sync, trafilatura under the hood) on each item whose enrichment is `status='skipped'`. Updates `item.body_text` only when the extracted body meets `ENRICH_BODY_CHAR_MIN`. Logs a `RunLog` row with `job_type='article_fetch'`. 1s inter-request delay (matches `app/services/scrapers.py` direct-tier1 pattern; no `core` integration).
+- Built `scripts/run_article_fetch.py` — chains `fetch_skipped_bodies` → `enrich_pending(retry_failed=True)` → `embed_pending` so the whole Phase 2.5 pass runs unattended.
+- **Pre-launch finding that reshaped scope.** A 5-item smoke test exposed that trafilatura returns *zero* extractable body for Reddit link-post URLs (the page is just a title + outbound-link redirect). Domain breakdown of the 167 skipped RSS items: **72 reddit.com / 95 non-Reddit news sites** (Game Developer 39, GamesIndustry.biz 24, PC Gamer 18, Kotaku 8, Eurogamer 5, GameSpot 1). The session-log "≥80% of 173" quality bar was therefore structurally unmeetable. Confirmed direction with user: skip Reddit URLs in the fetcher (consistent with the original `ENRICH_BODY_CHAR_MIN` decision that Reddit link-posts duplicate news-feed coverage), reframe bar to ≥40% of 173. Logged in DECISIONS.md.
+- Ran the full chained batch detached. Wall clock **16m44s**: fetch 2m12s, enrich 11m02s, embed 3m31s.
+  - Article fetch: **94 of 95 attempted succeeded**, 1 errored. 72 Reddit + 6 YouTube skipped by design.
+  - Re-enrich (retry_failed=True): 93 ok, 1 failed (`ValueError: ollama JSON failed schema` on PC Gamer's Forza Horizon 6 car-list page — model returned a non-conforming `{title, cars: ...}` shape on a thin-content list article; acceptable 1% rate).
+  - Embed top-up: 93 new fp32 vectors, 0 failed.
+- Spot-checked 5 random new ok rows: TLDRs accurate and concise, categories correct (industry × 5 in the sample), sentiments reasonable, body lengths 1.6–2.9k chars (proper article bodies, not teasers). Quality clean.
+
+**State at end of session:**
+- Phase 2.5 done. **988 items → 908 ok / 79 skipped / 1 failed.** Coverage 82.5% → **91.9%**. All 908 ok rows have 768-dim embeddings.
+- Skipped composition now: 72 Reddit link-posts + 6 YouTube (no transcript) + 1 fetch-errored news item = 79.
+- New files: `app/services/article_fetch.py`, `scripts/run_article_fetch.py`. Runtime log at `logs/article_fetch_2026-05-07.log` (gitignored).
+- TASKS.md / DECISIONS.md / CHANGELOG.md / SESSION_LOG.md all updated.
+
+**Next session should:**
+1. **Phase 3 — clustering + synthesis.** This is the "working product" milestone.
+2. First move: cluster the 908 fp32 embeddings via numpy cosine similarity. Define cluster threshold (start ~0.55–0.65) and minimum cluster size (start at 2–3). Validate the cluster shape matches editorial intuition before locking parameters — pull a few clusters and inspect.
+3. Per-cluster label generation via local Ollama (qwen2.5:7b) — prompt is similar to enrichment but takes N TLDRs + N titles and outputs a 1-line label.
+4. Cluster ranking heuristic — cross-source × signal × recency. Define weights pragmatically (start equal, tune after first weekly synthesis).
+5. Anthropic synthesis pass for the Monday weekly report — needs the 7-section prompt locked. End of Phase 3 = working product.
+6. **Open architectural decision deferred to Phase 3 observations:** fold `tier1.article` into the regular ingest pipeline going forward, or keep it as a Phase-2.5-style remediation pass after each daily ingest. Currently leaning *remediation pass* — keeps daily ingest fast, bounded scrape rate.
+
+**Open / blocked:**
+- The 1 enrichment failure on PC Gamer's Forza Horizon 6 car list — accepted. List-article shape isn't the synthesis target anyway.
+- Reddit-link-post resolver (resolve to external article URL via `URL.json`, fetch trafilatura against the target) — not built. Would recover ~50–60 of the 72 Reddit items. Reconsider in Phase 3 *only if* cluster cross-referencing across Reddit ↔ news-site weakens visibly without it. Otherwise the duplicate-news-coverage argument from the original 2026-05-07 skip decision still holds.
+- claude.ai/design UI template — still pending external delivery; not blocking Phase 3.
+
+---
+
+## 2026-05-07 — Phase 2 closed; 815/988 enriched + embedded; Phase 2.5 escalated
+
+**Done:**
+- Full enrich+embed batch ran detached for 1h55m (enrich 1h25m, embed 30m). Initial result over 988 items: 798 ok / 177 skipped / 13 failed. `nomic-embed-text` is slower than projected (~2.3s/vec, not sub-second).
+- Spot-check across the corpus surfaced two clean failure modes plus one borderline quality issue:
+  - **6× `category 'review' not in allowed set`** — genuine product-review threads ("Saros Review", "Will: Follow the Light review", Reddit "Mixtape - Review Thread") rejected because the enum was incomplete.
+  - **7× `entities.people` returned as `{name: {}}` dict** instead of `[name, ...]` list. The model occasionally emits the entities sub-fields as keyed maps.
+  - **15/798 (1.9%) underscored Reddit handles** still appearing in `entities.people` (`Batz_Gaming`, `biohazard_fanatic`, `/u/ChickenAI_Prod`, etc.). Down from the prior baseline but not zero. Accepted for now — see DECISIONS.
+- Two minimal fixes applied to `app/services/ollama.py` (no other files touched):
+  - Added `'review'` to `_ALLOWED_CATEGORIES` and to the SYSTEM_PROMPT enum line + rules block.
+  - Added `@field_validator('games', 'companies', 'people', mode='before')` on the `Entities` model that converts dict input to `list(keys)`. Applied defensively to all three list fields.
+- Re-ran `enrich_pending(retry_failed=True)`: 190 attempted (13 prior failures + 177 prior skipped — `retry_failed=True` reprocesses every non-ok row), 17 new ok, 173 skipped, 0 failed. The +4 over the 13 failure recoveries are items that flipped skipped→ok on retry (likely transient YouTube transcript availability).
+- Top-up `embed_pending()` on the 17 new ok rows. **Final state: 815 ok + 173 skipped + 0 failed; all 815 enrichments have embeddings.**
+- **Skip composition is the real surprise.** Sampling 8 random skipped rows showed they're NOT just Reddit link-posts. News-site RSS feeds (PC Gamer, Kotaku, Game Developer) also skip because their feeds carry only 100–200-char teasers, not article bodies. So the 17.5% skip rate is real corpus loss across both Reddit *and* news sites — Phase 2.5 (article body-fetch) is escalated from "deferred unless quality demands it" to **must-do before Phase 3**.
+
+**State at end of session:**
+- Phase 2 done. 988 items, 82.5% enrichment + embedding coverage, zero failures.
+- New files: `scripts/run_enrich_batch.py`. Runtime log at `logs/enrich_batch_2026-05-07.log` (gitignored).
+- `app/services/ollama.py` modified (one import, one enum value, one validator, two prompt-text lines).
+- TASKS.md and DECISIONS.md updated.
+
+**Next session should:**
+1. **Phase 2.5 — article body-fetch.** Build `app/services/article_fetch.py` wrapping `scrapers_lib.tier1.article` (rate-limit / robots / cache come from scrapers-lib `core`). For each of the 173 `status='skipped'` rows: fetch article body via `item.url`, update `item.body_text`, then re-run enrichment on those rows. Add a one-shot runner — pattern after `scripts/run_enrich_batch.py`.
+2. After Phase 2.5 lands, `enrich_pending(retry_failed=True)` again on the 173. Then top-up `embed_pending()`.
+3. Quality bar for closing Phase 2.5: ≥80% of the 173 flip to `ok`. <50% triggers investigation (paywalls, JS-rendered, robots blocks). 50–80% is judgement.
+4. **Phase 3 — clustering + synthesis.** Cosine clustering on the fp32 vectors via numpy. Define cluster threshold + minimum size. Anthropic API for per-cluster labels and the Monday weekly report. End-of-Phase-3 = "working product."
+5. Decide whether to fold `tier1.article` into the regular ingest pipeline going forward, or keep it as a remediation pass (depends on Phase 2.5 recovery rate + scraper-lib rate-limit behavior).
+6. Update TASKS.md / DECISIONS.md / SESSION_LOG.md as work moves.
+
+**Open / blocked:**
+- Underscored-handle 1.9% rate — accepted; revisit only if Phase 3 entity-based features expose it.
+- claude.ai/design UI template — still pending external delivery; not blocking Phase 2.5 or Phase 3.
+
+---
+
+## 2026-05-07 — Stale enrichments wiped; full enrich+embed batch launched detached
+
+**Done:**
+- Resumed from prior session's 6-step checklist. State at session start was unexpected: DB held **988 enrichments** (979 `ok`, 9 `failed`, 0 `skipped`), not the 10 mentioned in the prior log narrative. Root cause: the chained BackgroundTask wired into `POST /sources/ingest-all` (queues `ingest_all` then `enrich_pending`) auto-ran the full backlog under the **pre-fix prompt** at some point between the prior session's sanity gate and now. Confirmed staleness by sampling: random `ok` rows still contained underscored Reddit handles in `entities.people` (e.g. `Batz_Gaming`, `testus_maximus`), and zero `skipped` rows existed (the `ENRICH_BODY_CHAR_MIN=200` skip logic clearly wasn't in force when these were written).
+- **Step 1 — wipe.** `DELETE FROM enrichments;` against `gaming_chatter.db`. Before=988, after=0. Items table untouched (988 rows still present).
+- **Step 2 — kick off backlog.** Wrote `scripts/run_enrich_batch.py` — a standalone runner that calls `enrich_pending()` then `embed_pending()` back-to-back so step 3 auto-fires when step 2 finishes (avoids the manual handoff in the original checklist). Launched via `nohup python scripts/run_enrich_batch.py > logs/enrich_batch_2026-05-07.log 2>&1 &` so the batch survives session detach. Bypassed uvicorn entirely — no FastAPI process needed for batch jobs.
+- Verified the batch is actually running:
+  - Log file is being written to (two `POST /api/generate 200 OK` lines after launch).
+  - DB shows progress within ~30s of launch: 2 ok + 1 skipped, `run_log` row #41 with `job_type='enrich'`, `status='running'`. Skip logic is firing as designed.
+  - Per-item latency: ~7–8s on `qwen2.5:7b`, matching the prior projection.
+
+**State at end of session:**
+- `enrich_pending` running detached. Projected ~2h for ~988 items, then `embed_pending` chains automatically (~10–15 min).
+- All other Phase 2 code unchanged from the prior session — only data was wiped.
+- New file: `scripts/run_enrich_batch.py`. New artifact: `logs/enrich_batch_2026-05-07.log` (gitignored — runtime log).
+
+**Next session should:**
+1. Confirm the batch finished cleanly: `tail logs/enrich_batch_2026-05-07.log` should end with `=== batch complete; total ...s ===`. The two `RunLog` rows (`enrich`, `embed`) should both show `status='ok'`.
+2. Sanity-check the full corpus:
+   - Final counts by status (`ok` / `failed` / `skipped`). Skip rate = signal for whether Phase 2.5 (article body-fetch for Reddit link-posts) is needed — see prior session's checklist item 5.
+   - Spot-check 10–15 enrichments across categories (mis-categorization, hallucinated entities, junk TLDRs).
+   - Confirm zero underscored handles in `entities.people` (the prompt fix landed).
+3. If quality holds: close Phase 2 (TASKS.md + DECISIONS.md), move to Phase 3 (clustering + weekly synthesis).
+4. If skip rate is high or quality poor: trigger Phase 2.5 (`tier1.article` body-fetch for link-posts) as scoped in prior session.
+
+**Open / blocked:**
+- Phase 2.5 decision deferred pending batch completion + quality review.
+- claude.ai/design UI template — still pending external delivery.
+
+---
+
+## 2026-05-07 — Phase 2 enrichment code complete and sanity-gated; full batch NOT yet run
+
+**Done:**
+- Built Phase 2 enrichment end-to-end:
+  - `app/services/ollama.py` — httpx client for `/api/generate` (JSON-mode) + `/api/embeddings`. Single-prompt enrichment with Pydantic-validated schema (tldr, entities {games/companies/people}, category enum, sentiment_score, sentiment_summary). Embeddings serialized as fp32 numpy bytes for SQLite BLOB storage. YouTube transcript fetch via `scrapers_lib.tier1.youtube.fetch_youtube_transcript` on-demand at enrichment time.
+  - `app/services/enrich.py` — orchestrates two phases (enrich-all then embed-all to avoid model swap thrash). Persists status='ok' | 'failed' | 'skipped' rows.
+  - `app/routers/enrich.py` — `POST /enrich/pending` and `POST /embed/pending`, both supporting `?sync=true&limit=N` for the sanity gate.
+  - Schema additions: `status` and `error` columns on `enrichments` (idempotent SQLite ALTER in `app/db/init.py:_migrate_enrichments_columns`).
+  - Settings (`app/config.py`): `OLLAMA_HOST`, `OLLAMA_ENRICH_MODEL=qwen2.5:7b`, `OLLAMA_EMBED_MODEL=nomic-embed-text`, `OLLAMA_NUM_CTX=8192`, `OLLAMA_KEEP_ALIVE=24h`, `ENRICH_BODY_CHAR_CAP=24000`, `ENRICH_BODY_CHAR_MIN=200`.
+  - Dashboard now renders TL;DR + category chip + sentiment per item, plus an "Enrich pending (N)" trigger.
+  - Wired chained BackgroundTask: `POST /sources/ingest-all` queues `ingest_all` then `enrich_pending`.
+- **Model size deliberation (logged in DECISIONS.md):** started with 14B per architecture; ran VRAM math against the 12GB 5070 (14B Q4 ≈ 9GB + 1.6GB KV at 8k ctx + 0.3GB embed model + 0.5GB headroom = right at the edge, with model-swap thrashing risk). Switched to **qwen2.5:7b** for Phase 2: ~4.5GB resident, comfortable 8–32k ctx, 50–70 tok/s, ~2hr batch projection vs ~3hr for 14B. Promotion to 14B reserved if Phase 3 clustering reveals quality regression.
+- **Sanity gate (10 items, sync):** 10/10 enriched cleanly, 10/10 embedded (768-dim fp32 vectors, norms ~20). Output reviewed item-by-item: 8 strong, 2 acceptable. Findings drove two prompt iterations:
+  1. Reddit usernames bleeding into `entities.people` (e.g. `Responsible_Box_2422`, `Eremenkism`) → added explicit prompt rule excluding underscored handles. **The 10 sanity items were enriched with the OLD prompt** — they retain the junk usernames until re-enriched.
+  2. Reddit link-only posts (body too short to summarize) producing useless meta-TLDRs ("TheVerge publishes an article about Xbox") → added `ENRICH_BODY_CHAR_MIN=200` skip. Items below threshold get persisted as `status='skipped'` and render on dashboard with no TLDR. **Rationale (decision):** most link-posts duplicate articles we scrape directly from news feeds, so the content isn't lost — the proper enrichment shows on the original news source row. The Reddit version becomes a "community noticed this" duplicate signal. `tier1.article` body-fetch for link-posts is deferred to Phase 2.5 if real-world quality demands it.
+
+**State at end of session:**
+- Phase 2 code complete and proven end-to-end on 10 items. All schema migrations applied. Server tested and stopped cleanly.
+- **Full ~978-item enrichment batch NOT yet run.** The 10 sanity items have status='ok' but were enriched with the pre-fix prompt — they need to be wiped and re-done so the entire corpus uses one consistent prompt version.
+- TASKS.md Phase 2 capability boxes all checked; backlog-run is a remaining item.
+
+**Next session should:**
+1. Wipe the 10 stale enrichments: `DELETE FROM enrichments WHERE status='ok' AND created_at < '<today>'` (or simpler: delete all enrichment rows since none are committed long-term yet).
+2. Kick off the full backlog: `POST /enrich/pending` (async BackgroundTask, ~2 hours for ~978 items at ~7s/item on qwen2.5:7b).
+3. After enrichment finishes, kick off `POST /embed/pending` (~10–15 min for ~978 embeddings on nomic-embed-text).
+4. Spot-check a sample of enrichments across category types — flag any systemic issues (mis-categorization, hallucinated entities, junk TLDRs from feeds we underestimated).
+5. **Decision needed:** is the link-only skip behavior carrying enough articles? If a noticeable share of useful items are getting skipped, escalate Phase 2.5 = `tier1.article` body-fetch for Reddit link-posts. Otherwise close Phase 2 and move to Phase 3 (clustering + synthesis).
+6. Update TASKS.md, DECISIONS.md, SESSION_LOG.md as work moves.
+
+**Open / blocked:**
+- Phase 2.5 (`tier1.article` body-fetch for Reddit link-posts) — deferred pending observation of skip rate on the full batch.
+- claude.ai/design UI template — still pending external delivery; not blocking Phase 2/3.
+
+---
+
 ## 2026-05-07 — Phase 1 manual ingest landed and verified end-to-end
 
 **Done:**

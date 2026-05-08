@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from app.config import TEMPLATES_DIR
 from app.db.models import Source
 from app.db.session import get_session
+from app.services.enrich import enrich_pending
 from app.services.ingest import ingest_all, ingest_source
 
 router = APIRouter()
@@ -37,4 +38,5 @@ def ingest_one(
 @router.post("/sources/ingest-all")
 def ingest_all_route(bg: BackgroundTasks):
     bg.add_task(ingest_all)
+    bg.add_task(enrich_pending)
     return RedirectResponse("/sources", status_code=303)

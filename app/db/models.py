@@ -51,6 +51,8 @@ class Enrichment(SQLModel, table=True):
     sentiment_score: Optional[float] = None
     sentiment_summary: Optional[str] = None
     embedding: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
+    status: str = Field(default="ok", index=True)  # ok | failed
+    error: Optional[str] = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
