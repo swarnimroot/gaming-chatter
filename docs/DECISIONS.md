@@ -37,6 +37,17 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 - **Skip the critic pass on synthesis.** Standard pattern in long-form Anthropic workflows. ~$100/yr is trivial vs the user-facing-quality moment of the weekly report.
 - **Move embeddings to Anthropic too.** Anthropic has no embeddings endpoint; would require introducing a third provider (OpenAI embeddings or Voyage) and that violates the *no-OpenAI* half of the original lock without comparable evidence to justify it. `nomic-embed-text` on Ollama is performing fine.
 
+**Addendum 2026-05-12 (Phase 3c.0.5 ship — actual observed values):**
+- **Model string used:** `claude-haiku-4-5` (default; alias resolves to the latest Haiku 4.5 snapshot, no date-suffix needed per the Anthropic model-ID convention).
+- **Anthropic SDK version:** `anthropic` 0.100.0 (installed; pyproject pinned at `>=0.40` covers it).
+- **Throughput:** 988-item backfill ran in 39.5 min wall-clock at ~2.4 s/item — **faster than the 1.5-hour pre-flight estimate**. 10-item sample averaged ~3 s/item; bulk run averaged ~2.4 s/item, likely due to better TCP/connection reuse at scale.
+- **Estimated spend on the backfill:** ~$3-4 (988 calls × ~1500 input + ~500 output tokens avg; $1/M input + $5/M output). Below the $5-10 ceiling estimated above. Total Phase 3c.0.5 session spend including 10-item sample + games-dim populate (189 calls, ~$0.60) ≈ **~$5**.
+- **Quality outcomes:** Both known-bad cases visibly fixed in the sample diff (Minions movie no longer game-tagged; Reddit handle no longer in entities.people). Backfill preserved-row rate **1.4%** (13/988) — Haiku occasionally returned an out-of-taxonomy category like `'guide'`, which the existing `_ALLOWED_CATEGORIES` check rejected; the safety net kept the prior valid qwen row for those items. Acceptable; can be addressed by widening `_ALLOWED_CATEGORIES` or by a small targeted re-run.
+- **Prompt caching:** the `cache_control: {"type":"ephemeral"}` marker on the system block is in place, but `SYSTEM_PROMPT` is ~855 tokens which is below Haiku 4.5's 4096-token minimum cacheable prefix. Caching **no-ops harmlessly** today. Forward-compatible: any future prompt growth past 4096 tokens activates caching automatically with no code change. **Cache-hit rate observed: 0%** (as expected for a sub-minimum prefix).
+- **`tag_game()` also ported to Haiku.** Same `messages.parse(output_format=GameTagData, ...)` pattern. 189 games tagged in 3.6 min, 0 failures. Distribution: 131 existing / 28 upcoming / 30 null-unknown / 55 live-service.
+- **Re-embed required after backfill** because the Haiku-rewritten tldrs are different text from the qwen tldrs the original embeddings were computed on. Implemented as: SQL `UPDATE enrichments SET embedding=NULL WHERE status='ok'` then `embed_pending()`. 900/900 in 37 min, 0 failures. Free (Ollama local).
+- **Per-week clustering:** 55 new clusters across 2026-W17/W18/W19 (4/13/38). `label_cluster()` still on qwen2.5:7b — Sonnet 4.6 migration **deferred to Phase 3c.4**, bundled with synthesis.
+
 ---
 
 ## 2026-05-12 — `/reports` redesign walkthrough: 13→9 cards, Trends restored via 5-tab + tagging foundation, synthesis scope expanded vs PRD

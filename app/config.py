@@ -1,7 +1,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")  # populate os.environ from .env if present; real env vars win
 DB_PATH = ROOT / "gaming_chatter.db"
 DB_URL = f"sqlite:///{DB_PATH}"
 SOURCES_YAML = ROOT / "sources.yaml"
@@ -19,6 +22,11 @@ ENRICH_BODY_CHAR_CAP = int(os.environ.get("ENRICH_BODY_CHAR_CAP", "24000"))
 # Minimum body length to bother enriching. Below this we mark the row 'skipped'
 # (typically Reddit link-only posts that point at articles we scrape elsewhere).
 ENRICH_BODY_CHAR_MIN = int(os.environ.get("ENRICH_BODY_CHAR_MIN", "200"))
+
+# Anthropic API configuration (per-item enrichment via Haiku 4.5; lock-override 2026-05-12).
+# Key is read by the SDK from ANTHROPIC_API_KEY env var directly; we don't import it here.
+ANTHROPIC_ENRICH_MODEL = os.environ.get("ANTHROPIC_ENRICH_MODEL", "claude-haiku-4-5")
+ANTHROPIC_TIMEOUT = float(os.environ.get("ANTHROPIC_TIMEOUT", "120"))
 
 # Clustering. Cosine similarity on normalized fp32 embeddings, connected-components.
 # 0.85 picked after editorial review of the 908-item corpus on 2026-05-07 — see DECISIONS.md.

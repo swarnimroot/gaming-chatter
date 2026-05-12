@@ -1,8 +1,8 @@
-"""Populate the `games` dim table by tagging each game mention via Ollama.
+"""Populate the `games` dim table by tagging each game mention via Anthropic Haiku 4.5.
 
-Run AFTER the Phase 3c.0 re-enrichment completes. Reads entities.games from
+Run AFTER the Phase 3c.0.5 Haiku re-enrichment completes. Reads entities.games from
 ok enrichments, dedupes (TRIM), filters by minimum mention count, and tags
-each unique game with lifecycle + live_service via ollama.tag_game().
+each unique game with lifecycle + live_service via anthropic.tag_game().
 
 Per-game commit makes this resumable on Ctrl-C.
 
@@ -28,7 +28,7 @@ from tqdm import tqdm  # noqa: E402
 
 from app.db.models import Game  # noqa: E402
 from app.db.session import engine  # noqa: E402
-from app.services.ollama import tag_game  # noqa: E402
+from app.services.anthropic import tag_game  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,

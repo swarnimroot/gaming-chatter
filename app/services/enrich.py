@@ -16,10 +16,10 @@ from sqlmodel import Session, col, select
 from app.config import ENRICH_BODY_CHAR_MIN
 from app.db.models import Enrichment, Item, RunLog, Source
 from app.db.session import engine
+from app.services.anthropic import enrich_item
 from app.services.ollama import (
     EnrichmentData,
     embed_text,
-    enrich_item,
     extract_video_id,
     fetch_youtube_transcript,
 )

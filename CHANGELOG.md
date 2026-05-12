@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added — Phase 3c.0.5: Anthropic Haiku 4.5 per-item enrichment + tag_game + full backfill (2026-05-12)
+- **`app/services/anthropic.py` (new).** Haiku-backed `enrich_item()` + `tag_game()`. Uses `client.messages.parse(output_format=...)` for structured Pydantic returns, system-block `cache_control` marker (forward-compatible — current SYSTEM_PROMPT is ~855 tokens, under Haiku 4.5's 4096-token caching min, so no-ops harmlessly). Reuses `EnrichmentData`, `GameTagData`, `SYSTEM_PROMPT`, `GAME_TAG_SYSTEM_PROMPT`, `_ALLOWED_CATEGORIES` from `app/services/ollama.py` — single source of truth for schema + prompt + validators. Wraps `anthropic.APIError` + `pydantic.ValidationError` as `ValueError` so the existing `_persist_failed()` path keeps working unchanged. Lazy-init module-level client; SDK reads `ANTHROPIC_API_KEY` from env.
+- **One-line import swap in `app/services/enrich.py`** — `enrich_item` now from `anthropic`. Everything else (`embed_text`, `extract_video_id`, `fetch_youtube_transcript`, `_persist_*`, `RunLog`) untouched. One-line swap in `scripts/populate_games_dim.py` too.
+- **`python-dotenv` added as a dep + `.env` loader wired in `app/config.py`.** `load_dotenv(ROOT / ".env")` at module import so API keys can live in a gitignored `.env` instead of the parent shell. Real env vars still take precedence. Config additions: `ANTHROPIC_ENRICH_MODEL` (default `claude-haiku-4-5`), `ANTHROPIC_TIMEOUT` (default 120s).
+- **`scripts/sample_haiku_enrichment.py` (new).** Picks 10 items prioritized for known-bad cases (Minions movie miscategorization + Reddit-handle leak in `entities.people`), diversified by category, then fills with newest. Calls Haiku directly (no DB writes), writes a side-by-side markdown diff to `docs/SAMPLE_HAIKU_<date>.md` for user sign-off.
+
+### Verified — Phase 3c.0.5 end-to-end
+- **10-item Haiku sample** ran in ~30 sec, ~$0.04. Both known-bad cases visibly fixed: Minions now `games=[] / genres=[] / companies=['Universal Pictures']` (was `games=['Minions & Monsters'] / genres=['Indie/Roguelike']`); Reddit handle `Responsible_Box_2422` no longer in `entities.people`.
+- **Full 988-item backfill via Haiku** — 39.5 min @ ~2.4 s/item. **988 attempted, 887 OK, 88 skipped (body < 200 chars), 13 preserved (Haiku returned out-of-taxonomy category; safety net kept prior valid qwen row), 0 hard failures.** Spend ~$3-4.
+- **Re-embed of all 900 OK rows** required because Haiku rewrote the tldrs. SQL `UPDATE enrichments SET embedding=NULL WHERE status='ok'` then `embed_pending()`. 37 min, 900/900 OK, 0 failures. Free (Ollama local).
+- **`populate_games_dim.py` executed** against the Haiku-enriched corpus. 189 unique games (min_mentions=2) tagged via Haiku `tag_game()`. 3.6 min, 0 failed. Distribution: 131 existing / 28 upcoming / 30 null-unknown; 55 live_service=true. ~$0.60.
+- **`run_cluster.py --per-week` executed.** 55 new clusters across `2026-W17` (4) / `W18` (13) / `W19` (38). 4.5 min, 0 label failures. Cluster labels still on qwen2.5:7b — Sonnet 4.6 migration deferred to Phase 3c.4 bundled with synthesis. Legacy 63 `week_id='all'` clusters from Phase 3b remain in DB pending a cleanup decision.
+- **Total Phase 3c.0.5 spend: ~$5** (inside the $500/yr ceiling locked 2026-05-12 later).
+
+### Deferred / open
+- 13 preserved-qwen items can be re-run by widening `_ALLOWED_CATEGORIES` to include observed-but-rejected values like `'guide'`, then targeted-rerun. Note: `_rerun_targeted_ids` in `scripts/rerun_enrichment.py:34` still imports `ollama_enrich_item` — needs swapping if used.
+- Cleanup of the 63 legacy `week_id='all'` clusters (script intent was "replace") — deferred to next session for user decision.
+- `label_cluster()` Sonnet 4.6 migration — deferred to Phase 3c.4 with synthesis.
+
 ### Added — Phase 3c.0 tagging foundation: schema + structured-output enrichment + per-week cluster scaffolding (2026-05-12)
 - **Schema migration.** `app/db/init.py:_migrate_enrichments_columns` extended idempotently with `genres TEXT`, `platforms TEXT`, `event TEXT` columns on the `enrichments` table; new `games` dim table created (`name TEXT PRIMARY KEY`, `lifecycle TEXT`, `live_service INTEGER`). `Game` SQLModel class added to `app/db/models.py`. Verified via PRAGMA + a double-call `init_db()` for idempotency.
 - **Ollama enrichment switched to structured-output (JSON schema) mode.** `app/services/ollama.py` SYSTEM_PROMPT restructured to demand `genres[]` / `platforms[]` / `event`; `EnrichmentData.model_json_schema()` passed directly as the Ollama `format` parameter (replacing `format:"json"` which silently omitted the new fields). `required` override on the schema forces the 3 new fields to appear despite their Pydantic defaults. Pydantic field validators drop out-of-taxonomy values; genres capped at 3. Locked taxonomies: 12 genres / 6 platforms / 12 events + Other-showcase.
@@ -10,7 +29,7 @@
 - **`scripts/run_cluster.py` rewritten** with argparse + `--per-week` mode that iterates ISO weeks via `datetime.fromisocalendar()`, calling `cluster_window()` per week to replace the prior `week_id='all'` global clustering. Backward compat preserved (no args → legacy `"all"`).
 - **`scripts/rerun_enrichment.py` (new)** — backfill driver for the re-enrichment pass.
 
-### Aborted / blocked
+### Aborted / blocked (later resolved in Phase 3c.0.5 above)
 - **908-item re-enrichment run was aborted mid-run.** Killed after ~25 items: structured-output mode pushed qwen2.5:7b to ~26s/item (~7-hour ETA vs the ~45-min estimate); a 10-item sample exposed quality issues that the prompt restructure did not fix (Reddit username `Responsible_Box_2422` leaked into `entities.people`; the movie *Minions & Monsters* was tagged with `Indie/Roguelike`). User decision: pivot per-item enrichment to **Anthropic Haiku 4.5** before retrying the backfill — overrides the "Ollama-only for per-item work" architectural lock. See DECISIONS 2026-05-12 (later). DB state: ~25–30 items now hold partial qwen rewrites; next-session Haiku rerun will overwrite all 988 uniformly, no rollback needed.
 - **`scripts/populate_games_dim.py` + `scripts/run_cluster.py --per-week`** both have code staged but execution is blocked on the Haiku backfill (they need to run against a uniformly-tagged corpus, not the qwen partial).
 

@@ -4,24 +4,27 @@ Personal weekly gaming-news aggregator. Daily ingest from a curated list of news
 
 ## Status
 
-**Phase 3b shipped (2026-05-08).** 988 items ingested · 908 ok-enriched + embedded · 63 clusters ranked by cross-source × volume × recency. Next: Phase 3c (Anthropic synthesis) + 3d (report UI). See [`docs/TASKS.md`](docs/TASKS.md) for the phased plan and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest session handoff.
+**Phase 3c.0.5 shipped (2026-05-12).** 988 items ingested · 887 Haiku-enriched + 13 preserved-qwen + 88 skipped · 900 re-embedded (768-dim) · 189 games tagged · 55 per-ISO-week clusters (W17/W18/W19). Per-item enrichment + game tagging now on **Anthropic Haiku 4.5**; embeddings stay on local Ollama; cluster labels + synthesis still pending (Phase 3c.4). See [`docs/TASKS.md`](docs/TASKS.md) for the phased plan and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest handoff.
 
 ## Stack
 
-Python · FastAPI · APScheduler · SQLite · HTMX + Jinja · Ollama (local LLM) · Anthropic API (synthesis) · [scrapers-lib](../scrapers-lib) (ingest)
+Python · FastAPI · APScheduler · SQLite · HTMX + Jinja · Ollama (embeddings + legacy `label_cluster`) · Anthropic API (per-item enrichment via Haiku 4.5; synthesis via Opus 4.7 pending Phase 3c.4) · [scrapers-lib](../scrapers-lib) (ingest)
 
 ## Run
 
-Prereqs: Python 3.11+, Ollama running locally with `qwen2.5:7b` and `nomic-embed-text` pulled. Anthropic API key in env (only needed once Phase 3c lands; ingest/enrich/cluster don't require it).
+Prereqs: Python 3.11+, Ollama running locally with `nomic-embed-text` pulled (and `qwen2.5:7b` retained for `label_cluster()` pending the Phase 3c.4 Sonnet migration). Anthropic API key in a local `.env` at the repo root: `ANTHROPIC_API_KEY=sk-ant-...` — required for per-item enrichment as of Phase 3c.0.5.
 
 ```bash
-# FastAPI app (dashboard, sources admin, /clusters view)
+# FastAPI app (dashboard, sources admin, /clusters view, /reports)
 python -m uvicorn app.main:app --port 8765
 
 # One-shot batch jobs (run alongside or instead of the app)
-python scripts/run_enrich_batch.py        # enrich + embed pending items
-python scripts/run_article_fetch.py       # Phase 2.5 body-fetch for skipped items
-python scripts/run_cluster.py [week_id]   # cluster + label + rank (default week_id='all')
+python scripts/run_enrich_batch.py             # enrich + embed pending items (uses Haiku)
+python scripts/run_article_fetch.py            # Phase 2.5 body-fetch for skipped items
+python scripts/rerun_enrichment.py             # re-enrich the full corpus with force=True
+python scripts/sample_haiku_enrichment.py      # 10-item Haiku sample → md diff for review
+python scripts/populate_games_dim.py           # tag unique games (lifecycle + live_service)
+python scripts/run_cluster.py [--per-week]     # cluster + label + rank (no args = legacy week_id='all')
 python scripts/inspect_cluster_ranking.py [N]  # dump top-N clusters by score
 ```
 

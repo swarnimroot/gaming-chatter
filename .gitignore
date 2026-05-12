@@ -33,6 +33,12 @@ desktop.ini
 # Local Claude state
 .claude/settings.local.json
 
+# Design bundle from claude.ai/design — kept locally for Phase 3c.3 reference, not for git
+.tmp_design_bundle/
+
+# Private user notes / corrections files — never commit
+Gaming Chatter - Corrections.txt
+
 # Project data
 *.db
 *.db-journal

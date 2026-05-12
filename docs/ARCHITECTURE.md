@@ -24,10 +24,13 @@ scrapers-lib tier1 (rss [news sites + reddit feeds] / youtube / article-justext)
 raw_items  ──▶  items (normalized + exact-match dedup)
                     │
                     ▼
-            enrichments  (Ollama qwen2.5:7b → tldr, entities, category, sentiment; nomic-embed-text → 768-dim embedding)
+            enrichments  (Anthropic Haiku 4.5 → tldr, entities, category, sentiment, genres[], platforms[], event; Ollama nomic-embed-text → 768-dim embedding)
                     │
                     ▼
-            clusters     (numpy cosine similarity + Ollama cluster labels)
+            games dim    (Anthropic Haiku 4.5 → lifecycle + live_service per unique game)
+                    │
+                    ▼
+            clusters     (numpy cosine similarity + Ollama qwen2.5:7b cluster labels; Sonnet 4.6 migration deferred to Phase 3c.4)
                     │
                     ▼
             weekly_reports  (Anthropic synthesis → Markdown → standalone HTML w/ inlined CSS)
@@ -54,13 +57,16 @@ Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **sema
 
 | Stage | Where | Cost | Trigger |
 |---|---|---|---|
-| Per-item enrichment (TL;DR, entities, category, sentiment) | Ollama `qwen2.5:7b` local | $0 | After each daily ingest |
+| Per-item enrichment (TL;DR, entities, category, sentiment, genres, platforms, event) | Anthropic Haiku 4.5 | ~$100–200/yr | After each daily ingest |
 | Per-item embedding (768-dim) | Ollama `nomic-embed-text` local | $0 | After each daily ingest |
-| Weekly clustering (cosine connected-components @ 0.85) + cluster labels | numpy + Ollama `qwen2.5:7b` | $0 | Monday before report |
+| Game tagging (lifecycle + live_service per unique game) | Anthropic Haiku 4.5 | ~$1 per backfill | After enrichment |
+| Weekly clustering (cosine connected-components @ 0.85) | numpy in-process | $0 | Monday before report |
+| Cluster labels | Ollama `qwen2.5:7b` (Phase 3c.4: → Anthropic Sonnet 4.6) | $0 today (TBD ~$10/yr) | Same pass as clustering |
 | Cluster ranking (Phase 3b) | numpy in-process: `source_count × member_count / (1 + days_since_latest)` | $0 | Same pass as clustering |
-| Synthesis (exec summary sections) | Anthropic (Sonnet 4.6 or Opus 4.7 — TBD Phase 3c) | ~$0.05–0.30/run | Monday 8am + on-demand |
+| Synthesis (10 sections + exec-summary) | Anthropic Opus 4.7 — not yet shipped (Phase 3c.4) | ~$0.30/run | Monday 8am + on-demand |
+| Synthesis critic/editor pass | Anthropic Opus 4.7 second call — not yet shipped (Phase 3c.4) | ~$0.05/run | Same run as synthesis |
 
-Measured volume from Phase 2 backfill (988-item run, 2026-05-07): enrichment ~7s/item on `qwen2.5:7b`, embedding ~2.3s/item on `nomic-embed-text`. Phase split (enrich-all then embed-all) avoids per-item model swap. **Why 7B not 14B:** VRAM math against the 12GB RTX 5070 — 14B Q4 sits at the edge with model-swap thrash risk; 7B is comfortable and genuinely sufficient for structured extraction. Promotion to 14B reserved if synthesis quality regresses. See DECISIONS 2026-05-07.
+**Measured volume — Phase 3c.0.5 Haiku backfill (988-item run, 2026-05-12):** 39.5 min wall-clock, ~2.4 s/item, 887 ok / 88 skipped / 13 preserved (Haiku returned an out-of-taxonomy category, prior valid row kept) / 0 hard failures. Estimated cost ~$3-4. Re-embed of all 900 ok rows via `nomic-embed-text` took 37 min (~2.5 s/item) — slower than Phase 2's 2.3 s/item, network/IO jitter. **Lock-override (2026-05-12 later):** per-item work moved off qwen2.5:7b after a 10-item sample exposed Reddit-handle leak into `entities.people` and a movie tagged with game genres; both are visibly fixed under Haiku. The `qwen2.5:7b` model remains resident in Ollama only because `label_cluster()` still calls it pending the Sonnet 4.6 migration in Phase 3c.4. See DECISIONS 2026-05-12 (later).
 
 ## Trend detection
 
@@ -86,8 +92,8 @@ UI template is being built externally in **claude.ai/design** and will be ported
 ## External dependencies
 
 - **scrapers-lib** at `..\scrapers-lib` (Python lib). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (incl. transcripts), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
-- **Ollama** at `http://localhost:11434`. Models locked: `qwen2.5:7b` for per-item enrichment + cluster labels (chose 7B over 14B for VRAM headroom on the 12GB RTX 5070 — see DECISIONS 2026-05-07), `nomic-embed-text` for 768-dim embeddings. Both kept resident via `OLLAMA_KEEP_ALIVE=24h`.
-- **Anthropic API** via SDK + env var. Used only in the weekly synthesis pass.
+- **Ollama** at `http://localhost:11434`. Models resident: `nomic-embed-text` for 768-dim embeddings (primary local model post-2026-05-12), and `qwen2.5:7b` retained solely for `label_cluster()` pending Sonnet 4.6 migration in Phase 3c.4. Both kept resident via `OLLAMA_KEEP_ALIVE=24h`.
+- **Anthropic API** via SDK + env var (loaded from local `.env` via python-dotenv). Used for per-item enrichment (Haiku 4.5), game tagging (Haiku 4.5), and weekly synthesis (Opus 4.7, deferred to Phase 3c.4). API key never committed — `.env` is gitignored.
 
 ## Alternatives considered & rejected
 

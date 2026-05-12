@@ -4,6 +4,55 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-12 — Phase 3c.0.5 SHIPPED: Haiku 4.5 migration, full backfill, games dim, per-week clustering
+
+**Done:**
+- **`app/services/anthropic.py` shipped.** Module-level `Anthropic()` client lazy-init (reads `ANTHROPIC_API_KEY` from env). `enrich_item()` mirrors `ollama.enrich_item()` signature exactly — reuses `EnrichmentData` + `SYSTEM_PROMPT` + `_ALLOWED_CATEGORIES` from `app/services/ollama.py` so there's a single source of truth. Calls `client.messages.parse(model=ANTHROPIC_ENRICH_MODEL, max_tokens=2048, output_format=EnrichmentData, ...)` so the SDK returns a validated Pydantic instance directly; field validators (`_filter_genres`, `_filter_platforms`, `_filter_event`) run automatically. Catches `anthropic.APIError` and `ValidationError` and wraps as `ValueError` so the existing `_persist_failed()` path in `enrich.py` works unchanged. Includes `cache_control: {"type": "ephemeral"}` on the system block — SYSTEM_PROMPT is ~855 tokens which is **under** Haiku 4.5's 4096-token minimum cacheable prefix, so caching no-ops harmlessly today. Will activate automatically if the prompt grows past 4096 tokens.
+- **`tag_game()` also ported to anthropic.py** mid-backfill. Same pattern: reuses `GameTagData` + `GAME_TAG_SYSTEM_PROMPT` from ollama.py, `max_tokens=128`.
+- **One-line swap in `app/services/enrich.py`** — `enrich_item` now imported from `app.services.anthropic` instead of `app.services.ollama`. Everything else (`embed_text`, `extract_video_id`, `fetch_youtube_transcript`, `_body_for_enrichment`, `_persist_ok/_failed/_skipped`, `RunLog`) untouched. One-line swap in `scripts/populate_games_dim.py` too — `tag_game` now from anthropic.
+- **`python-dotenv` added as a dep + `.env` loader wired in `app/config.py`.** `load_dotenv(ROOT / ".env")` at module import. `.env` (gitignored) holds `ANTHROPIC_API_KEY=...`; SDK reads it from env. Real env vars take precedence over `.env`.
+- **Config additions in `app/config.py`:** `ANTHROPIC_ENRICH_MODEL` (default `claude-haiku-4-5`), `ANTHROPIC_TIMEOUT` (default 120s).
+- **10-item Haiku sample (`scripts/sample_haiku_enrichment.py`)** — picks 10 items with priority on the two known-bad cases (Minions movie miscategorization + Reddit-handle leak), then diversifies by category, then fills with newest. Writes side-by-side markdown diff to `docs/SAMPLE_HAIKU_2026-05-12.md`. Does NOT touch the DB. User signed off on the diff before backfill. Both known-bad cases visibly fixed: Minions movie now has `games=[]` + `genres=[]` (was `['Minions & Monsters']` + `['Indie/Roguelike']`); Reddit-handle `Responsible_Box_2422` no longer appears in `entities.people`. Cost: ~$0.04.
+- **Full 988-item Haiku backfill.** Default invocation of `scripts/rerun_enrichment.py` (which routes through `enrich_pending(force=True)` → `enrich_module.enrich_item` → now `anthropic.enrich_item`). 39.5 min wall-clock, ~2.4 s/item (faster than the ~5 s/item estimated; matches the sample). **Totals: 988 attempted, 887 OK, 88 skipped (body too short — structural, same as Phase 2), 13 preserved (Haiku returned out-of-taxonomy category like `'guide'` → safety net kept prior valid qwen row), 0 hard failures.** Preservation rate 1.4% — well under the 5% threshold. Estimated spend ~$3-4.
+- **Cleared all 899 OK embeddings + re-ran `embed_pending()`.** Necessary because the Haiku-rewritten tldrs are different text from the qwen tldrs the embeddings were originally computed on. Took 37 min (~2.5 s/item), 900/900 OK, 0 failed.
+- **`populate_games_dim.py` executed.** 189 unique games (min_mentions=2 default) tagged via Haiku `tag_game()`. 3.6 min, 0 failed. Distribution: 131 existing / 28 upcoming / 30 null-unknown; 55 live_service=true. Sample spot-check: Aliens: FE / FE 2 split correctly between existing+upcoming, Among Us flagged live-service, MMOs (Allods Online) correctly live-service. ~$0.60 spend.
+- **`run_cluster.py --per-week` executed.** 55 new clusters across `2026-W17` (4 clusters), `W18` (13), `W19` (38). 4.5 min wall-clock. 0 label failures — every cluster got a qwen-generated label (label_cluster still on Ollama pending Phase 3c.4). Earlier weeks (W12-W16) had too few items to form clusters at threshold 0.85. **Top scorers still from the legacy `week_id='all'` set** because the per-week corpora are smaller so `source_count × member_count` is lower. Cleanup of the 63 legacy 'all' rows deferred — user will decide.
+
+**Decided / verified:**
+- **Trust-Haiku over force-required-fields** for the new genres/platforms/event tags. Trade-off accepted: simpler schema, faster iteration; safety net (Pydantic validators) handles any out-of-taxonomy values. The sample confirmed Haiku honors the taxonomies cleanly without strict-mode forcing.
+- **Swap-not-flag integration.** No `ENRICH_PROVIDER` config flag; ollama.enrich_item left in place only as the source of truth for shared types (`EnrichmentData`, `SYSTEM_PROMPT`, validators).
+- **Side-by-side markdown diff** for sample review preferred over terminal scroll or summary-only — matches the user's walkthrough preference.
+- **Prompt caching on system block is correct in principle** even though the current prompt is under the cache threshold. The architecture is forward-compatible; if SYSTEM_PROMPT grows past 4096 tokens in a later phase, caching activates automatically with no code change.
+
+**State at end of session:**
+- New files: `app/services/anthropic.py`, `.env` (gitignored), `scripts/sample_haiku_enrichment.py`, `docs/SAMPLE_HAIKU_2026-05-12.md` (the sample diff).
+- Modified files: `app/services/enrich.py` (one-line import swap), `app/config.py` (dotenv loader + Anthropic env vars), `scripts/populate_games_dim.py` (one-line import swap + docstring), `pyproject.toml` (+python-dotenv).
+- Logs (gitignored): `logs/haiku_backfill_2026-05-12.log`, `logs/reembed_2026-05-12.log`, `logs/games_dim_2026-05-12.log`, `logs/cluster_per_week_2026-05-12.log`.
+- DB state: 887 Haiku-enriched + 13 preserved-qwen + 88 skipped enrichments; 900 fresh embeddings; 189 rows in `games` dim; 55 new per-week clusters + 63 legacy `week_id='all'` clusters.
+- Anthropic SDK 0.100.0 already installed; `anthropic>=0.40` in pyproject covers it. `python-dotenv` 1.2.2 confirmed installed.
+- All Phase 3c.0.5 changes intentionally uncommitted in the working tree per prior-session convention.
+
+**Next session should:**
+1. **Phase 3c.1 — revisit dropped/trimmed data with the new tag dimensions.**
+   - Restore platform + lifecycle chips on the Hottest card (was trimmed pre-tagging on 2026-05-12 walkthrough).
+   - Add structured release-date extraction on the Releases card from the upcoming-tagged games in the `games` dim.
+   - Re-evaluate the Card 1 "this week in gaming" overview (dropped in walkthrough) — top-genres + top-platforms is now real data, not fabrication.
+2. **Decide the cleanup of the 63 legacy `week_id='all'` clusters.** They're still authoritative-looking at the top of `/clusters` because Phase 3b's cross-corpus run produced bigger groups. Either delete them (script intent was "replace") or keep both views and update the UI filter to default to per-week.
+3. **Phase 3c.2 — build the Trends card** (5-tab layout: Games existing+upcoming / Genres / Platforms / Live-service / Events; WoW only; top-N by mention-rate delta).
+4. **Phase 3c.3 — port Source Drawer + Exec-summary modal** from `.tmp_design_bundle/`.
+5. **Phase 3c.4 — synthesis.** `app/services/synthesis.py` calling Opus 4.7 with prompt-cached system block. Second Opus call for the critic/editor pass. **Also in Phase 3c.4: migrate `label_cluster()` to Anthropic Sonnet 4.6** (deferred from this session). Both bundled because synthesis quality depends on label quality.
+6. **Phase 3c.5 — wire `/reports` to real synthesized data** and apply every locked layout change from the 2026-05-12 walkthrough.
+7. **Audit and tighten the 13 preserved-qwen items.** Either re-run them with a wider `_ALLOWED_CATEGORIES` set, or accept them as low-priority residue. Easier path: add `'guide'` (and any other observed-but-rejected categories) to the allowed set, then re-run those 13 via `python scripts/rerun_enrichment.py --ids ...`. But note: `_rerun_targeted_ids` in that script still calls `ollama_enrich_item` directly (line 132) — that path needs an import swap to anthropic before --ids can use Haiku.
+
+**Open / blocked:**
+- `_rerun_targeted_ids` in `scripts/rerun_enrichment.py` line 34 still imports `enrich_item as ollama_enrich_item` from `app.services.ollama`. If we ever want to re-do specific items via Haiku, that line needs swapping too. Default no-args path (which is what we used for the backfill) is correctly Haiku-routed via the swapped `enrich_module.enrich_item`.
+- Cluster boundary spanning, per-week threshold tuning, empty-state design for sparse Trends tabs — all still open from the prior walkthrough.
+- The 13 preserved-qwen items + the open question of whether to widen the category enum.
+- Sonnet 4.6 cluster-labels migration — deferred to Phase 3c.4, not blocking anything before then.
+- Synthesis prompt / Opus 4.7 / critic pass — deferred to Phase 3c.4.
+
+---
+
 ## 2026-05-12 — Phase 3c.0 schema + prompt + code staging; backfill aborted pending Haiku migration
 
 **Done:**
