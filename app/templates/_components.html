@@ -1,0 +1,90 @@
+{# =============================================================
+   Reusable macros for the /reports view. Mirrors primitives.jsx
+   from the claude.ai/design bundle. All visual values come from
+   .gc-* classes in app.css; macros only emit markup.
+   ============================================================= #}
+
+{% macro eyebrow(text) -%}
+<div class="gc-eyebrow">{{ text }}</div>
+{%- endmacro %}
+
+{% macro source_pill(name, kind="outlet") -%}
+<a class="gc-pill" href="#" title="{{ name }}">
+  <span class="gc-pill-dot gc-pill-dot--{{ kind }}"></span>
+  {{ name }}
+</a>
+{%- endmacro %}
+
+{% macro source_row(sources, sources_meta, max_show=5) -%}
+{%- set shown = sources[:max_show] -%}
+{%- set more  = sources|length - shown|length -%}
+<div class="gc-pill-row">
+  {% for s in shown -%}
+    {{ source_pill(s, (sources_meta.get(s) or {}).get("kind", "outlet")) }}
+  {%- endfor %}
+  {% if more > 0 %}<span class="gc-pill-more">+{{ more }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro freshness(when) -%}
+<span class="gc-fresh"><span class="gc-fresh-dot"></span><span>{{ when }}</span></span>
+{%- endmacro %}
+
+{# Three-segment meter — tone is heat | conf | you #}
+{% macro meter(tone, value, compact=false) -%}
+{%- set segs = 8 if compact else 10 -%}
+{%- set filled = ((value / 100) * segs)|round(0, 'common')|int -%}
+{%- set label = {"heat":"Heat","conf":"Conf","you":"You"}[tone] -%}
+<div class="gc-meter" title="{{ label }} {{ value }}">
+  <span class="gc-meter-label">{{ label }}</span>
+  <span class="gc-meter-track">
+    {% for i in range(segs) -%}
+      <span class="gc-meter-seg{% if i < filled %} is-on--{{ tone }}{% endif %}"></span>
+    {%- endfor %}
+  </span>
+  <span class="gc-meter-value">{{ value }}</span>
+</div>
+{%- endmacro %}
+
+{% macro signal_cluster(heat, confidence, relevance, compact=false) -%}
+<div class="gc-cluster-stack">
+  {{ meter("heat", heat, compact) }}
+  {{ meter("conf", confidence, compact) }}
+  {{ meter("you", relevance, compact) }}
+</div>
+{%- endmacro %}
+
+{% macro mini_bar(value, max_value) -%}
+<div class="gc-mini-track"><div class="gc-mini-fill" style="width: {{ ((value / max_value) * 100)|round(1) }}%"></div></div>
+{%- endmacro %}
+
+{% macro delta(value, tone) -%}
+{%- set arrow = "▲" if tone == "up" else ("▼" if tone in ("down","down-bad") else "•") -%}
+<span class="gc-delta gc-delta--{{ tone }}">{{ arrow }} {{ value }}</span>
+{%- endmacro %}
+
+{% macro dot(tone) -%}
+<span class="gc-dot gc-dot--{{ tone }}"></span>
+{%- endmacro %}
+
+{# Sparkline expects a pre-computed points string + filled-area polygon string,
+   produced by the helper in app/services/sparkline.py to avoid Jinja-side math. #}
+{% macro sparkline(spark, width=80, height=24, color=none) -%}
+{%- set stroke = color or "var(--gc-accent)" -%}
+<span class="gc-spark" style="width:{{ width }}px;height:{{ height }}px">
+  <svg viewBox="0 0 {{ width }} {{ height }}" width="{{ width }}" height="{{ height }}" style="display:block">
+    <polyline fill="none" stroke="{{ stroke }}" stroke-width="1.5" stroke-linejoin="round" points="{{ spark.points }}"/>
+    <polygon fill="{{ stroke }}" fill-opacity="0.10" points="{{ spark.area }}"/>
+  </svg>
+</span>
+{%- endmacro %}
+
+{% macro card_header(eyebrow_text, title, action="") -%}
+<div class="gc-card-header">
+  <div class="gc-card-header-left">
+    {{ eyebrow(eyebrow_text) }}
+    <div class="gc-card-title">{{ title }}</div>
+  </div>
+  {% if action %}<div class="gc-card-action">{{ action }}</div>{% endif %}
+</div>
+{%- endmacro %}

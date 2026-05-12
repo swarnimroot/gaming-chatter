@@ -31,6 +31,13 @@ _ALLOWED_CATEGORIES = {
     "news", "leak", "launch", "industry", "community", "opinion", "patch", "review",
 }
 
+GENRES = {"Action","Adventure","RPG","Shooter","Strategy","Simulation",
+          "Sports","Racing","Fighting","MMO","Survival-horror","Indie/Roguelike"}
+PLATFORMS = {"PC","PlayStation","Xbox","Nintendo","Mobile","Multi-platform"}
+EVENTS = {"Summer Game Fest","Gamescom","Tokyo Game Show","The Game Awards",
+          "State of Play","Nintendo Direct","Xbox Showcase","PC Gaming Show",
+          "EVO","BlizzCon","Future Games Show","Other-showcase"}
+
 
 class Entities(BaseModel):
     games: list[str] = Field(default_factory=list)
@@ -51,6 +58,30 @@ class EnrichmentData(BaseModel):
     category: str
     sentiment_score: float
     sentiment_summary: str
+    genres: list[str] = Field(default_factory=list)
+    platforms: list[str] = Field(default_factory=list)
+    event: Optional[str] = None
+
+    @field_validator("genres", mode="before")
+    @classmethod
+    def _filter_genres(cls, v):
+        if not isinstance(v, list):
+            return []
+        return [g for g in v if isinstance(g, str) and g in GENRES][:3]
+
+    @field_validator("platforms", mode="before")
+    @classmethod
+    def _filter_platforms(cls, v):
+        if not isinstance(v, list):
+            return []
+        return [p for p in v if isinstance(p, str) and p in PLATFORMS]
+
+    @field_validator("event", mode="before")
+    @classmethod
+    def _filter_event(cls, v):
+        if isinstance(v, str) and v in EVENTS:
+            return v
+        return None
 
 
 SYSTEM_PROMPT = """You are an analyst summarizing a single gaming-news item for a personal aggregator.
@@ -61,12 +92,68 @@ Return ONLY valid JSON with these fields:
 - category: exactly one of: news, leak, launch, industry, community, opinion, patch, review.
 - sentiment_score: number from -1 (very negative) to 1 (very positive). 0 = neutral.
 - sentiment_summary: one short sentence (<=15 words) explaining the sentiment.
+- genres: array (max 3) of strings from the genres taxonomy below. [] if not about a specific game.
+- platforms: array of strings from the platforms taxonomy below. [] if no platform mentioned.
+- event: one string from the events taxonomy below, or null. null unless reporting from a listed event.
 
 Rules:
 - Do not invent facts. If the body is short, give a short tldr.
 - "industry" = business / layoffs / acquisitions / regulation. "community" = drama, controversy, fan reactions. "patch" = updates / bug fixes / balance changes. "review" = critical assessment of a released game / hardware.
 - entities.people: only real named people (devs, executives, journalists, voice actors). Never include Reddit usernames, commenter handles, anonymous accounts, or names that look like underscored handles (e.g. "Responsible_Box_2422").
-- Output JSON only. No prose, no code fences, no commentary."""
+
+- genres taxonomy (most-defining first, max 3):
+    [Action, Adventure, RPG, Shooter, Strategy, Simulation, Sports, Racing,
+     Fighting, MMO, Survival-horror, Indie/Roguelike]
+  If the game blends genres (e.g. action-RPG), pick the 2-3 most defining; do NOT list all.
+
+- platforms taxonomy:
+    [PC, PlayStation, Xbox, Nintendo, Mobile, Multi-platform]
+  List each named platform individually (e.g. a PC + PS5 game -> ["PC","PlayStation"]).
+  Use "Multi-platform" ONLY when the source explicitly says "cross-platform" or "multi-platform"
+  without naming specific platforms.
+
+- events taxonomy:
+    [Summer Game Fest, Gamescom, Tokyo Game Show, The Game Awards, State of Play,
+     Nintendo Direct, Xbox Showcase, PC Gaming Show, EVO, BlizzCon, Future Games Show,
+     Other-showcase]
+  Set ONLY if the article is reporting from or directly about one of these events.
+  A trailer that "premiered at Summer Game Fest" -> event="Summer Game Fest".
+  A generic patch note with no event context -> event=null.
+  Unknown showcases / minor publisher streams -> event="Other-showcase".
+
+Out-of-taxonomy rule: if a value doesn't fit the lists above, OMIT it.
+Do NOT map "MOBA"->"Strategy", do NOT map "Switch"->"Nintendo" (model: just output "Nintendo"),
+do NOT map "Linux/Steam Deck"->"PC" (omit it).
+
+Worked examples:
+  - Helldivers 2 warbond patch (PC + PS5) ->
+      genres=["Shooter"], platforms=["PC","PlayStation"], event=null
+  - Final Fantasy XVI PC port announced at State of Play ->
+      genres=["RPG","Action"], platforms=["PC"], event="State of Play"
+  - Vampire Survivors crossover DLC ->
+      genres=["Indie/Roguelike"], platforms=["Multi-platform"], event=null
+  - EA Q1 layoffs report (no specific game) ->
+      genres=[], platforms=[], event=null
+  - Reddit thread on a leaked MOBA project ->
+      genres=[], platforms=[], event=null   (MOBA not in taxonomy -> drop)
+  - Game Awards 2025 winners recap ->
+      genres=[], platforms=[], event="The Game Awards"
+
+Output JSON only. No prose, no code fences, no commentary."""
+
+
+def _enrichment_json_schema() -> dict:
+    """Build a JSON schema for Ollama structured-output constrained decoding.
+
+    Derived from EnrichmentData.model_json_schema() but with all 8 fields marked
+    required so the model cannot silently omit genres/platforms/event.
+    """
+    schema = EnrichmentData.model_json_schema()
+    schema["required"] = [
+        "tldr", "entities", "category", "sentiment_score", "sentiment_summary",
+        "genres", "platforms", "event",
+    ]
+    return schema
 
 
 def _truncate(text: str, cap: int) -> tuple[str, bool]:
@@ -118,7 +205,7 @@ def enrich_item(title: str, body: str, source_label: str) -> EnrichmentData:
         "model": OLLAMA_ENRICH_MODEL,
         "prompt": user_prompt,
         "system": SYSTEM_PROMPT,
-        "format": "json",
+        "format": _enrichment_json_schema(),
         "stream": False,
         "keep_alive": OLLAMA_KEEP_ALIVE,
         "options": {
@@ -146,6 +233,154 @@ def enrich_item(title: str, body: str, source_label: str) -> EnrichmentData:
         raise ValueError(f"sentiment_score out of range: {data.sentiment_score}")
 
     return data
+
+
+class GameTagData(BaseModel):
+    lifecycle: Optional[str] = None      # 'existing' | 'upcoming' | None
+    live_service: Optional[bool] = None  # True | False | None
+
+    @field_validator("lifecycle", mode="before")
+    @classmethod
+    def _filter_lifecycle(cls, v):
+        return v if v in {"existing", "upcoming"} else None
+
+
+def _game_tag_json_schema() -> dict:
+    schema = GameTagData.model_json_schema()
+    schema["required"] = ["lifecycle", "live_service"]
+    return schema
+
+
+GAME_TAG_SYSTEM_PROMPT = """You are a game-tagging specialist for a gaming-news aggregator.
+
+Given a single game name, return ONLY valid JSON with these two fields:
+- lifecycle: one of "existing", "upcoming", or null.
+- live_service: one of true, false, or null.
+
+Lifecycle rules:
+- "existing" = the game has been released on at least one platform anywhere.
+  Early access counts as released. Remasters/remakes are existing.
+  A cross-platform-delay item where one platform shipped is still existing.
+- "upcoming" = the game has NOT been released on any platform yet.
+- null = you genuinely don't recognize the game or cannot tell.
+
+Live-service rules:
+- true = the game has a seasonal / battle-pass / league / warbond content model
+  with regular content drops. MMOs ARE live-service.
+- false = single-player or one-time-purchase titles, even if they have DLC.
+  Episodic story games are NOT live-service. Roguelikes with one-time content are NOT.
+- null = unknown / cannot tell.
+
+Worked examples:
+- "Helldivers 2" -> {"lifecycle": "existing", "live_service": true}
+- "Fortnite" -> {"lifecycle": "existing", "live_service": true}
+- "World of Warcraft" -> {"lifecycle": "existing", "live_service": true}
+- "The Witcher 3" -> {"lifecycle": "existing", "live_service": false}
+- "Baldur's Gate 3" -> {"lifecycle": "existing", "live_service": false}
+- "GTA VI" -> {"lifecycle": "upcoming", "live_service": null}
+- "Mina the Hollower" -> {"lifecycle": "upcoming", "live_service": false}
+- "Pragmata" -> {"lifecycle": "existing", "live_service": false}
+- "Vampire Survivors" -> {"lifecycle": "existing", "live_service": false}
+- "Some Random Indie Nobody Has Heard Of" -> {"lifecycle": null, "live_service": null}
+
+Output JSON only. No prose, no code fences, no commentary."""
+
+
+def tag_game(game_name: str) -> GameTagData:
+    """Call Ollama to tag a single game with lifecycle + live_service flags.
+
+    Raises on transport / parse / schema failure. Caller decides whether to
+    log+skip or fail.
+    """
+    log.info("tag_game: %s", game_name)
+    user_prompt = f"Game: {game_name}"
+    payload = {
+        "model": OLLAMA_ENRICH_MODEL,
+        "prompt": user_prompt,
+        "system": GAME_TAG_SYSTEM_PROMPT,
+        "format": _game_tag_json_schema(),
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "options": {
+            "num_ctx": OLLAMA_NUM_CTX,
+            "temperature": 0.2,
+        },
+    }
+    r = httpx.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=180.0)
+    r.raise_for_status()
+    response_text = r.json().get("response", "")
+    log.debug("tag_game response for %s: %s", game_name, response_text)
+
+    try:
+        raw = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"ollama tag_game returned non-JSON: {response_text[:200]!r}") from e
+
+    try:
+        data = GameTagData(**raw)
+    except ValidationError as e:
+        raise ValueError(f"ollama tag_game JSON failed schema: {e}") from e
+
+    return data
+
+
+CLUSTER_LABEL_SYSTEM_PROMPT = """You label a group of gaming-news articles that all cover the same story or topic.
+
+Return ONLY valid JSON: {"label": "<short phrase>"}
+
+Rules:
+- 4-10 words, plain prose, neutral tone. No marketing voice, no quotes, no trailing punctuation.
+- Name the actual subject (game, company, event), not meta-words like "articles" or "news".
+- Examples of good labels:
+  - "Mixtape indie game critical reception"
+  - "Greedfall studio Spiders shutting down"
+  - "Star Fox 64 remake announced for Switch 2"
+  - "Steam Controller restock after sellout"
+  - "Sony rolls out PlayStation age verification UK"
+- Output JSON only. No prose, no code fences, no commentary."""
+
+
+def label_cluster(titles: list[str], tldrs: list[str]) -> str:
+    """Generate a single-line label for a cluster from its member titles + tldrs.
+
+    Caller decides how many examples to pass; this function does not subsample.
+    Raises on transport / parse / schema failure.
+    """
+    lines = []
+    for t, s in zip(titles, tldrs):
+        title = (t or "").strip()
+        tldr = (s or "").strip()
+        if title and tldr:
+            lines.append(f"- {title}\n  {tldr}")
+        elif title:
+            lines.append(f"- {title}")
+    user_prompt = "Articles in this cluster:\n\n" + "\n".join(lines)
+
+    payload = {
+        "model": OLLAMA_ENRICH_MODEL,
+        "prompt": user_prompt,
+        "system": CLUSTER_LABEL_SYSTEM_PROMPT,
+        "format": "json",
+        "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
+        "options": {
+            "num_ctx": OLLAMA_NUM_CTX,
+            "temperature": 0.2,
+        },
+    }
+    r = httpx.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=120.0)
+    r.raise_for_status()
+    response_text = r.json().get("response", "")
+
+    try:
+        raw = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"ollama label returned non-JSON: {response_text[:200]!r}") from e
+
+    label = raw.get("label", "")
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError(f"ollama label missing/empty: {raw!r}")
+    return label.strip()
 
 
 def embed_text(text: str) -> bytes:

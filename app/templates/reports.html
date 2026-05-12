@@ -1,0 +1,407 @@
+{# Standalone — does NOT extend base.html. The design has its own shell. #}
+{% from "_components.html" import eyebrow, source_pill, source_row, freshness,
+   meter, signal_cluster, mini_bar, delta, dot, sparkline, card_header %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gaming Chatter — Weekly Read-out</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="gc-shell-body">
+<div class="gc-shell">
+
+  {# ===== Sidebar ===== #}
+  <aside class="gc-sidebar">
+    <div class="gc-sb-logo">
+      <img src="/static/img/alienware-head-light.svg" alt="">
+      <div class="gc-sb-logo-name">Gaming Chatter</div>
+    </div>
+    <div class="gc-sb-tagline">Personal news intelligence</div>
+
+    <div class="gc-sb-section-label">Read-out</div>
+    <div class="gc-sb-week-list">
+      {% for w in weeks_index %}
+        <a href="?week={{ w.key }}" class="gc-sb-week{% if w.is_active %} is-active{% endif %}">
+          <span class="gc-sb-week-label">{{ w.label }}</span>
+          <span class="gc-sb-week-range">{{ w.range }}</span>
+        </a>
+      {% endfor %}
+    </div>
+
+    <div class="gc-sb-divider"></div>
+    <div class="gc-sb-section-label">Navigate</div>
+    <div class="gc-sb-nav">
+      {% for n in nav_items %}
+        <a href="#" class="gc-sb-nav-item{% if n.is_active %} is-active{% endif %}">
+          <i data-lucide="{{ n.icon }}"></i>{{ n.label }}
+        </a>
+      {% endfor %}
+    </div>
+
+    <div class="gc-sb-bottom">
+      <button class="gc-sb-cta">
+        <i data-lucide="file-text"></i>Generate exec summary
+      </button>
+      <div class="gc-sb-user">
+        <div class="gc-sb-avatar">{{ user.initials }}</div>
+        <div>
+          <div class="gc-sb-user-name">{{ user.name }}</div>
+          <div class="gc-sb-user-meta">{{ source_count }} sources</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  {# ===== Main column ===== #}
+  <div class="gc-main">
+
+    {# ----- Header ----- #}
+    <header class="gc-header">
+      <div>
+        <div class="gc-header-eyebrow">Weekly read-out</div>
+        <h1 class="gc-header-title">{{ week.label }}</h1>
+        <div class="gc-header-meta">
+          {{ week.range }} &middot; {{ week.summary.stats.stories }} stories &middot; refreshed {{ refreshed_at }}
+        </div>
+      </div>
+      <div class="gc-header-actions">
+        <div class="gc-segmented">
+          <button class="is-active"><i data-lucide="layout-grid"></i>Grid</button>
+        </div>
+        <button class="gc-toolbar-btn"><i data-lucide="maximize-2"></i>Comfortable</button>
+        <button class="gc-icon-btn" title="Theme"><i data-lucide="moon"></i></button>
+        <button class="gc-cta"><i data-lucide="file-text"></i>Exec summary</button>
+      </div>
+    </header>
+
+    {# ----- Scroll area ----- #}
+    <div class="gc-scroll">
+
+      <div class="gc-headline-block">
+        <div class="gc-headline-eyebrow">The headline</div>
+        <h2 class="gc-headline">{{ week.summary.headline }}</h2>
+      </div>
+
+      <div class="gc-grid">
+
+        {# 1. Week overview #}
+        {% set wk = week.cards.week %}
+        {% set max_genre = wk.top_genres | map(attribute=1) | max %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("This week in gaming", wk.stories ~ " stories tracked") }}
+            <div class="gc-stats-row">
+              <div>{{ eyebrow("Sources") }}<div class="gc-stat-value">{{ wk.sources }}</div></div>
+              <div>{{ eyebrow("Threads") }}<div class="gc-stat-value">{{ "{:,}".format(wk.threads) }}</div></div>
+            </div>
+            {{ eyebrow("Top genres mentioned") }}
+            <div class="gc-genres">
+              {% for name, value in wk.top_genres %}
+              <div class="gc-genre-row">
+                <span class="gc-genre-name">{{ name }}</span>
+                {{ mini_bar(value, max_genre) }}
+                <span class="gc-genre-pct">{{ value }}%</span>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="gc-net-sent">
+              {{ eyebrow("Net sentiment") }}
+              <span class="gc-net-sent-value"
+                    style="color: {% if wk.sentiment > 5 %}var(--gc-success){% elif wk.sentiment < -5 %}var(--gc-danger){% else %}var(--gc-fg2){% endif %}">
+                {% if wk.sentiment > 0 %}+{% endif %}{{ wk.sentiment }} &middot;
+                {% if wk.sentiment > 5 %}Net positive{% elif wk.sentiment < -5 %}Net negative{% else %}Mixed{% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {# 2. Biggest story (spans 2) #}
+        {% set big = week.cards.biggest %}
+        <div class="gc-span-2">
+          <div class="gc-card">
+            {{ card_header(
+                 "Biggest story",
+                 '<span style="display:inline-flex;align-items:center;gap:8px"><span class="gc-rank-badge">#1</span><span class="gc-fresh"><span class="gc-fresh-dot"></span><span>' ~ big.first_seen ~ '</span></span></span>'|safe
+               ) }}
+            <h3 class="gc-big-title" style="font-size:20px">{{ big.title }}</h3>
+            <p class="gc-big-dek">{{ big.dek }}</p>
+            <div class="gc-big-meta">
+              <div class="gc-big-meta-left">
+                {{ sparkline(big.spark_path, 100, 28) }}
+                <div class="gc-big-spark-meta">
+                  <div>{{ big.threads }} threads</div>
+                  <div>velocity ↑↑</div>
+                </div>
+              </div>
+              {{ signal_cluster(big.heat, big.confidence, big.relevance) }}
+            </div>
+            <div class="gc-big-footer">
+              {{ source_row(big.sources, sources_meta) }}
+              <button class="gc-ghost-link">Read in detail →</button>
+            </div>
+          </div>
+        </div>
+
+        {# 3. Hottest games #}
+        {% set hot = week.cards.hottest %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Hottest games", "Heat & momentum", hot|length ~ " tracked") }}
+            <div class="gc-row-list">
+              {% for g in hot %}
+              <div class="gc-row gc-row--hottest">
+                <span class="gc-row-rank">{{ "%02d"|format(loop.index) }}</span>
+                <div>
+                  <div class="gc-row-title">{{ g.title }}</div>
+                  <div class="gc-row-sub">{{ g.studio }} &middot; {{ g.platform }}</div>
+                  <div class="gc-row-note">{{ g.reason }}</div>
+                </div>
+                <div class="gc-heat-cell">
+                  <div class="gc-heat-track"><div class="gc-heat-fill" style="width:{{ g.heat }}%"></div></div>
+                  <span class="gc-heat-value">{{ g.heat }}</span>
+                </div>
+                {{ delta(g.delta, g.delta_tone) }}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 4. Market momentum #}
+        {% set mo = week.cards.momentum %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Market momentum", "Platforms · 7-day") }}
+            <div class="gc-momentum-grid">
+              {% for cell in mo %}
+              <div class="gc-momentum-cell">
+                {{ eyebrow(cell.label) }}
+                <div class="gc-momentum-row">
+                  <div class="gc-momentum-val">{{ cell.value }}</div>
+                  {{ sparkline(cell.spark_path, 56, 20, cell.color) }}
+                </div>
+                <div class="gc-momentum-delta" style="color:{{ cell.color }}">{{ cell.delta }}</div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 5. Trends WoW (compact, no MoM tab — locked single view) #}
+        {% set tr = week.cards.trends.wow %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Trends", "What's moving",
+                 '<div class="gc-trend-tabs"><button class="is-active">WoW</button><button>MoM</button></div>'|safe) }}
+            <div class="gc-row-list">
+              {% for row in tr %}
+              <div class="gc-row gc-row--trend">
+                <span style="font-size:13px;color:var(--gc-fg)">{{ row.label }}</span>
+                {{ delta(row.value, row.tone) }}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 6. Community sentiment #}
+        {% set co = week.cards.community %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Community sentiment", "Reddit + ResetEra pulse") }}
+            <div style="margin-bottom:16px">
+              <div class="gc-sent-bar">
+                <div class="seg-pos" style="width:{{ co.positive }}%"></div>
+                <div class="seg-neu" style="width:{{ co.neutral }}%"></div>
+                <div class="seg-neg" style="width:{{ co.negative }}%"></div>
+              </div>
+              <div class="gc-sent-legend">
+                <span class="pos">● {{ co.positive }}% positive</span>
+                <span>● {{ co.neutral }}% neutral</span>
+                <span class="neg">● {{ co.negative }}% negative</span>
+              </div>
+            </div>
+            {{ eyebrow("Top threads") }}
+            <div class="gc-row-list" style="margin-top:6px">
+              {% for th in co.top_threads %}
+              <div class="gc-row gc-row--thread">
+                <button class="gc-sub-pill">{{ th.sub }}</button>
+                <span style="font-size:12px;color:var(--gc-fg);text-wrap:pretty">{{ th.title }}</span>
+                <span class="gc-thread-score">↑{{ th.score }}</span>
+                <span class="gc-thread-sentiment {% if th.sentiment > 5 %}gc-thread-sentiment--pos{% elif th.sentiment < -5 %}gc-thread-sentiment--neg{% else %}gc-thread-sentiment--neu{% endif %}">
+                  {% if th.sentiment > 0 %}+{% endif %}{{ th.sentiment }}
+                </span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 7. Industry risks #}
+        {% set risks = week.cards.risks %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Industry risks", "What's wobbling") }}
+            <div class="gc-risks">
+              {% for r in risks %}
+              <div class="gc-risk">
+                <div class="gc-risk-bar gc-risk-bar--{{ r.level }}"></div>
+                <div class="gc-risk-body">
+                  <div class="gc-risk-head">
+                    <span class="gc-risk-title">{{ r.title }}</span>
+                    <span class="gc-sev-badge gc-sev-badge--{{ r.level }}">{{ r.level }}</span>
+                    <span class="gc-risk-trend">{{ r.trend }}</span>
+                  </div>
+                  <div class="gc-risk-note">{{ r.note }}</div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 8. Studio watch #}
+        {% set studios = week.cards.studios %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Studio watch", "Layoffs · hires · M&A") }}
+            <div class="gc-row-list">
+              {% for s in studios %}
+              <div class="gc-row gc-row--studio">
+                <div style="margin-top:4px">{{ dot(s.tone) }}</div>
+                <div>
+                  <div class="gc-row-title">{{ s.studio }}</div>
+                  <div class="gc-row-event">{{ s.event }}</div>
+                </div>
+                <span class="gc-row-day" style="text-align:right">{{ s.date }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 9. Platforms #}
+        {% set platforms = week.cards.platforms %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Storefronts", "Steam · Game Pass · PSN · Epic · Nintendo") }}
+            <div class="gc-row-list">
+              {% for p in platforms %}
+              <div class="gc-row gc-row--platform">
+                <span class="gc-row-platform-name">{{ p.name }}</span>
+                <span class="gc-row-event">{{ p.change }}</span>
+                <span class="gc-row-impact gc-row-impact--{{ p.impact }}">{{ p.impact }}</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 10. Esports & streaming #}
+        {% set es = week.cards.esports %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Esports & streaming", "Pulse") }}
+            <div class="gc-es-grid">
+              <div class="gc-es-cell">
+                {{ eyebrow("Top stream") }}
+                <div class="gc-es-headline">{{ es.top_stream.game }}</div>
+                <div class="gc-es-sub">{{ es.top_stream.hrs }} &middot; {{ es.top_stream.delta }}</div>
+              </div>
+              <div class="gc-es-cell">
+                {{ eyebrow("Big event") }}
+                <div class="gc-es-headline">{{ es.big_event.name }}</div>
+                <div class="gc-es-sub">peak {{ es.big_event.peak }}</div>
+              </div>
+            </div>
+            {{ eyebrow("Movers") }}
+            <div class="gc-row-list" style="margin-top:6px">
+              {% for m in es.movers %}
+              <div class="gc-row gc-row--mover">
+                <div>
+                  <div class="gc-row-title">{{ m.game }}</div>
+                  <div class="gc-row-sub">{{ m.note }}</div>
+                </div>
+                {{ delta(m.delta, m.delta_tone) }}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 11. Release radar #}
+        {% set releases = week.cards.releases %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Release radar", "Upcoming launches") }}
+            <div class="gc-row-list">
+              {% for r in releases %}
+              <div class="gc-row gc-row--release">
+                <div class="gc-row-date">{{ r.date }}</div>
+                <div>
+                  <div class="gc-row-title">{{ r.title }}</div>
+                  <div class="gc-row-sub">{{ r.platform }}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <div class="gc-thin-track"><div class="gc-thin-fill" style="width:{{ r.hype }}%"></div></div>
+                  <span style="font-size:10px;color:var(--gc-fg3);font-variant-numeric:tabular-nums;min-width:20px;text-align:right">{{ r.hype }}</span>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 12. Drama #}
+        {% set drama = week.cards.drama %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Controversy tracker", "Drama · receipts · what's brewing") }}
+            <div class="gc-drama-list">
+              {% for d in drama %}
+              <div class="gc-drama gc-drama--{{ d.severity }}">
+                <div class="gc-drama-head">
+                  <span class="gc-drama-sev gc-drama-sev--{{ d.severity }}">● {{ d.severity }}</span>
+                  <span class="gc-drama-title">{{ d.title }}</span>
+                </div>
+                <div class="gc-drama-recap">{{ d.recap }}</div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        {# 13. Watch next week #}
+        {% set watch = week.cards.watch %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Watch next week", "Things to track") }}
+            <div class="gc-row-list">
+              {% for w in watch %}
+              <div class="gc-row gc-row--watch">
+                <span class="gc-row-day">{{ w.day }}</span>
+                <span class="gc-row-item">{{ w.item }}</span>
+                <button class="gc-add-btn" title="Add reminder">+</button>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+      </div>{# /gc-grid #}
+
+      <div class="gc-footer-hint">
+        <span>Drag any card to reorder · click a source pill to drill down</span>
+        <button class="gc-ghost-btn">Generate exec summary →</button>
+      </div>
+    </div>{# /gc-scroll #}
+
+  </div>{# /gc-main #}
+</div>{# /gc-shell #}
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

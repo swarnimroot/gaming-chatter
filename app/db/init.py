@@ -24,10 +24,38 @@ def _migrate_enrichments_columns() -> None:
         if "error" not in cols:
             conn.execute(text("ALTER TABLE enrichments ADD COLUMN error TEXT"))
             log.info("migrated enrichments: added error column")
+        if "genres" not in cols:
+            conn.execute(text("ALTER TABLE enrichments ADD COLUMN genres TEXT"))
+            log.info("migrated enrichments: added genres column")
+        if "platforms" not in cols:
+            conn.execute(text("ALTER TABLE enrichments ADD COLUMN platforms TEXT"))
+            log.info("migrated enrichments: added platforms column")
+        if "event" not in cols:
+            conn.execute(text("ALTER TABLE enrichments ADD COLUMN event TEXT"))
+            log.info("migrated enrichments: added event column")
+
+
+def _migrate_clusters_columns() -> None:
+    """Idempotent ALTER for Phase 3b ranking columns.
+
+    Existing rows get NULL until cluster_window re-runs for their week_id.
+    """
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(clusters)"))}
+        if "source_count" not in cols:
+            conn.execute(text("ALTER TABLE clusters ADD COLUMN source_count INTEGER"))
+            log.info("migrated clusters: added source_count column")
+        if "latest_published_at" not in cols:
+            conn.execute(text("ALTER TABLE clusters ADD COLUMN latest_published_at TIMESTAMP"))
+            log.info("migrated clusters: added latest_published_at column")
+        if "score" not in cols:
+            conn.execute(text("ALTER TABLE clusters ADD COLUMN score REAL"))
+            log.info("migrated clusters: added score column")
 
 
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_enrichments_columns()
+    _migrate_clusters_columns()
     inserted = seed_sources()
     log.info("db ready (seeded %d new sources)", inserted)

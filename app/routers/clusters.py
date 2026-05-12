@@ -1,0 +1,92 @@
+import json
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlmodel import Session, col, select
+
+from app.config import TEMPLATES_DIR
+from app.db.models import Cluster, Item, Source
+from app.db.session import get_session
+from app.services.cluster import cluster_window
+
+router = APIRouter()
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+@router.post("/clusters/run")
+def clusters_run(
+    bg: BackgroundTasks,
+    week_id: str = "all",
+    sync: bool = False,
+):
+    """Run clustering over all ok-enriched items, persisting under `week_id`."""
+    if sync:
+        return JSONResponse(cluster_window(week_id=week_id))
+    bg.add_task(cluster_window, week_id=week_id)
+    return RedirectResponse(f"/clusters?week_id={week_id}", status_code=303)
+
+
+@router.get("/clusters")
+def clusters_view(
+    request: Request,
+    week_id: str = "all",
+    session: Session = Depends(get_session),
+):
+    clusters = session.exec(
+        select(Cluster)
+        .where(Cluster.week_id == week_id)
+        .order_by(Cluster.score.desc().nulls_last(), Cluster.member_count.desc())
+    ).all()
+
+    all_member_ids: set[int] = set()
+    cluster_member_ids: list[list[int]] = []
+    for c in clusters:
+        try:
+            ids = json.loads(c.member_item_ids or "[]")
+        except json.JSONDecodeError:
+            ids = []
+        cluster_member_ids.append(ids)
+        all_member_ids.update(ids)
+
+    items_by_id: dict[int, Item] = {}
+    sources_by_id: dict[int, Source] = {}
+    if all_member_ids:
+        items = session.exec(
+            select(Item).where(col(Item.id).in_(list(all_member_ids)))
+        ).all()
+        items_by_id = {it.id: it for it in items if it.id is not None}
+        source_ids = {it.source_id for it in items}
+        if source_ids:
+            sources = session.exec(
+                select(Source).where(col(Source.id).in_(list(source_ids)))
+            ).all()
+            sources_by_id = {s.id: s for s in sources if s.id is not None}
+
+    enriched = []
+    for c, member_ids in zip(clusters, cluster_member_ids):
+        members = []
+        seen_sources: set[int] = set()
+        for iid in member_ids:
+            it = items_by_id.get(iid)
+            if it is None:
+                continue
+            members.append(it)
+            seen_sources.add(it.source_id)
+        members.sort(key=lambda it: it.published_at or it.id, reverse=True)
+        enriched.append({
+            "cluster": c,
+            "members": members,
+            "source_count": len(seen_sources),
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "clusters.html",
+        {
+            "clusters": enriched,
+            "sources_by_id": sources_by_id,
+            "week_id": week_id,
+        },
+    )

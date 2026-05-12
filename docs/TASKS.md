@@ -15,7 +15,7 @@ Phased build plan. Check off as work moves. **End of Phase 3 = working product.*
 - [x] Sources page (`/sources`) — read-only list view for now
 - [x] Dashboard placeholder (`/`)
 - [x] Basic Jinja layout + HTMX include from CDN (htmx 2.0.3 via unpkg)
-- [ ] Port UI template from claude.ai/design once delivered — **blocked: awaiting external delivery**
+- [x] Port UI template from claude.ai/design once delivered — **delivered + ported 2026-05-11.** `/reports` renders all 13 cards from the design's `cards.jsx` with placeholder data and the four locked variants (grid + comfortable + light + orange `#D9682B`). Standalone template — does not affect existing pages. Section trim + real-data wiring is Phase 3c walkthrough work. See SESSION_LOG 2026-05-11 + DECISIONS 2026-05-11.
 - [x] Create `CHANGELOG.md` with first entry
 
 ## Phase 1 — Manual ingest end-to-end
@@ -51,16 +51,74 @@ Phase 2's 200-char skip threshold dropped 17.5% of corpus (173/988). Sampling sh
 
 ## Phase 3 — Clustering + synthesis report
 
-- [ ] Cosine clustering of weekly enriched items (numpy)
-- [ ] Per-cluster label generation (local Ollama)
-- [ ] Cluster ranking heuristic (cross-source × signal × recency)
-- [ ] Define "industry risks" rubric (deferred from design)
-- [ ] Define "community sentiment" rubric (deferred from design)
-- [ ] Anthropic synthesis prompt with all 7 report sections
+- [x] Cosine clustering of weekly enriched items (numpy) — `app/services/cluster.py`. Connected-components on a thresholded similarity graph at **0.85** (locked after exploration on the 908-item corpus; see DECISIONS.md 2026-05-07). 63 clusters / 157 clustered items on first run.
+- [x] Per-cluster label generation (local Ollama) — `label_cluster()` in `app/services/ollama.py`, qwen2.5:7b, JSON-mode. ~3s per cluster. 63/63 labelled cleanly on first run.
+- [x] Cluster ranking heuristic (cross-source × signal × recency) — `score = source_count * member_count / (1 + days_since_latest)` persisted on each `clusters` row alongside `source_count` and `latest_published_at`. `/clusters` now sorts by score DESC. Single-source long-tail clusters (YongYea / VG247 / Fallout walkthroughs) all score < 1.0 and sink to the bottom; cross-source stories (Mixtape 5×5, Griffin Fund 4×5, Take-Two 4×4, Star Fox 4×4) dominate the top. See DECISIONS 2026-05-08.
+- [x] Define "industry risks" rubric — **locked 2026-05-11:** layoffs/closures + regulation/legal/policy. Excludes broader market structural shifts and consumer-side pressures. See DECISIONS 2026-05-11.
+- [x] Define "community sentiment" rubric — **locked 2026-05-11:** Reddit-only hybrid. Numeric `mean(sentiment_score)` over Reddit-source cluster members + 2–3 `sentiment_summary` excerpts. See DECISIONS 2026-05-11.
+- [x] Lock synthesis model — **Opus 4.7** (`claude-opus-4-7`), once weekly, prompt-cached system block. See DECISIONS 2026-05-11.
+- [x] Port claude.ai/design UI template to `/reports` (placeholder data) — see SESSION_LOG + CHANGELOG 2026-05-11.
+- [x] **Walk `/reports` section-by-section with user** to lock keep/drop/rework of the 13 cards + 6 sidebar nav items + header chrome + footer hint. Decide also: port the `exec-summary` modal and `SourceDrawer` side panel from the bundle, or drop them. — **Done 2026-05-12.** Walkthrough drove the re-scope below: Card 1 dropped, Studio Watch + Storefronts folded into MM, Trends restored as a 5-tab card, exec-summary modal + SourceDrawer kept. Drove Phase 3c.0 tagging foundation.
+
+### Phase 3c.0 — Tagging foundation
+
+- [x] Schema migration: add `genres TEXT`, `platforms TEXT`, `event TEXT` columns to `enrichments` (multi-valued stored as JSON arrays); add new `games` dim table with `name TEXT PK`, `lifecycle TEXT`, `live_service INTEGER` (boolean). — **DONE 2026-05-12.** Idempotent migration in `app/db/init.py` (extended `_migrate_enrichments_columns`); `Game` SQLModel added to `app/db/models.py`. Verified via PRAGMA + double-run `init_db()`.
+- [x] Extend Ollama enrichment prompt with 3 new structured fields (`genres[]`, `platforms[]`, `event`); add worked examples for each taxonomy; cap genres at 3; drop out-of-taxonomy values rather than mapping. — **DONE for code 2026-05-12.** SYSTEM_PROMPT restructured in `app/services/ollama.py`; constrained-decoding via `EnrichmentData.model_json_schema()` passed as `format` (plain `format:"json"` was silently omitting the new fields). Pydantic field validators drop out-of-taxonomy values; genres capped at 3. **Note:** the prompt content itself is reusable but the *calling code* will be ported to Anthropic Haiku 4.5 in Phase 3c.0.5 — see DECISIONS 2026-05-12 (later).
+- [ ] Re-enrich the 908-item backlog with new fields. — **ABORTED 2026-05-12 — to be re-done via Haiku in next session (Phase 3c.0.5).** Started a full re-enrichment; killed after ~25 items due to (a) runtime ~26s/item with structured-output enforcement vs the ~45-min estimate, (b) qwen2.5:7b quality ceiling visible in the 10-item sample (Reddit-handle leak, movie tagged with game genres). ~25–30 items now hold partial qwen rewrites in DB; Haiku rerun will overwrite all 988 uniformly. No rollback needed.
+- [x] Populate `games` dim table: extract unique game names from `entities.games`, run separate Ollama pass tagging each with `lifecycle` (existing/upcoming) + `live_service` (bool) using locked rule (existing = released anywhere; live-service = seasonal/battle-pass/league content model). — **CODE STAGED 2026-05-12, BLOCKED on Haiku backfill.** `scripts/populate_games_dim.py` (new) + `tag_game()` / `GameTagData` / `_game_tag_json_schema()` added to `app/services/ollama.py`. Execution blocked: should run against Haiku-enriched corpus, not the qwen partial.
+- [x] Re-bin items into ISO weeks by `published_at`; replace `week_id='all'` global clustering with per-ISO-week runs. Expect 4-8 synthetic weeks of history from current corpus. — **CODE STAGED 2026-05-12, BLOCKED on Haiku backfill.** `scripts/run_cluster.py` rewritten with argparse + `--per-week` mode iterating ISO weeks via `datetime.fromisocalendar()`. Backward compat preserved (no args → legacy `"all"`). Execution blocked on the Haiku backfill for the same reason as above.
+
+### Phase 3c.0.5 — Anthropic Haiku migration for per-item enrichment
+
+Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of the "Ollama-only for per-item work" lock. See DECISIONS 2026-05-12 (later). Gates the staged Phase 3c.0 execution steps.
+
+- [ ] Design `app/services/anthropic.py` for Haiku-backed enrichment (client setup + prompt caching on the system block + Pydantic structured-output schema + error/retry policy). **Show user the design BEFORE writing code** — the 988-item backfill is the irreversible spend.
+- [ ] Implement `anthropic.py`; refactor `enrich_pending` in `app/services/enrich.py` to call Haiku for the per-item pass (keep embeddings on Ollama).
+- [ ] Run a 10-item Haiku sample, eyeball diff against current qwen output, get user sign-off.
+- [ ] Run the full 988-item backfill via Haiku (~1.5 hours, backgrounded).
+- [ ] Execute the Phase 3c.0 staged steps now unblocked: `scripts/populate_games_dim.py` (consider also moving `tag_game()` to Haiku for consistency) and `scripts/run_cluster.py --per-week`.
+- [ ] Document actual Haiku model version used, observed token costs, and prompt-cache hit rates in DECISIONS.md once the backfill completes.
+
+### Phase 3c.1 — Revisit dropped data with new tags
+
+- [ ] Hottest Games: restore platform + lifecycle columns (was trimmed pre-tagging).
+- [ ] Release Radar: structured release-date extraction from upcoming-tagged games.
+- [ ] Card 1 "This week in gaming" overview: re-evaluate (was dropped) now that top-genres becomes real data.
+
+### Phase 3c.2 — Build Trends card (5 tabs)
+
+- [ ] Games (existing + upcoming sub-blocks)
+- [ ] Genres
+- [ ] Platforms
+- [ ] Live-service
+- [ ] Events
+- [ ] WoW only; top-N by mention-rate delta; click-to-drawer where applicable; clean empty-state for sparse tabs.
+
+### Phase 3c.3 — Port Source Drawer + Exec-summary modal
+
+- [ ] Source Drawer = right-side slide-in panel; opens on Biggest/MM/Risks/etc. row clicks; shows cluster synthesis paragraph + member items with outbound source links.
+- [ ] Exec-summary modal = header CTA opens it; second Anthropic call produces 1-paragraph tldr of the synthesized report.
+
+### Phase 3c.4 — Write Phase 3c synthesis prompt + service
+
+- [ ] `app/services/synthesis.py` — Anthropic Opus 4.7 (`claude-opus-4-7`), prompt-cached system block.
+- [ ] Schema covers 10 sections (Biggest, Hottest, MM, CS, Risks, Esports, Releases, Drama narrow, Watch, Trends) + exec-summary pass.
+- [ ] First run on most-recent ISO week (no longer `week_id='all'`).
+- [ ] Persist markdown + html to `weekly_reports`.
+
+### Phase 3c.5 — Wire `/reports` template to real synthesized data
+
+- [ ] Replace placeholder data in `app/routers/reports.py` with real `weekly_reports` rows.
+- [ ] Apply all locked layout changes (drop Card 1, fold Studio Watch + Storefronts into MM, etc.).
+- [ ] Smoke test end-to-end.
+
+### Phase 3d — Archive + export
+
 - [ ] Markdown → standalone HTML rendering with inlined CSS
 - [ ] "Generate report" manual button
-- [ ] Reports archive view (`/reports`)
+- [ ] Reports archive view — sibling of `/reports/{id}`
 - [ ] Export-as-HTML button
+
 - [ ] **End of Phase 3 = working product.**
 
 ## Phase 4 — Automation

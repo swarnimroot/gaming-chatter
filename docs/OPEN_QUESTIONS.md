@@ -6,7 +6,7 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 ## Pending external delivery
 
-- **UI template** — being built in claude.ai/design. Will be ported to Jinja partials in Phase 0. Until delivered, Phase 0 placeholder templates are minimal.
+- ~~**UI template**~~ — **delivered + ported 2026-05-11.** claude.ai/design bundle for the weekly read-out ported to `/reports` with the locked variants (grid + comfortable + light + orange `#D9682B`). All 13 cards render with placeholder data. Section trim + production-data wiring is the next session's walkthrough work. See SESSION_LOG 2026-05-11.
 - ~~Source list~~ — provided 2026-05-07; populated and verified in `sources.yaml`.
 
 ## Blocked by external party
@@ -15,15 +15,27 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 ## Deferred to relevant phase
 
-- **"Industry risks" rubric** — precise definition (layoffs/regulation/platform vs. consumer-side?) decided in Phase 3 when synthesis prompts are written.
-- **"Community sentiment" rubric** — Reddit-only? Include YouTube comments? Numeric vs. vibe summary? Decided in Phase 3.
-- **Synthesis prompt structure** — section-by-section prompt design + evaluation harness. Phase 3.
+- ~~**"Industry risks" rubric**~~ — **Resolved 2026-05-11.** Layoffs/closures + regulation/legal/policy. See DECISIONS.md.
+- ~~**"Community sentiment" rubric**~~ — **Resolved 2026-05-11.** Reddit-only hybrid: numeric mean over Reddit-source members + 2–3 sentiment_summary excerpts. See DECISIONS.md.
+- **Synthesis prompt structure** — section-by-section prompt design + evaluation harness. **Section list expanded 2026-05-12 to 10** (Biggest / Hottest / MM / Community Sentiment / Industry Risks / Esports / Releases / Drama / Watch / Trends) + an exec-summary pass that produces a 1-paragraph tldr from the synthesized report. Per-section data contract drives Phase 3c.4 work.
+- ~~**Design walkthrough (Phase 3c gating)**~~ — **Resolved 2026-05-12.** Walkthrough drove 13 → 9 cards (Card 1 "This week in gaming" dropped, Card 8 Studio Watch + Card 9 Storefronts folded into MM); chrome stripped (4-route sidebar nav, no header toggles, no footer hint); Card 2 reworked to plural top-3 "Biggest stories"; Card 6 Community Sentiment + Card 10 Esports reframed honestly (no aggregate %, no Twitch metrics); Trends restored as 5-tab card; exec-summary modal + Source Drawer both kept and slated for Phase 3c.3 port. See DECISIONS.md 2026-05-12 + SESSION_LOG.md 2026-05-12 for full lock list.
+- ~~**WoW-Trends section**~~ — **Restored to Phase 3c 2026-05-12.** 5-tab layout locked: Games (sub: existing + upcoming) / Genres / Platforms / Live-service / Events. WoW only (MoM dropped for now). Tagging foundation locked: new `games` dim table (`name PK`, `lifecycle`, `live_service`) + 3 new `enrichments` columns (`genres[]`, `platforms[]`, `event`) + locked taxonomies (Genres ×12, Platforms ×6, Events ×12+Other) + fuzzy rules (existing = released anywhere; live-service = seasonal/battle-pass content model) + multi-value cap 3 genres + drop-don't-map for out-of-taxonomy values. Multi-week corpus from re-binning existing items by `published_at` into ISO weeks. Implementation lives in Phase 3c.0 → 3c.2. See DECISIONS.md 2026-05-12.
 - ~~**Local 14B model selection**~~ — **Resolved 2026-05-07.** Picked `qwen2.5:7b` (not 14B) for Phase 2 — VRAM headroom on the 12GB 5070; 14B reserved if Phase 3 reveals quality regression. See DECISIONS.md.
 - ~~**Embedding model**~~ — **Resolved 2026-05-07.** `nomic-embed-text` (768-dim) confirmed; produces ~20-norm fp32 vectors that cluster reasonably in spot checks.
 - **`tier1.article` in regular ingest vs. remediation pass** — currently kept as a Phase-2.5-style remediation pass after each daily ingest. Reconsider in Phase 3 once cluster quality across recovered-vs-original-body items is observed. Folding into ingest would slow daily runs and increase scrape-rate exposure; leaving as remediation keeps daily ingest fast.
 - **Reddit-link-post resolver** — Phase 2.5 deliberately excludes Reddit URLs from article fetch (trafilatura returns nothing on link-post pages). A `URL.json` resolver could recover ~50–60 of the 72 Reddit-skipped items. Build only if Phase 3 cluster cross-referencing across Reddit ↔ news sites visibly weakens without it; otherwise Reddit link-posts remain accepted duplicates of news-feed coverage.
 - **Phase 3b recency-penalty steepness** — current `score = source_count × member_count / (1 + days_since_latest)` divides by 8 at 7 days, which may under-represent early-week stories in weekly windows. The Spiders studio-closure cluster (5 sources × 5 members, 7 days old) lands at score 2.73 / rank #13 in the 2026-05-08 rerun despite maximal cross-source breadth. Tune to `exp(-days/tau)` or similar **only** if Phase 3c synthesis on a real weekly window shows visible under-representation of mid- and early-week stories. See SESSION_LOG 2026-05-08 + DECISIONS 2026-05-08.
-- **Phase 3c synthesis model: Sonnet 4.6 vs Opus 4.7** — once-weekly run, ~$0.05 vs ~$0.30/run. Opus is the quality moment per PRD ("thoughtful colleague's brief, not aggregator slop"); Sonnet enables cheaper prompt iteration. Decision deferred to start of Phase 3c.
+- ~~**Phase 3c synthesis model: Sonnet 4.6 vs Opus 4.7**~~ — **Resolved 2026-05-11.** Opus 4.7 (`claude-opus-4-7`). Once weekly = ~$15/yr; synthesis is the user-facing quality moment per PRD. See DECISIONS.md.
+
+## Open from 2026-05-12 walkthrough (lock during Phase 3c implementation)
+
+- **Source Drawer layout** — right-side slide-in panel to be ported in Phase 3c.3 from the design bundle's shell. Open: panel width, slide animation timing, click-outside dismissal behavior, content density (full member list vs paginated; full synthesis paragraph vs just member items + sources).
+- **Exec-summary modal layout** — second Anthropic pass produces a 1-paragraph tldr of the synthesized report. Open: modal renders just the summary, or full report + summary together as a "save/print" view? Both are plausible; locks at 3c.3 implementation.
+- **Per-week clustering threshold** — current `CLUSTER_THRESHOLD=0.85` was tuned against the 908-item `week_id='all'` corpus. Per-ISO-week corpora will be much smaller (~150-200 items each). Threshold may need re-tuning since the noise-floor changes with corpus size. Validate during Phase 3c.0 re-bin; re-run `scripts/explore_clustering.py` on a single week before committing the change.
+- **Cluster boundary-spanning de-duplication** — stories that span 2 ISO weeks become 2 clusters in different windows. Small-in-practice based on the 63-cluster eyeball (most concentrate in 1-3 days), but worth checking once per-week clustering runs. Mitigation if needed: a centroid-similarity link pass across adjacent weeks.
+- **Trends "top N" cutoff per tab** — Top 5? Top 10? Or all entries with WoW delta above some threshold? Locks at Phase 3c.2 once real WoW deltas are observable on the re-binned corpus.
+- **Empty-state designs for sparse Trends tabs** — Events tab will frequently be empty (most weeks have no E3 / Summer Game Fest / Gamescom / TGS). Open: render an explicit "No events this week" placeholder, hide the tab entirely when empty, or show it with the "Other-showcase" overflow only. Locks at 3c.2.
+- **Visual monotony in the redesigned grid** — the strip-out left 7-8 cards in a similar "row list of clusters" shape; the original charts/sparklines were stripped as fabrication risks. Either accept the uniform appearance as the price of honesty, or reintroduce *real* visual variation (sentiment bar chips on CS, severity bars on Risks, date strips on Releases) once data exists. Revisit after the 3c.0 tagging foundation lands and we can see how dense each card actually is with real data.
 
 ## Risks to validate during build
 

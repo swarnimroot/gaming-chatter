@@ -4,6 +4,229 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-12 — Phase 3c.0 schema + prompt + code staging; backfill aborted pending Haiku migration
+
+**Done:**
+- **Phase 3c.0 schema migration shipped (DONE).** Added `genres TEXT`, `platforms TEXT`, `event TEXT` columns to the `enrichments` table; created a new `games` dim table (`name TEXT PRIMARY KEY`, `lifecycle TEXT`, `live_service INTEGER`). Idempotent migration done by extending the existing `_migrate_enrichments_columns` helper in `app/db/init.py` (mirrors the pattern used for status/error and the clusters migration). Verified via PRAGMA inspection on the DB; ran `init_db()` twice to confirm idempotency (no double-add errors, no spurious changes).
+- **Extended Ollama enrichment prompt to cover the 3 new fields (DONE, but with a non-trivial fix mid-session).** First attempt at restructuring the SYSTEM_PROMPT to demand `genres[] / platforms[] / event` failed — qwen2.5:7b silently *omitted* the three new fields from JSON output despite explicit instructions and worked examples. Root cause: `format:"json"` in Ollama's API only constrains output to *valid JSON*, it does not enforce *schema conformance*. **Fix:** switched the call from `format:"json"` to constrained-decoding via passing `EnrichmentData.model_json_schema()` directly as the `format` parameter. Had to override `required` on the schema to include `genres`/`platforms`/`event` because they have Pydantic defaults (Ollama treats absence-with-default as "not required → may omit"). After the fix, all 3 fields appear in every sample. Worked-examples for the locked 12-genre / 6-platform / 12-event-plus-Other taxonomies are in the prompt. Pydantic field validators drop out-of-taxonomy values silently; genres capped at 3.
+- **Code staged for steps 4-5 of the next-session plan (DONE, NOT YET EXECUTED):**
+  - **`scripts/populate_games_dim.py` (new).** Extracts unique game names from `enrichments.entities` via `json_each` over the games array, filters to games with ≥2 mentions (config-tunable via `--min-mentions`), then idempotently INSERTs a row per game into the new `games` dim table. `tag_game()` will fill `lifecycle` + `live_service` columns. Flags: `--limit N` (cap rows for sanity runs), `--sample` (print first N games + exit without writing), `--min-mentions N` (default 2).
+  - **`tag_game()` + `GameTagData` Pydantic model + `_game_tag_json_schema()` helper added to `app/services/ollama.py`.** Pattern mirrors `enrich_item()` — constrained-decoding via the Pydantic schema, dedicated `GAME_TAG_SYSTEM_PROMPT` with the locked lifecycle + live-service fuzzy rules and worked examples. Note: this code is now slated for replacement when per-item enrichment moves to Haiku (see Decided below), but the prompt content is reusable.
+  - **`scripts/run_cluster.py` rewritten** with argparse + a new `--per-week` mode. `--per-week` iterates through every ISO week present in `items.published_at` via `datetime.fromisocalendar()` and calls `cluster_window()` per week, replacing the prior `week_id='all'` global clustering. Backward compat preserved: invocation with no args defaults to the legacy `"all"` behavior so prior callers don't break.
+- **Files touched this session:** `app/db/models.py` (added `Game` SQLModel class + the 3 enrichment columns), `app/db/init.py` (extended `_migrate_enrichments_columns`, added the games table create), `app/services/ollama.py` (SYSTEM_PROMPT restructure for new fields + JSON-schema enforcement + `GameTagData` + `tag_game()` + `GAME_TAG_SYSTEM_PROMPT`), `scripts/rerun_enrichment.py` (new — backfill driver), `scripts/populate_games_dim.py` (new), `scripts/run_cluster.py` (rewrite with `--per-week`).
+
+**Decided:**
+Three Anthropic API expansions adopted, all priced inside the user's stated $500/yr ceiling:
+- **Per-item enrichment → Anthropic Haiku 4.5.** Replaces the qwen2.5:7b Ollama path for the per-item enrichment pass. Estimated ~$5–10 one-time for the 988-item backfill + ~$100–200/yr ongoing for ~200 items/week. **This overrides the "Ollama-only for per-item work" architectural lock** from project CLAUDE.md / DECISIONS 2026-05-06 — see DECISIONS 2026-05-12 (later) for the formal entry and the lock-override rationale.
+- **Cluster labels → Anthropic Sonnet 4.6.** Replaces `label_cluster()` Ollama path. Sharper editorial titles for the weekly report's cluster surfaces. ~$10/yr ongoing. Synthesis-adjacent — doesn't itself touch the per-item lock.
+- **Critic/editor pass on synthesis → second Opus 4.7 call** after the main Opus 4.7 synthesis. Standard pattern for tightening long-form output. ~$100/yr ongoing.
+- **Embeddings stay on local Ollama** (`nomic-embed-text` 768-dim). Total Anthropic spend estimate: ~$210–310/yr, comfortably under the $500/yr budget.
+
+Lock-override rationale (concrete evidence, not vibes):
+- **Quality:** today's 10-item structured-output sample exposed qwen2.5:7b quality issues that prompt restructure did NOT fix. Reddit username `Responsible_Box_2422` leaked into `entities.people` despite an explicit negative-example prompt rule against underscored handles. The movie *Minions & Monsters* was tagged with `Indie/Roguelike` — clearly not a game. The three new fields had to be forced into output via JSON-schema constrained decoding; "ask nicely in the prompt" wasn't enough.
+- **Runtime:** structured-output mode pushed qwen2.5:7b to ~26s/item — extrapolated to ~7 hours for the 988-item backfill, vs the originally-estimated 45 min for the non-constrained call. Haiku at ~5s/item ⇒ ~1.5 hours for the same backfill. 4–5× speedup.
+- **Cost:** fits well inside the user's $500/yr ceiling. Tradeoff explicitly acknowledged below.
+- **Tradeoff:** core ingest pipeline now depends on a working Anthropic API key + network availability. Personal-local single-user project — acceptable; the Phase 4 weekly auto-run will need the API key in env, and if the key is rotated/expires the weekly ingest halts.
+
+**Aborted / DB state:**
+- **Re-enrichment of the 908 ok-enriched backlog was ABORTED mid-run.** Started a full re-enrichment using the new structured-output prompt to fill the 3 new fields. After ~25 items the run was killed because:
+  - (a) tqdm ETA showed ~7 hours total, way over the original estimate (the structured-output enforcement halved throughput to ~26s/item);
+  - (b) one item (#63) timed out with a ReadTimeout warning;
+  - (c) the quality signals enumerated above (Reddit-handle leak, *Minions & Monsters* tag) were already visible in the 10-item sample taken before the full run.
+- Background Python process killed cleanly during session wrap. **DB state:** ~25–30 items now have qwen-generated tags from the aborted partial run; the remaining ~860 ok-enriched items still hold their original Phase 2 enrichments unchanged. **No rollback needed** — the next-session Haiku rerun will overwrite all 988 items uniformly, so the partial qwen rewrites are throwaway.
+
+**Next session should:**
+1. **Read this entry first** — it supersedes the prior 2026-05-12 walkthrough entry's "Next session should" plan for Phase 3c.0.
+2. **Design `app/services/anthropic.py` for Haiku-backed enrichment. Show the user the design BEFORE writing code.** Cover: Anthropic SDK client setup (API key from env, retry/backoff config); prompt caching on the system block (the `system` parameter caches well across calls when stable — see the `claude-api` skill); Pydantic schema use for structured output (Anthropic supports tool-use-style schema enforcement); error handling for transient API failures (rate limits, 5xx); retry policy. **The 988-item backfill is the irreversible spend — wait for sign-off before kicking it off.**
+3. **After design sign-off:** implement `anthropic.py`, refactor `enrich_pending` in `app/services/enrich.py` to call Haiku instead of (or alongside, gated by a config flag) the existing Ollama `enrich_item` path. **Keep embeddings on Ollama** — `embed_text()` stays untouched.
+4. **10-item Haiku sample first.** Pick 10 items spanning categories + sources, run them through Haiku, eyeball the output side-by-side against the current qwen-generated tags. Get explicit user sign-off before the full backfill.
+5. **Run the full 988-item backfill via Haiku** (~1.5 hours estimated, backgrounded).
+6. **After backfill completes:** run `scripts/populate_games_dim.py` (staged this session, ready to go — note that `tag_game()` will also want to move to Haiku at that point, but the games-dim population script's structure stays the same) and `scripts/run_cluster.py --per-week` (also staged this session) to land the per-ISO-week clustering that replaces `week_id='all'`.
+7. **Decide between Sonnet 4.6 cluster labels and the critic-pass synthesis additions:** these are independent of the Haiku migration. Implement in Phase 3c.4 alongside the main synthesis prompt — not blocking on 3c.0.5.
+8. **After everything lands:** update `docs/ARCHITECTURE.md` to reflect the new LLM split. Old split: "Ollama for per-item work, Anthropic for synthesis only." New split: "Ollama for embeddings only (`nomic-embed-text` 768-dim); Anthropic Haiku 4.5 for per-item enrichment; Anthropic Sonnet 4.6 for cluster labels; Anthropic Opus 4.7 for synthesis + critic pass."
+
+**Open / blocked:**
+- Anthropic Haiku 4.5 service module — design pending sign-off (next session step 2).
+- 988-item Haiku backfill — blocked on the service module + 10-item sample sign-off.
+- Games-dim populate run — code staged, blocked on the Haiku backfill completing first (otherwise the games-dim tag pass would run against qwen-tagged enrichments).
+- `scripts/run_cluster.py --per-week` execution — also blocked on Haiku backfill (per-week clustering should run against uniform Haiku-enriched corpus).
+- `docs/ARCHITECTURE.md` update — deferred until the new LLM split is implemented end-to-end.
+
+---
+
+## 2026-05-12 — /reports section walkthrough + Trends design + tagging foundation committed
+
+**Done:**
+- **No app code modified this session.** Pure design pass: walked `/reports` end to end with the user, locked keep/drop/rework for every chrome element + card, designed a real Trends layout, and committed to a tagging-foundation detour that gates the whole synthesis prompt. All decisions enumerated in DECISIONS.md 2026-05-12; this entry narrates the path.
+- **Walkthrough order:** sidebar → header → headline strip → 13 cards top-to-bottom → Trends deep-dive → tagging schema implications → re-scope of Phase 3c. Each pass surfaced "this depends on data we don't have" friction that ultimately consolidated into one tagging-foundation milestone (`3c.0`) rather than per-card workarounds.
+- **Chrome simplification — strip everything that's fake.** Sidebar nav cut from 6 placeholder `href="#"` items to **4 real routes that actually exist**: Weekly read-out / Dashboard / Clusters / Sources. Sidebar week-list capped at 5 entries scrollable. Sidebar user-block (avatar + name + role) replaced with **corpus stats** (item count / cluster count / last-ingest timestamp) — useful local-only telemetry, not fake-multi-user theatre. Sidebar "Generate exec summary" CTA dropped (duplicates the header CTA). Header layout/density/theme toggles all dropped — variants are locked, the buttons were visual noise. Headline block above the grid (big H1 + dek) dropped entirely — folds into the reworked Biggest card. Footer hint block dropped.
+- **Exec-summary feature:** single CTA stays in header right; modal to be PORTED from `.tmp_design_bundle/.../exec-summary.jsx`. Second Anthropic pass for 1-paragraph tldr — adds one synthesis call per generation, acceptable cost.
+- **Source Drawer to be PORTED** — right-side slide-in shown on bullet/row click; renders cluster synthesis paragraph + member source links. Layout details (width, animation, click-outside) deferred to implementation time.
+- **Cards 13 → 9 (with Trends re-instated as #10):**
+  - **Dropped:** Card 1 Overview (overlaps the new sidebar corpus stats), Card 8 Studio Watch (absorbed into Market Momentum), Card 9 Storefronts (absorbed into Market Momentum).
+  - **Reworked:** Card 2 Biggest singular → **plural top-3 list**, absorbs the killed headline block, click opens drawer. Card 3 Hottest trimmed to **title + mention count + reason** (platform + lifecycle chips removed — restored later once tagging foundation lands). Card 4 Market Momentum reshaped from 4-platform-sparkline grid (fabricated data) to **row list of clusters**, absorbs Studio Watch + Storefronts content. Card 6 Community Sentiment — **honest reframe, aggregate pos/neu/neg bar removed**, per-cluster polarized lists + narrative on top (rationale: sentiment is tone of Reddit *posts* not community *reaction*; RSS exposes no upvotes so no reach weighting; "41% positive about what?" is topic-anchorless). Card 10 Esports honestly reframed — corpus has 15 news + 10 subreddits + 6 YouTube and **zero Twitch/streamcharts/esports-tracker sources**, so Twitch metrics are fabrication; reframed to **filtered news clusters with esports category**. Card 11 Releases trimmed. Card 12 Drama narrowed to **exec/PR drama only** (avoid community-flamewar bleed). Card 13 Watch — drop reminder button (no notifications plumbed).
+  - **Kept ~as-is:** Card 7 Industry Risks (trend chip dropped — no multi-week data yet).
+- **Trends card RE-INSTATED via 5-tab layout** (was dropped from Phase 3c on 2026-05-11). Tabs: **Games (sub-blocks: existing + upcoming) / Genres / Platforms / Live-service / Events**. WoW only (MoM dropped for now; revisit if WoW proves insufficient). Ranking is **top-N by *delta*** — explicitly distinct from Hottest's absolute-count ranking, so the two cards don't echo each other. Events tab will frequently be sparse (most weeks have no E3/Summer Game Fest/TGS); accepted, empty-state design deferred.
+- **Tagging-foundation detour committed before any synthesis prompt is written.** Net-new schema: 4 tag dimensions across 2 tables — **new `games` dim table** keyed by `name PK` with `lifecycle` + `live_service` columns (per-game, not per-item, so cross-item consistency is structural); **3 new columns on `enrichments`** — `genres TEXT` (JSON list), `platforms TEXT` (JSON list), `event TEXT` (single value or NULL).
+- **Three taxonomies locked** (exhaustive lists in DECISIONS.md 2026-05-12):
+  - **Genres (12):** Action, Adventure, RPG, Shooter, Strategy, Simulation, Sports, Racing, Fighting, Puzzle, Platformer, Horror. **Multi-value cap = 3** per item.
+  - **Platforms (6):** PC, PlayStation, Xbox, Nintendo, Mobile, VR.
+  - **Events (12 + Other):** E3, Summer Game Fest, TGS, Gamescom, PAX, GDC, BlizzCon, The Game Awards, Nintendo Direct, State of Play, Xbox Showcase, PlayStation Showcase, Other.
+- **Fuzzy rules locked** (necessary because the corpus is real-world messy):
+  - **"existing"** = released on ≥1 platform. **Early access counts** as existing. **Remasters are existing** (the original shipped). **Cross-platform-delay still existing** (PS5-only games are "existing" while Xbox port is pending).
+  - **"live-service"** = seasonal / battle-pass / league / warbond content model with regular content drops. Not just "has multiplayer."
+  - **Out-of-taxonomy values DROPPED, not mapped.** No fuzzy-match to nearest neighbour; validation rejects and field goes empty for that item. Keeps taxonomies honest, avoids semantic drift.
+- **WoW baseline strategy:** **re-bin existing 988 items by `published_at` into ISO weeks**, replacing the current `week_id='all'` global clustering. Yields ~4–8 weeks of synthetic history *immediately*, no waiting on Phase 4 APScheduler weekly cuts. Per-week cluster threshold may need re-tuning (smaller per-week corpus → potentially different connectivity profile).
+- **Synthesis scope formally widened: PRD-locked 6 sections → 10 sections + exec-summary pass.** Net-new beyond PRD: **Esports** (honestly reframed), **Releases**, **Drama** (narrowed), **Trends** (returned via tagging foundation). Acknowledged as **explicit scope expansion, not oversight**.
+- **Visual monotony flagged.** Stripping fabricated charts (Momentum sparklines, Sentiment aggregate bar, Trends bars) left 7–8 cards in the same "row list of clusters" shape. Charts were removed as fabrication risks, not because variety was undesirable. Either accept the monotony or reintroduce **real visual variation** (genre distribution, platform mix, sentiment per cluster) in a later CSS/component pass once the tagging foundation provides honest dimensions to chart against.
+
+**State at end of session:**
+- All design decisions LOCKED in `docs/DECISIONS.md` 2026-05-12 (parallel agent enumerating the full lock list — see there for taxonomies, fuzzy rules, and per-card before/after).
+- `docs/TASKS.md` re-scoped Phase 3c into **3c.0 → 3c.5** sub-phases (parallel agent).
+- **No app code modified this session.** The 2026-05-11-port `/reports` template still renders the 13 placeholder cards with the un-locked layout. None of today's keep/drop/rework changes are applied yet — that's Phase 3c.5.
+- `.tmp_design_bundle/` still present in repo root, untracked. **Kept intentionally** — needed for Source Drawer + Exec-summary modal porting in Phase 3c.3.
+- Phase 3a + 3b + 3c-design-port code remains uncommitted in the working tree per prior-session convention.
+
+**Next session should:**
+1. **Phase 3c.0 schema migration first.** Add `enrichments.genres TEXT`, `enrichments.platforms TEXT`, `enrichments.event TEXT`. Create new `games` dim table (`name TEXT PRIMARY KEY`, `lifecycle TEXT`, `live_service INTEGER`). Idempotent migration in `app/db/init.py` mirroring the existing `_migrate_enrichments_columns` / `_migrate_clusters_columns` pattern.
+2. **Extend Ollama enrichment prompt** with the three new structured fields + worked examples drawn from the locked taxonomies. JSON-mode schema additions. **Validation drops out-of-taxonomy values** (don't fuzzy-map).
+3. **Re-enrich the 908-item backlog** with new fields. ~30–45 min on RTX 5070 based on Phase 2 timings.
+4. **Populate `games` dim table.** Extract unique names from `entities.games` across all enrichments; separate Ollama pass tags each game's `lifecycle` + `live_service` using the locked fuzzy rules. Per-game pass (not per-item) so a game referenced by 20 clusters gets tagged once consistently.
+5. **Re-bin into ISO weeks + re-cluster per-week** to replace `week_id='all'`. Per-week threshold may need tuning — start at 0.85 and inspect.
+6. **Phase 3c.1 revisits** with real tag data: restore platform + lifecycle chips on Hottest; structured release-date on Releases; **re-evaluate Card 1 "overview"** (was dropped today) now that top-genres is actual data, not fabrication.
+7. **Phase 3c.2 build Trends card** (5-tab layout, top-N by WoW delta).
+8. **Phase 3c.3 port Source Drawer + Exec-summary modal** from `.tmp_design_bundle/`.
+9. **Phase 3c.4 write synthesis prompt + service.** Opus 4.7. Schema covers 10 sections + exec-summary pass. First run on most-recent ISO week.
+10. **Phase 3c.5 wire `/reports` to real synthesized data** and apply every locked layout change from this session (sidebar trim, chrome strip, card rework, headline removal, footer removal).
+
+**Open / blocked:**
+- Source Drawer layout details — right-panel width, animation timing, click-outside behavior, content density. Decide at implementation time in 3c.3.
+- Exec-summary modal layout — just the 1-paragraph summary, or the full report alongside the summary? Decide in 3c.3.
+- Per-week clustering parameter tuning — threshold (currently 0.85) may need revisit for smaller per-week corpora; can't tell until re-binning runs.
+- Cluster boundary-spanning de-duplication — stories that span 2 ISO weeks will produce two near-identical clusters; needs handling but deferred until first re-bin run shows scale of the problem.
+- Trends "top N" cutoff per tab — likely 5 but depends on how cleanly deltas separate.
+- Empty-state designs for sparse tabs (Events especially — most weeks have nothing).
+- Phase 3c synthesis prompt + service — **gated on the entire 3c.0 tagging foundation completing first**. Cannot start 3c.4 until the schema, prompt extension, re-enrichment, games dim, and ISO-week re-bin are all done.
+
+---
+
+## 2026-05-11 — Phase 3c design locks + claude.ai/design ported to /reports
+
+**Done:**
+- **Three Phase 3c locks taken before any synthesis code was written** (per the prior session's gating checklist):
+  1. **Industry-risks rubric — "standard" scope:** layoffs/closures + regulation/legal/policy. Excludes broader market structural shifts (acquisitions, funds, platform-side policy) — those live in Market Momentum to keep section boundaries clean. Mirrors the actual signal in the ranked 63-cluster corpus (Spiders studio closure, WotC union deadline, Sony PlayStation Store settlement, Stop Killing Games petition).
+  2. **Community-sentiment rubric — Reddit-only, hybrid:** numeric `mean(enrichments.sentiment_score)` over the cluster's Reddit-source members + 2–3 `sentiment_summary` excerpts passed to Anthropic for the qualitative narrative. "Community" reads as community-surfaced reaction, not editorial framing; numeric anchor + vibe summary together give Anthropic both calibration and texture.
+  3. **Synthesis model — Opus 4.7** (`claude-opus-4-7`). Once-weekly run at ~$0.30/run = ~$15/yr; cost is trivial at this volume and synthesis is the user-facing quality moment per PRD.
+- **WoW-Trends section dropped entirely from Phase 3c.** User flagged that real trend tracking requires per-cluster tagging of dimensions the current enrichment doesn't capture — hottest games existing/upcoming, genre, platform, live-service flag. The current schema has `entities.{games, companies, people}` + the 7-value `category` enum + sentiment, but no platform/genre/lifecycle tags. Building the section as the user described requires either (a) extending the enrichment prompt + re-enriching the 908 corpus, or (b) a second LLM tagging pass at synthesis time; plus multi-week corpus to compute WoW deltas against. Decoupled from 3c synthesis; user will spec the full layout in a future session.
+- **Pivot before any Phase 3c code was written:** user asked to see the claude.ai/design template first so the synthesis output format (loose markdown vs structured JSON) and the data contract could be reverse-engineered from the actual rendering target.
+- **Inventory agent confirmed pre-port state:** `WeeklyReport` already has both `markdown_content` + `html_content` columns + status/week_start/week_end/generated_at — no schema change needed for either output format. CSS is a 15-line placeholder ("UI template will replace this in Phase 1" already in the header comment), so the design replaces it wholesale. Cluster→items join is via `Cluster.member_item_ids` (text-serialized JSON list), not a junction table — fine for synthesis input.
+- **Fetched + decoded the claude.ai/design bundle.** URL: `https://api.anthropic.com/v1/design/h/I2HoKb9BrzKLYmp4VJXRwQ?open_file=Gaming+Chatter.html`. Bundle is a **React/JSX prototype** loaded via Babel-standalone, NOT plain HTML. Variants are not class- or attribute-based — they're React state mutated by a Tweaks panel: `tw.layout`, `tw.density`, `tw.mode`, `tw.accent`. Each variant is read by JS and applied as inline `style={{}}` props plus component selection (`FeedLayout | GridLayout | MagazineLayout`, `themes.light | themes.dark` dict swap, accent mixed via `hexMix()`). `tokens.css` exists but the JSX duplicates its values inline rather than reading them — meaning the port can rebuild from `tokens.css` only for the locked variant. Cards live in `cards.jsx` (13 React components: `week, biggest, hottest, momentum, trends, community, risks, studios, platforms, esports, releases, drama, watch`). Layout in `layouts.jsx` (Grid = 3-col CSS grid, `gap:16`, biggest spans 2). Sidebar lives in `shell.jsx` and its active-state colors are **hard-coded purple literals** (`rgba(95,0,248,0.22)`, `inset 2px 0 0 #5F00F8`), NOT theme refs — had to find/replace to the orange in the port.
+- **Locked variant computed values (orange `#D9682B`):**
+  - `accent = #D9682B`
+  - `accentSoft = hexMix(#D9682B, #FFFFFF, 0.86) = #FAEAE1`
+  - `accentHover = hexMix(#D9682B, #000000, 0.35) = #8D441C`
+  - Sidebar active-state literals swapped to: `rgba(217,104,43,0.22)` background + `inset 2px 0 0 #D9682B` shadow.
+  - Light-theme palette taken verbatim from `primitives.jsx:6–29`.
+- **Port complete; faithful render at `/reports`:**
+  - **New files:** `app/templates/reports.html` (standalone — does NOT extend `base.html`, since the design has its own full-bleed sidebar+main shell), `app/templates/_components.html` (Jinja macros mirroring `primitives.jsx`: eyebrow, source_pill/row, freshness, meter, signal_cluster, mini_bar, delta, dot, sparkline, card_header), `app/routers/reports.py` (`GET /reports?week=...` route + 3 weeks of placeholder data verbatim from `data.jsx` + sparkline_path geometry helper + delta_tone helper + SOURCES_META + NAV_ITEMS), `app/static/img/alienware-head-light.svg` (sidebar logo, copied from bundle).
+  - **Modified files:** `app/static/app.css` (rewritten — legacy `body / table / .cluster*` rules preserved on top so Dashboard/Sources/Clusters keep working unchanged; new `.gc-*` namespace below with `:root` tokens, sidebar/header/grid/card/meter/pill/sparkline/etc. styles for the locked variant), `app/main.py` (one-line additive — mounted reports router), `app/templates/base.html` (one-line additive — added Reports nav link). Phase 3a/3b code and 3b-specific doc updates remain intentionally uncommitted per the prior-session instruction; this session's design-port changes are also uncommitted.
+- **Implementation simplifications vs the React prototype:** dropped drag-to-reorder, Tweaks panel, layout/density/theme toggles (kept the chrome visually as static buttons since variants are locked), exec-summary modal, source-drawer side panel. Sidebar nav items (Weekly read-out / All stories / Watchlist / Trends / Sources / Archive) are `href="#"` visual placeholders pending walkthrough. Lucide CDN script kept for icons; React/Babel runtime stripped.
+- **Sparkline math** reproduced verbatim from `primitives.jsx:186–235` in Python (`sparkline_path` in the router) — `min/max include 0/1`, `xStep = width/(len-1)`, `yScale = height - 2 - ((v-min)/range)*(height-4)`. Pre-computed points + filled-area polygon strings passed to the `sparkline` macro so Jinja doesn't do float math at render time.
+- **Smoke test passed.** `GET /reports`: HTTP 200, 39913 bytes. Spot-checks: 54× `gc-card` class refs, 5× `<polyline>` (biggest sparkline + 4 momentum cells), 11× `data-lucide` icons, 4× `is-active` markers, headline "Elder Scrolls VI delayed" rendered. The other 2 week keys (`2026-W17`, `2026-W16`) selectable via `?week=` query.
+- **Port hiccup, no code impact:** user couldn't reach `http://127.0.0.1:8765/` from their browser despite `Get-NetTCPConnection` confirming the listener was up — Windows networking quirk; switched to `:8000` and it worked. The earlier "exit code 1" background-task notification for the uvicorn process is a Windows-uvicorn signal-handling artifact, not a real crash (server was actually serving requests).
+
+**State at end of session:**
+- `/reports` renders all 13 cards from the design with placeholder data and the four locked variants (grid + comfortable + light + orange `#D9682B`).
+- Phase 3c synthesis code NOT yet started — gated on the design walkthrough.
+- Existing functional pages (`/`, `/sources`, `/clusters`) unaffected: separate templates, legacy CSS preserved, new design CSS namespaced under `.gc-*`.
+- `.tmp_design_bundle/` extracted bundle (~70KB) still present in repo root, untracked. Contents: `gaming-chatter/project/{Gaming Chatter.html, app.jsx, cards.jsx, data.jsx, design-canvas.jsx, exec-summary.jsx, layouts.jsx, primitives.jsx, shell.jsx, tokens.css, tweaks-panel.jsx}` + assets + bundle tar/gz. Kept around since the walkthrough may need to reference exec-summary and source-drawer markup.
+
+**Next session should:**
+1. **Walk `/reports` section by section** with the user to lock keep/drop/rework decisions for the 13 cards, 6 sidebar nav items, header chrome (layout switcher, density toggle, theme toggle, exec-summary CTA), and the footer hint. Goal: a trimmed `/reports` that's the actual Phase 3c output target.
+2. **Decide whether `exec-summary.jsx` modal and `SourceDrawer` side panel get ported** — both were left out of the initial port; both are real interactions in the design.
+3. **Once sections are locked, write the synthesis prompt** structured to emit exactly the JSON/markdown shape the trimmed `/reports` template consumes. Synthesis goes in `app/services/synthesis.py`, prompt-cached system block, Opus 4.7. Top-N=25 clusters fed in (default unless user objects); first run on `week_id='all'`; per-week scoping waits for Phase 4 APScheduler weekly cuts.
+4. **WoW-Trends design pass** (separate from 3c) — user will provide the layout spec covering which dimensions (genre / platform / live-service / lifecycle / etc.) get tracked. That informs schema changes vs synthesis-time tagging, plus the week-window bounding for deltas.
+5. **Cleanup decision on `.tmp_design_bundle/`** — delete once the walkthrough doesn't need it as reference.
+6. **Recency-penalty tuning** still deferred per prior session — only if the first synthesis run on a real weekly window visibly under-represents day-0/day-1 stories.
+7. **`tier1.article` fold-in decision** still deferred — same condition as before.
+
+**Open / blocked:**
+- Design walkthrough — the entire shape of Phase 3c synthesis output (sections + per-section data contract) depends on it.
+- Trends section design + WoW deltas — needs user spec on what dimensions to track + multi-week corpus or backfill strategy.
+- Phase 3c synthesis code — gated on walkthrough.
+- Phase 3d (archive view + HTML export) — gated on 3c.
+
+---
+
+## 2026-05-08 — Phase 3b: cluster ranking heuristic shipped; 63 clusters re-scored
+
+**Done:**
+- Phase 3b scoped tightly to ranking + persistence + sort + render. Phase 3c (synthesis) and 3d (UI) deferred to next session per agreement; locking 3b first lets us eyeball ranked output before committing to the synthesis prompt.
+- **Schema migration** — added `source_count INTEGER`, `latest_published_at TIMESTAMP`, `score REAL` to `clusters` via `_migrate_clusters_columns` in `app/db/init.py` (idempotent ALTER, mirrors `_migrate_enrichments_columns`). `Cluster` SQLModel updated. Migration applied via direct `init_db()` call before re-running clustering; existing rows would have inherited NULLs but were wiped by the idempotent re-run anyway.
+- **Score formula (locked):** `score = source_count * member_count / (1.0 + days_since_latest)` where `days_since_latest` is fractional days from `datetime.utcnow()` to the most recent member `published_at`. No tau, no exp, no log dampening, no upvote weighting — matches the session-log guidance to "start with simple multiplicative weights (1×1×1) and tune after seeing real data." Computed inside the existing per-cluster loop in `cluster_window`, no new code paths. See DECISIONS 2026-05-08 for the full rationale and rejected alternatives.
+- **Router + template:** `GET /clusters` sorts by `Cluster.score.desc().nulls_last(), Cluster.member_count.desc()` (was: `member_count.desc()`). `clusters.html` now renders `score N.N · {n} items · {n} sources · latest YYYY-MM-DD`. Tiny `.cluster-meta .score { color:#222; font-weight:600 }` to make the score visually pop in the meta line.
+- **Re-ran `cluster_window(week_id='all')`** — 186.0s wall clock, 63 clusters / 157 items / 63 labelled / 0 failures. Identical shape to the Phase 3a run (same threshold, same min size); labels rotated slightly because Ollama is non-deterministic. Acceptable.
+- **Eyeball check passed.** Top-12 by score: 1) Mixtape coming-of-age review (5 sources × 5 members, today) 12.79; 2) Griffin Gaming Partners $100M indie fund (4×5) 10.02; 3) "game releases and announcements" (4×4) 8.34 [vague label, real cross-source signal]; 4) Take-Two CEO disappointed with BioShock (4×4) 7.75; 5) Star Fox 64 remake for Switch 2 (4×4) 6.76; 6) Valve restocks Steam Controller (4×4, 1d) 5.97; 7–12) tied tier of (3×3) clusters — Mortal Kombat 2 movie, LEGO Batman launch, Stop Killing Games petition, Mixtape no-streamer-mode, Star Fox preorder, etc. All 14 single-source clusters (YongYea Metal Gear playthrough, VG247 Diablo 4 Warlock series, Fallout 4 walkthrough, Game Informer weekly picks, RPGs popularity etc.) scored <1.0 — exactly the demotion the prior session called for.
+- **One observation worth flagging:** the Spiders studio closure cluster (5 sources × 5 members, 7 days old) ranks #13 at 2.73 despite having maximal cross-source breadth. The `1 / (1 + days)` recency factor divides by 8 at day 7 — that's a steep penalty. For week_id='all' (all-time corpus) this is fine. For weekly windows in Phase 3c, today vs end-of-week will differ by 8×, which may under-represent stories that broke early in the week. Tuning deferred until first weekly synthesis run shows whether this is a real problem.
+- **UI smoke test:** `GET /clusters?week_id=all` returned HTTP 200, 88KB. Score + latest date render on each card. Sort order matches the SQL query.
+- **End-of-session doc-alignment pass.** Audited every doc end-to-end against current state and fixed the staleness: `CLAUDE.md` + `README.md` had Phase-0-era "Design phase / no code yet" status blocks; `README.md` had a never-filled "Run — TBD" section; `ARCHITECTURE.md` still called out Ollama 14B in 4 places (data flow, schema row, LLM pipeline table, external deps line) and the schema rows missed the Phase-2 `enrichments.{status,error}` and Phase-3b `clusters.{score,source_count,latest_published_at}` columns; `PRD.md` rubric language said "refined in Phase 3" rather than "Phase 3c"; `OPEN_QUESTIONS.md` was missing the 3b recency-penalty tuning question and the Phase-3c Sonnet-vs-Opus decision. All fixed. `CHANGELOG.md`, `DECISIONS.md`, `SESSION_LOG.md`, `TASKS.md` were already aligned.
+
+**State at end of session:**
+- Phase 3b done. 63 clusters under `week_id='all'` now have `score`, `source_count`, `latest_published_at` populated. TASKS.md "Cluster ranking heuristic" ticked.
+- Modified: `app/db/init.py` (+migration helper), `app/db/models.py` (+3 fields on Cluster), `app/services/cluster.py` (score computation in cluster_window), `app/routers/clusters.py` (sort by score), `app/templates/clusters.html` (render score + latest date), `app/static/app.css` (.score weight).
+- New file: `scripts/inspect_cluster_ranking.py` — one-off ranking dump utility.
+- DECISIONS.md, CHANGELOG.md, TASKS.md, SESSION_LOG.md updated.
+- Runtime log at `logs/cluster_2026-05-08_phase3b.log` (gitignored).
+
+**Next session should:**
+1. **Resolve the two deferred Phase-3 design questions before writing the synthesis prompt:**
+   - "Industry risks" rubric — layoffs only? Include regulation (Stop Killing Games, age verification, EU/UK rulings)? Platform-side (console-maker policy changes) vs. consumer-side (price hikes, store changes)?
+   - "Community sentiment" rubric — Reddit-only or include YouTube comments? Numeric sentiment aggregate (mean of `enrichments.sentiment_score` per cluster) or vibe-summary derived from TLDRs?
+2. **Phase 3c — Anthropic synthesis.** Confirm model (**Sonnet 4.6 vs Opus 4.7** — once-weekly run, ~$0.05 vs ~$0.30, and synthesis is the "thoughtful colleague's brief" quality moment per PRD). Write `app/services/synthesis.py` calling Anthropic with the top-N ranked clusters + per-cluster member TLDRs. 7-section prompt locked from PRD: Biggest Story / Hottest Games / Industry Risks / Market Momentum / WoW-MoM Trends / Community Sentiment / Watch-List. Persist markdown + html to `weekly_reports`.
+3. **Phase 3d — report rendering + UI.** Markdown → standalone HTML with inlined CSS for portability. `/reports` archive view, manual "Generate report" button, export-as-HTML button.
+4. **Recency-penalty tuning (only if needed).** If synthesis on a real weekly window visibly under-represents day-0/day-1 stories vs day-6/day-7 stories, swap `1/(1+days)` for `exp(-days/3)` or similar. Don't pre-tune.
+5. **Revisit the open architectural decision** on whether to fold `tier1.article` into regular ingest vs. keep as remediation pass — defer until first weekly synthesis run informs whether daily fresh-corpus quality matches the 91.9% backlog quality.
+
+**Open / blocked:**
+- The Spiders 7-day-old cluster ranking #13 — flagged but accepted; tuning deferred to post-3c.
+- Two synthesis design questions (industry risks rubric, community sentiment rubric) — block 3c, not 3b.
+- Synthesis model choice (Sonnet 4.6 vs Opus 4.7) — pending user decision at start of 3c.
+- claude.ai/design UI template — still pending external delivery; not blocking 3c/3d.
+
+---
+
+## 2026-05-08 — Phase 3a: clustering + labels working; 63 clusters / 157 items grouped
+
+**Done:**
+- Phase 3 scoped to "3a — group + label only" for this session; ranking heuristic + Anthropic synthesis + reports archive deferred to next session.
+- **Threshold exploration** (`scripts/explore_clustering.py`, throwaway): connected-components on a thresholded cosine-similarity graph of the 908 fp32 TL;DR embeddings. Tried {0.55, 0.60, 0.65, 0.70, 0.75} first — every threshold ≤0.75 produced one giant 500+ item blob via chain-merge through baseline "gaming-ness" similarity. Re-ran at {0.78, 0.80, 0.82, 0.85, 0.88}: at 0.85 the blob fully fragments and every top-10 group passes editorial inspection (Mixtape reviews × 5 sources, Spiders studio closure × 5 sources, Star Fox 64 remake × 4, Steam Controller restock × 4, etc.). 0.88 over-fragments real stories. **Locked: threshold 0.85, min cluster size 2.**
+- **`app/services/cluster.py`** — `cluster_window(start, end, week_id)` loads ok-enrichments + items in window, normalizes vectors, builds N×N similarity matrix, runs union-find connected-components at `CLUSTER_THRESHOLD`, computes per-cluster centroid (mean of normalized vectors, re-normalized) as fp32 BLOB, calls `label_cluster()` for each, persists to `clusters` table keyed by `week_id`. Idempotent: re-runs delete prior rows for the same `week_id`. Writes a `RunLog` row with `job_type='cluster'`.
+- **`label_cluster()` added to `app/services/ollama.py`** — qwen2.5:7b, JSON-mode `{"label": "..."}`, system prompt with 5 worked examples. Caps prompt to top `CLUSTER_LABEL_SAMPLE=8` member items. ~3s/call.
+- **`app/routers/clusters.py`** — `POST /clusters/run` (trigger, sync or background) + `GET /clusters?week_id=` (HTML view). Mounted into `app/main.py`; nav link added to base layout; small CSS additions for the cluster card layout.
+- **`scripts/run_cluster.py`** — standalone runner, optional `week_id` arg (defaults to `all`). Followed the same pattern as `run_enrich_batch.py` and `run_article_fetch.py`.
+- **First production run** (`week_id='all'` against the full 908-item corpus): 178.8s wall clock, 63 clusters, 157 items grouped (17.3% of corpus), 63/63 labelled, 0 failures. Centroid blobs verified at 3072 bytes (= 768 fp32). Run log row #50 written `status='ok'`.
+- **UI smoke test:** booted uvicorn on :8765, `GET /clusters` returned 200 / 80KB, top clusters render with label, member count, source count, and per-item links. Cluster #1 confirmed "Mixtape indie game review" with 5 items / 5 sources rendering correctly.
+- **Quality assessment of the 63 labels (eyeball):** ~50/63 are clean editorial signals ("Wizards of the Coast misses union recognition deadline", "Sony PlayStation Store settlement", "Dying Light franchise director leaves Techland", "Atari acquires Implicit Conversions", etc.). ~10–13 are vague generic labels ("game releases and announcements", "Release dates announced", "RPGs popularity and appeal") or single-source long-tail series (YongYea Metal Gear playthrough, VG247 Diablo 4 Warlock series, Game Informer weekly recommendation column). The vague/long-tail clusters are real but low-priority — they'll get filtered by the cross-source × signal × recency ranking heuristic in 3b.
+
+**State at end of session:**
+- Phase 3a done. 63 clusters persisted under `week_id='all'`, all labelled. Phase 3 boxes 1+2 ticked in TASKS.md.
+- New files: `app/services/cluster.py`, `app/routers/clusters.py`, `app/templates/clusters.html`, `scripts/run_cluster.py`, `scripts/explore_clustering.py` (kept as a utility for re-tuning later if needed).
+- Modified: `app/services/ollama.py` (added `label_cluster()` + system prompt), `app/main.py` (router mount), `app/templates/base.html` (nav link), `app/static/app.css` (cluster card styles), `app/config.py` (3 new CLUSTER_* settings).
+- TASKS.md, DECISIONS.md updated. Runtime log at `logs/cluster_2026-05-07.log` (gitignored).
+
+**Next session should:**
+1. **Phase 3b — cluster ranking heuristic.** For each cluster, compute a score from cross-source breadth (number of distinct sources) × volume signal (member count, optionally weighted by upvotes/comments where available) × recency decay (days since latest member's `published_at`). Start with simple multiplicative weights (1×1×1) and tune after seeing the ranking on real data. Persist scores to a new column on `clusters` (small migration) or compute on-the-fly in the router.
+2. **Phase 3c — Anthropic synthesis.** Lock the 7-section weekly report prompt structure (exec summary / biggest stories / industry signals / launches & releases / community sentiment / hottest games / watch-list). Write `app/services/synthesis.py` calling Anthropic Sonnet 4.6 (or Opus 4.7 — to confirm with user; once-weekly + ~$0.05/run) with the cluster summaries + per-cluster member TL;DRs. Persist to `weekly_reports`.
+3. **Phase 3d — report rendering + UI.** Markdown → HTML with inlined CSS for portability. `/reports` archive view. Manual "Generate report" button. Export-as-HTML button.
+4. Resolve 2 deferred Phase-3 design questions before writing the synthesis prompt: "industry risks" rubric (layoffs / regulation / platform vs consumer-side) and "community sentiment" rubric (Reddit-only? numeric vs vibe summary?).
+5. After the first synthesis run: revisit the open architectural question on whether to fold `tier1.article` into regular ingest vs. keep as remediation pass (Phase 2.5 carryover; will have data to decide once cluster quality on a fresh weekly window is observed).
+
+**Open / blocked:**
+- The single-source long-tail clusters (YongYea playthrough series, VG247 Diablo 4 series) are not noise but also not "weekly news stories" — confirmed deferred to Phase 3b ranking, no filter at clustering time.
+- claude.ai/design UI template — still pending external delivery; not blocking Phase 3b/c/d. The Phase-3 cluster + report UIs are placeholder Jinja, ready to swap.
+
+---
+
 ## 2026-05-07 — Phase 2.5 closed; 908/988 enriched (91.9%); ready for Phase 3
 
 **Done:**

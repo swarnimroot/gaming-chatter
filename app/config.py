@@ -19,3 +19,10 @@ ENRICH_BODY_CHAR_CAP = int(os.environ.get("ENRICH_BODY_CHAR_CAP", "24000"))
 # Minimum body length to bother enriching. Below this we mark the row 'skipped'
 # (typically Reddit link-only posts that point at articles we scrape elsewhere).
 ENRICH_BODY_CHAR_MIN = int(os.environ.get("ENRICH_BODY_CHAR_MIN", "200"))
+
+# Clustering. Cosine similarity on normalized fp32 embeddings, connected-components.
+# 0.85 picked after editorial review of the 908-item corpus on 2026-05-07 — see DECISIONS.md.
+CLUSTER_THRESHOLD = float(os.environ.get("CLUSTER_THRESHOLD", "0.85"))
+CLUSTER_MIN_SIZE = int(os.environ.get("CLUSTER_MIN_SIZE", "2"))
+# Cap how many member items we feed into the label-generation prompt.
+CLUSTER_LABEL_SAMPLE = int(os.environ.get("CLUSTER_LABEL_SAMPLE", "8"))

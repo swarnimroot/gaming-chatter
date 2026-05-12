@@ -53,7 +53,17 @@ class Enrichment(SQLModel, table=True):
     embedding: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     status: str = Field(default="ok", index=True)  # ok | failed
     error: Optional[str] = Field(default=None, sa_column=Column(Text))
+    genres: Optional[str] = Field(default=None, sa_column=Column(Text))
+    platforms: Optional[str] = Field(default=None, sa_column=Column(Text))
+    event: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Game(SQLModel, table=True):
+    __tablename__ = "games"
+    name: str = Field(primary_key=True)
+    lifecycle: Optional[str] = None         # 'existing' | 'upcoming' | NULL
+    live_service: Optional[bool] = None     # SQLite stores as 0/1
 
 
 class Cluster(SQLModel, table=True):
@@ -64,6 +74,9 @@ class Cluster(SQLModel, table=True):
     centroid: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     member_item_ids: str = Field(sa_column=Column(Text))
     member_count: int
+    source_count: Optional[int] = None
+    latest_published_at: Optional[datetime] = None
+    score: Optional[float] = Field(default=None, index=True)
 
 
 class WeeklyReport(SQLModel, table=True):

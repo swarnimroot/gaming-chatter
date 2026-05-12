@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import STATIC_DIR
 from app.db.init import init_db
-from app.routers import dashboard, enrich, sources
+from app.routers import clusters, dashboard, enrich, reports, sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -22,3 +22,5 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.include_router(dashboard.router)
 app.include_router(sources.router)
 app.include_router(enrich.router)
+app.include_router(clusters.router)
+app.include_router(reports.router)

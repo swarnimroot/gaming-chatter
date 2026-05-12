@@ -55,13 +55,15 @@ def _persist_ok(session: Session, item_id: int, data: EnrichmentData) -> None:
         "category": data.category,
         "sentiment_score": data.sentiment_score,
         "sentiment_summary": data.sentiment_summary,
+        "genres": json.dumps(data.genres) if data.genres else None,
+        "platforms": json.dumps(data.platforms) if data.platforms else None,
+        "event": data.event,
         "status": "ok",
         "error": None,
     }
     if existing:
         for k, v in payload.items():
             setattr(existing, k, v)
-        existing.created_at = datetime.utcnow()
         session.add(existing)
     else:
         session.add(Enrichment(item_id=item_id, **payload))
@@ -94,10 +96,14 @@ def _persist_skipped(session: Session, item_id: int, reason: str) -> None:
         session.add(Enrichment(item_id=item_id, status="skipped", error=reason))
 
 
-def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False) -> dict:
+def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False, force: bool = False) -> dict:
     """Enrich items lacking an Enrichment row (or retry failed ones).
 
     Items are processed newest-first. Returns counts dict.
+
+    When force=True, processes ALL items (no skip-list), and preserves the
+    existing 'ok' enrichment row if the re-enrich call fails instead of
+    overwriting it with a failed row.
     """
     started = datetime.utcnow()
     totals = {"attempted": 0, "ok": 0, "failed": 0, "skipped": 0}
@@ -111,7 +117,10 @@ def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False) -> d
         existing_pairs = session.exec(
             select(Enrichment.item_id, Enrichment.status)
         ).all()
-        if retry_failed:
+        ok_before = {iid for iid, status in existing_pairs if status == "ok"}
+        if force:
+            skip_ids: set[int] = set()
+        elif retry_failed:
             skip_ids = {iid for iid, status in existing_pairs if status == "ok"}
         else:
             skip_ids = {iid for iid, _ in existing_pairs}
@@ -137,9 +146,13 @@ def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False) -> d
                 totals["ok"] += 1
             except Exception as e:  # noqa: BLE001
                 msg = f"{type(e).__name__}: {e}"
-                _persist_failed(session, item.id, msg)
-                totals["failed"] += 1
-                log.warning("enrich failed for item=%s: %s", item.id, msg)
+                if force and item.id in ok_before:
+                    totals["preserved"] = totals.get("preserved", 0) + 1
+                    log.warning("re-enrich failed for item=%s; preserving existing ok row: %s", item.id, msg)
+                else:
+                    _persist_failed(session, item.id, msg)
+                    totals["failed"] += 1
+                    log.warning("enrich failed for item=%s: %s", item.id, msg)
             session.commit()
 
         run.status = "ok"
