@@ -35,6 +35,18 @@ def _migrate_enrichments_columns() -> None:
             log.info("migrated enrichments: added event column")
 
 
+def _migrate_games_columns() -> None:
+    """Idempotent ALTER for columns added to games dim after Phase 3c.0.5.
+
+    Phase 3c.1 adds release_date so the Releases card can render real dates.
+    """
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(games)"))}
+        if "release_date" not in cols:
+            conn.execute(text("ALTER TABLE games ADD COLUMN release_date TEXT"))
+            log.info("migrated games: added release_date column")
+
+
 def _migrate_clusters_columns() -> None:
     """Idempotent ALTER for Phase 3b ranking columns.
 
@@ -57,5 +69,6 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_enrichments_columns()
     _migrate_clusters_columns()
+    _migrate_games_columns()
     inserted = seed_sources()
     log.info("db ready (seeded %d new sources)", inserted)

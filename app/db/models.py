@@ -64,6 +64,7 @@ class Game(SQLModel, table=True):
     name: str = Field(primary_key=True)
     lifecycle: Optional[str] = None         # 'existing' | 'upcoming' | NULL
     live_service: Optional[bool] = None     # SQLite stores as 0/1
+    release_date: Optional[str] = None      # ISO date 'YYYY-MM-DD', 'YYYY-MM', 'YYYY', or NULL when unknown / TBA
 
 
 class Cluster(SQLModel, table=True):

@@ -4,6 +4,57 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-12 (Phase 3c.1) — Real-data wiring for Week / Hottest / Releases + corpus-context retag
+
+**Done:**
+- **Schema migration:** `games.release_date TEXT NULL` column added via new `_migrate_games_columns()` helper in `app/db/init.py`. `Game` SQLModel extended in `app/db/models.py`. Idempotent.
+- **`app/services/reports.py` shipped** — per-ISO-week aggregation module with `iso_week_bounds()` (Python `datetime.fromisocalendar`, avoids SQLite strftime portability concerns), `week_label_and_range()`, `week_stats()`, `top_genres_for_week()` / `top_platforms_for_week()` (generic `_tagcount_for_week(col, ...)`), `top_games_for_week(lifecycle=None|'existing'|'upcoming')`, `upcoming_releases()`, `format_release_date()`, `is_future_or_unknown()`. All `entities.games` queries are case-insensitive on both join + group sides.
+- **`app/routers/reports.py` rewritten** — replaces the hardcoded `WEEKS_RAW` placeholder with DB-driven per-week payloads via `_build_week_payload(session, week_id)`. Three real-data overlays on top of a shared `_PLACEHOLDER_OTHER` dict reused for every week (Phase 3c.4 will fill the other cards with synthesis). Header refreshed-at pulls from `run_log` MAX(`completed_at`). Source-pill kinds derived from `sources.type` + URL prefix instead of a hardcoded map. Empty-corpus fallback added.
+- **Template `app/templates/reports.html` updated** — Card 1 (top genres + top platforms bar stacks, no sentiment, no threads stat), Card 3 (`gc-hot-tabs` 3-tab CSS-only structure with `{{ hot_rows(rows) }}` macro), Card 11 (date + name only, `Calendar →` action link).
+- **CSS `app/static/app.css` updated** — `.gc-row--hottest` grid `20px 1fr auto auto` → `20px 1fr auto`; `.gc-row--release` grid `60px 1fr 80px` → `60px 1fr`; new `.gc-chip` + variants (`--platform`, `--lifecycle-existing`, `--lifecycle-upcoming`, `--service`); new `.gc-row-count`; new `.gc-row-empty`; new `.gc-hot-tabs` + radio-driven tab toggling via `:checked ~ .sibling` selectors; `.gc-bars-spacer` for Card 1.
+- **IGN `/upcoming/games` extraction attempted, abandoned** — page is React/Next.js hydrated. Only 1 of 5 sample upcoming games (Subnautica 2) appeared in the static HTML, at byte position 388K. Truncating to 160K chars cut it off, and the full page (~2.9MB) exceeds Haiku's 200K context.
+- **Pivoted to corpus-context date extraction.** `scripts/extract_release_dates.py` rewritten — per-game Haiku call with 8–10 recent article titles + tldrs from items mentioning the game. 28 upcoming-tagged games → 10 got dates. ~$0.10.
+- **Mid-session: lifecycle errors surfaced** (Crimson Desert in upcoming, Civilization 7 / Subnautica 2 / Clair Obscur 33 / etc. all wrongly tagged upcoming). Root cause: original `populate_games_dim.py` + `tag_game()` passed only the game name; Haiku's Jan-2026 training cutoff couldn't see post-cutoff launches. → User approved corpus-context retag.
+- **`scripts/retag_games_with_context.py` shipped + run.** Per-game Haiku call with 8–10 article snippets; system prompt explicitly forbids overriding article evidence with training knowledge. 189 games processed, 129 updated, 60 unchanged, 0 errors, 264s wall-clock, ~$1.00 spend. Lifecycle 131/28/30 (existing/upcoming/null) → 109/44/36. 50 games now have `release_date`.
+- **8 manual `live_service=false` flips** post-retag: Civilization 7, Dead Cells, Phasmophobia, MindsEye, Magic: The Gathering, Dungeons & Dragons, Battlefield 4, The Sims 4 — none are battle-pass / season-pass games; Haiku's live-service definition over-counted "regular updates." Plus Crimson Desert ("MMO-style support model" ≠ live-service economy). 57 → 49 rows.
+- **`scripts/dedupe_games_dim.py` shipped + run.** 5 case-fold duplicate pairs collapsed (EVE Online, GreedFall, Invincible VS, LEGO Batman, Thick As Thieves). Canonical chosen by most-mentioned casing in `entities.games`; metadata COALESCEd. Dim 189 → 184 rows. Queries now case-insensitive on the article side so future casing variants ("Mixtape"/"MIXTAPE", "BioShock"/"Bioshock") collapse without further dedupe.
+- **Drop the "existing" chip from Card 3** per user call: "if nothing is mentioned that means it is current." Only `upcoming` lifecycle chip + `live-service` chip render now.
+
+**State at end of session:**
+- New files: `app/services/reports.py`, `scripts/extract_release_dates.py`, `scripts/retag_games_with_context.py`, `scripts/dedupe_games_dim.py`. Test HTML dumps in working dir (`reports_v*.html`).
+- Modified files: `app/db/init.py` (+ `_migrate_games_columns`), `app/db/models.py` (+ `Game.release_date`), `app/routers/reports.py` (full rewrite), `app/templates/reports.html` (Cards 1/3/11), `app/static/app.css` (grid columns + chips + tabs + spacer).
+- Logs: `logs/extract_release_dates_2026-05-12_v2.log`, `logs/retag_games_2026-05-12.log`.
+- Corpus state: 988 items · 887 Haiku-enriched + 13 preserved-qwen + 88 skipped · 900 embeddings · **184 games in dim** (was 189; -5 case-dedupe) · **109 existing / 44 upcoming / 36 NULL-lifecycle** · **49 live-service** · **50 games with release_date**. Per-ISO-week clusters unchanged (W17:4 / W18:13 / W19:38 + 63 legacy `all`).
+- Session spend: ~$1.15 Anthropic (cumulative project: ~$6.15, well under $500/yr ceiling).
+- Test uvicorn server running on `:8001`. The user's existing `:8000` instance returns 500 on `/reports` because it has stale router code — needs restart to pick up Phase 3c.1.
+
+**Decided / verified:**
+- **Card 1 keep + extend** (overrode the walkthrough drop) — sidebar shows corpus stats, Card 1 shows per-week breakdown; different surfaces. Net-sentiment block dropped mid-session per user call.
+- **Card 3 Hottest tabs** — 3 tabs (All / Current / Upcoming), CSS-only radio toggling. Each tab's top-5 is a separate query against `top_games_for_week(lifecycle=...)`. No JS, no HTMX call.
+- **Existing chip explicitly dropped** — "existing" is the default state; only "upcoming" gets a visible chip. NULL-lifecycle treated as default-current.
+- **Card 11 Release radar simplified** to date + name only; future-date filter; `Calendar →` link to IGN as canonical reference (since corpus dates are spotty and IGN curates the upcoming calendar).
+- **Corpus context > training memory** for game tagging — the retag prompt explicitly instructs Haiku not to override article evidence with training knowledge. Confirmed effective: post-retag, only post-2026-05-12 launches stayed in `upcoming`.
+
+**Next session should:**
+1. **Phase 3c.2 — build the Trends card** (5-tab layout: Games existing+upcoming / Genres / Platforms / Live-service / Events; WoW only; top-N by mention-rate delta).
+2. **Phase 3c.3 — port Source Drawer + Exec-summary modal** from `.tmp_design_bundle/`.
+3. **Phase 3c.4 — synthesis.** `app/services/synthesis.py` calling Opus 4.7 with prompt-cached system block. Second Opus call for the critic pass. Migrate `label_cluster()` to Sonnet 4.6 (deferred from 3c.0.5).
+4. **Phase 3c.5 — wire `/reports` to real synthesized data** and apply every remaining locked layout change.
+5. **Optional data hygiene before 3c.4:**
+   - Numeral-variant dedupe (Diablo IV ↔ Diablo 4, Endfield ↔ Arknights: Endfield).
+   - Series-as-game cleanup (drop "Resident Evil" / "The Witcher" / "Sonic the Hedgehog" / etc. franchise rows from dim).
+   - 13 preserved-qwen items (from Phase 3c.0.5) still pending — `_rerun_targeted_ids` in `rerun_enrichment.py` still imports from `app.services.ollama`; needs swap to anthropic.
+   - 63 legacy `week_id='all'` clusters cleanup decision.
+
+**Open / blocked:**
+- Numeral / partial-name dedupe — needs a smarter normalizer. Not blocking 3c.2/3c.3.
+- Cluster boundary spanning (stories across 2 ISO weeks → near-duplicate clusters) — still deferred from 2026-05-12 walkthrough.
+- Trends "top N" cutoff, empty-state design for sparse Events tab — still open from prior session.
+- Sonnet 4.6 cluster labels — bundled into Phase 3c.4.
+- Opus 4.7 synthesis prompt + critic pass — Phase 3c.4.
+
+---
+
 ## 2026-05-12 — Phase 3c.0.5 SHIPPED: Haiku 4.5 migration, full backfill, games dim, per-week clustering
 
 **Done:**

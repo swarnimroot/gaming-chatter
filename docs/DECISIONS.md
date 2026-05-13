@@ -4,6 +4,67 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-12 (Phase 3c.1 shipped) — Real-data wiring for Week / Hottest / Releases + corpus-context retag of the games dim
+
+**Phase 3c.1 scope** locked from the prior session's "Next session should" list: re-evaluate the three cards trimmed/dropped pre-tagging and wire each to real per-ISO-week data from the DB. Synthesis-derived narrative still deferred to 3c.4.
+
+**Locked decisions per card:**
+
+**Card 1 — "This week in gaming"** (dropped in 2026-05-12 walkthrough, now restored):
+- KEEP, extended. Card-header title shows `N stories · M sources`. Body shows top-5 genres mini-bars + top-6 platforms mini-bars. **Net-sentiment block dropped** — composite "+X · Mixed" value wasn't actionable per user feedback.
+- Rationale: walkthrough overlap concern (vs sidebar corpus stats) was theoretical when there was no week data. With real per-ISO-week aggregation Card 1 answers "what was this week about?"; sidebar shows "what's in the system." Different surfaces.
+
+**Card 3 — "Hottest games"** (chips were trimmed pre-tagging, now restored AND extended with tabs):
+- **3 tabs: All / Current / Upcoming.** Each tab fetches a separate top-5 from `top_games_for_week(lifecycle=...)`. CSS-only radio-driven toggling — no JS, no HTMX call.
+- Per row: rank + game name + chip row (platform chips · `upcoming` chip when lifecycle=upcoming · `live-service` chip when applicable) + mention count.
+- **"existing" chip explicitly NOT rendered** — existing is the default state per user call ("if nothing is mentioned that means it is current"). NULL-lifecycle also gets no chip; treated as default-current.
+- Studio / heat-bar / WoW-delta / reason all dropped: studio is ambiguous in `entities.companies`, heat is synthetic, delta is the Trends card's job, reason is synthesis territory (Phase 3c.4).
+
+**Card 11 — "Release radar"** (simplified, dates from corpus extraction, IGN as canonical reference):
+- Per row: formatted date + game name. **No platform chip, no source pills, no mention-count, no "hype" bar.**
+- Filter: include only rows where `release_date` is null/TBA, or parses to a date/quarter/year ≥ today. Past-dated games (delayed launches Haiku extracted stale dates for) hidden via `is_future_or_unknown()`.
+- Card-header action: `Calendar →` link to `https://www.ign.com/upcoming/games`. Source of truth is external — corpus only surfaces dates that articles mention; IGN's curated calendar is the user-facing canonical reference.
+
+**Data layer additions:**
+- `games.release_date TEXT NULL` column via idempotent `_migrate_games_columns()` in `app/db/init.py`. Stores `YYYY-MM-DD` / `YYYY-MM` / `YYYY` / `Q1-YYYY..Q4-YYYY` / `TBA` / NULL.
+- New `app/services/reports.py` module with per-ISO-week aggregation queries (`week_stats`, `top_genres_for_week`, `top_platforms_for_week`, `top_games_for_week(lifecycle=...)`, `upcoming_releases`, `format_release_date`, `is_future_or_unknown`). Uses `iso_week_bounds()` (Python `datetime.fromisocalendar`) instead of SQLite `strftime('%G-W%V', ...)` for portability across builds.
+- All `entities.games` queries use case-insensitive joins (`LOWER(g.name) = LOWER(TRIM(je.value))`) and case-insensitive grouping so article-side casing variants ("Mixtape"/"MIXTAPE", "Bioshock"/"BioShock") collapse to a single row.
+
+**Decision: corpus-context retag of all 189 games** (mid-session correction — Crimson Desert / Civilization 7 / Subnautica 2 / etc. surfaced as wrongly tagged `upcoming`):
+
+- **Root cause:** original `populate_games_dim.py` + `tag_game()` passed **only the game name** to Haiku 4.5. Haiku's training cutoff is January 2026. Any game shipped between cutoff and 2026-05-12 falls back to Haiku's stale knowledge and gets misclassified.
+- **Fix:** `scripts/retag_games_with_context.py`. Per-game Haiku call with 8–10 recent article titles + tldrs (corpus is Jan–May 2026, post-cutoff). Returns `{lifecycle, release_date, live_service}` derived from snippets, not training memory. System prompt explicitly instructs the model NOT to override the article evidence with training knowledge.
+- **Result:** 129 of 189 games updated, 60 unchanged, 0 errors, ~4.4 min, ~$1 spend. Lifecycle distribution flipped from 131/28/30 (existing/upcoming/null) to 109/44/36. **50 games now have `release_date`** (was 10).
+- **Crimson Desert specifically:** was `upcoming, NULL, live_service=true` → `existing, '2026', live_service=true`. `live_service` later manually flipped to `false` (Haiku read "Pearl Abyss adopted an MMO-style support model" too liberally — MMO-style update cadence ≠ live-service economy).
+
+**Decision: 8 manual live-service flips** (post-retag spot review):
+- `Civilization 7`, `Dead Cells`, `Phasmophobia`, `MindsEye`, `Magic: The Gathering` (franchise mention), `Dungeons & Dragons` (TTRPG franchise), `Battlefield 4`, `The Sims 4` — all flipped to `live_service=false`. None are battle-pass / season-pass / seasonal-warbond games; Haiku's live-service definition over-counted "regular updates" as service-model. Plus Crimson Desert (same reasoning). 57 → 49 live-service rows in dim.
+
+**Decision: dedupe case-folded games in dim:**
+- `scripts/dedupe_games_dim.py` — finds case-fold duplicate groups, picks canonical = casing with most mentions in `entities.games` (tiebreak: lexicographic), COALESCEs metadata onto canonical, deletes losers.
+- 5 pairs collapsed: EVE Online / GreedFall / Invincible VS / LEGO Batman / Thick As Thieves. Dim went 189 → 184 rows.
+- Paired with case-insensitive queries (above), the dedupe stays effective for future ingests — new article casings still join to the canonical row.
+
+**Open data-hygiene items deferred:**
+- Numeral-variant duplicates: `Diablo IV` / `Diablo 4`, `Diablo IV: Lord of Hatred` / `Diablo 4: Lord of Hatred`, `Endfield` / `Arknights: Endfield`. Case-fold dedupe doesn't catch these — needs Roman/Arabic numeral canonicalization + partial-vs-full-title detection.
+- Series-vs-game entries in dim: `Resident Evil` / `The Witcher` / `Sonic the Hedgehog` / etc. The retag correctly returned `lifecycle=null` for these. Could be filtered out of the dim entirely.
+- 36 NULL-lifecycle dim rows post-retag include franchises + genuinely unidentified games. Acceptable.
+
+**Rejected alternatives:**
+- **IGN /upcoming/games scraping** (initial date-extraction attempt): page is React/Next.js rendered. Only 1 of 5 sample upcoming games appeared in the static HTML, and that one (Subnautica 2) was at byte position 388K — past any practical truncation. Pivoted to corpus-context extraction. Kept the `Calendar →` link to IGN as the user-facing reference.
+- **Re-tag name-only with a "trust article corpus" instruction in the prompt:** rejected — without article snippets present in the request, Haiku has no fresh signal to ground its answer.
+- **Skip the retag, leave existing tags:** rejected — visible errors (Crimson Desert in upcoming, Civ 7 tagged live-service) would corrupt the Hottest tabs and Releases card.
+- **Just retag the 28 upcoming-tagged games:** rejected (option offered to user; they chose full retag). Fixes only the most-visible direction of error; misses errors in the other direction (existing-tagged games that are actually upcoming, like the new Worms / Mortal Kombat titles surfaced by the retag).
+
+**Cost summary (this session):** ~$1.15 Anthropic =
+- IGN scrape + Haiku extraction dead-end: ~$0.05
+- Corpus-context date extraction (10 games dated): ~$0.10
+- Corpus-context retag (189 games re-profiled): ~$1.00
+
+Inside the $500/yr Anthropic budget by a wide margin. Cumulative project spend through Phase 3c.1: ~$6.15.
+
+---
+
 ## 2026-05-12 (later) — Override "Ollama-only for per-item work"; per-item enrichment moves to Anthropic Haiku 4.5; +Sonnet cluster labels +critic-pass synthesis
 
 **Lock being overridden:** project CLAUDE.md → Hard architectural constraints → "**LLM split: Ollama local for per-item work, Anthropic API for synthesis only.** Do not introduce OpenAI, llama.cpp direct, or other providers." Also DECISIONS 2026-05-06 — "LLM strategy = hybrid Ollama (local) + Anthropic API … Local 14B for per-item enrichment + embeddings + cluster labels; Anthropic API for weekly synthesis only." Today's decision keeps the *no-OpenAI / no-llama.cpp-direct* part of the lock intact (Anthropic remains the only API provider), but flips per-item enrichment and cluster labels from Ollama to Anthropic.

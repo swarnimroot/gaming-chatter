@@ -87,34 +87,38 @@
 
       <div class="gc-grid">
 
-        {# 1. Week overview #}
+        {# 1. Week overview — Phase 3c.1 wired to real per-ISO-week data #}
         {% set wk = week.cards.week %}
-        {% set max_genre = wk.top_genres | map(attribute=1) | max %}
+        {% set max_genre = (wk.top_genres | map(attribute=1) | list | max) if wk.top_genres else 1 %}
+        {% set max_platform = (wk.top_platforms | map(attribute=1) | list | max) if wk.top_platforms else 1 %}
         <div>
           <div class="gc-card">
-            {{ card_header("This week in gaming", wk.stories ~ " stories tracked") }}
-            <div class="gc-stats-row">
-              <div>{{ eyebrow("Sources") }}<div class="gc-stat-value">{{ wk.sources }}</div></div>
-              <div>{{ eyebrow("Threads") }}<div class="gc-stat-value">{{ "{:,}".format(wk.threads) }}</div></div>
-            </div>
+            {{ card_header("This week in gaming", wk.stories ~ " stories · " ~ wk.sources ~ " sources") }}
+            {% if wk.top_genres %}
             {{ eyebrow("Top genres mentioned") }}
             <div class="gc-genres">
               {% for name, value in wk.top_genres %}
               <div class="gc-genre-row">
                 <span class="gc-genre-name">{{ name }}</span>
                 {{ mini_bar(value, max_genre) }}
-                <span class="gc-genre-pct">{{ value }}%</span>
+                <span class="gc-genre-pct">{{ value }}</span>
               </div>
               {% endfor %}
             </div>
-            <div class="gc-net-sent">
-              {{ eyebrow("Net sentiment") }}
-              <span class="gc-net-sent-value"
-                    style="color: {% if wk.sentiment > 5 %}var(--gc-success){% elif wk.sentiment < -5 %}var(--gc-danger){% else %}var(--gc-fg2){% endif %}">
-                {% if wk.sentiment > 0 %}+{% endif %}{{ wk.sentiment }} &middot;
-                {% if wk.sentiment > 5 %}Net positive{% elif wk.sentiment < -5 %}Net negative{% else %}Mixed{% endif %}
-              </span>
+            {% endif %}
+            {% if wk.top_platforms %}
+            <div class="gc-bars-spacer"></div>
+            {{ eyebrow("Top platforms mentioned") }}
+            <div class="gc-genres">
+              {% for name, value in wk.top_platforms %}
+              <div class="gc-genre-row">
+                <span class="gc-genre-name">{{ name }}</span>
+                {{ mini_bar(value, max_platform) }}
+                <span class="gc-genre-pct">{{ value }}</span>
+              </div>
+              {% endfor %}
             </div>
+            {% endif %}
           </div>
         </div>
 
@@ -145,27 +149,42 @@
           </div>
         </div>
 
-        {# 3. Hottest games #}
+        {# 3. Hottest games — Phase 3c.1: title + chips + mention count, 3 tabs #}
         {% set hot = week.cards.hottest %}
+        {%- macro hot_rows(rows) -%}
+          {% for g in rows %}
+          <div class="gc-row gc-row--hottest">
+            <span class="gc-row-rank">{{ "%02d"|format(loop.index) }}</span>
+            <div>
+              <div class="gc-row-title">{{ g.name }}</div>
+              <div class="gc-chip-row">
+                {% for p in g.platforms %}<span class="gc-chip gc-chip--platform">{{ p }}</span>{% endfor %}
+                {% if g.lifecycle == 'upcoming' %}<span class="gc-chip gc-chip--lifecycle-upcoming">upcoming</span>{% endif %}
+                {% if g.live_service %}<span class="gc-chip gc-chip--service">live-service</span>{% endif %}
+              </div>
+            </div>
+            <span class="gc-row-count" title="{{ g.count }} item{{ 's' if g.count != 1 else '' }} mentioned this game">{{ g.count }}</span>
+          </div>
+          {% endfor %}
+          {% if not rows %}<div class="gc-row-empty">No matching mentions this week.</div>{% endif %}
+        {%- endmacro -%}
         <div>
           <div class="gc-card">
-            {{ card_header("Hottest games", "Heat & momentum", hot|length ~ " tracked") }}
-            <div class="gc-row-list">
-              {% for g in hot %}
-              <div class="gc-row gc-row--hottest">
-                <span class="gc-row-rank">{{ "%02d"|format(loop.index) }}</span>
-                <div>
-                  <div class="gc-row-title">{{ g.title }}</div>
-                  <div class="gc-row-sub">{{ g.studio }} &middot; {{ g.platform }}</div>
-                  <div class="gc-row-note">{{ g.reason }}</div>
-                </div>
-                <div class="gc-heat-cell">
-                  <div class="gc-heat-track"><div class="gc-heat-fill" style="width:{{ g.heat }}%"></div></div>
-                  <span class="gc-heat-value">{{ g.heat }}</span>
-                </div>
-                {{ delta(g.delta, g.delta_tone) }}
+            {{ card_header("Hottest games", "By mention count this week", hot.all|length ~ " tracked") }}
+            <div class="gc-hot-tabs">
+              <input type="radio" name="hot-tab" id="hot-tab-all" class="gc-tab-input" checked>
+              <input type="radio" name="hot-tab" id="hot-tab-current" class="gc-tab-input">
+              <input type="radio" name="hot-tab" id="hot-tab-upcoming" class="gc-tab-input">
+              <div class="gc-tab-labels">
+                <label for="hot-tab-all" class="gc-tab-label">All</label>
+                <label for="hot-tab-current" class="gc-tab-label">Current</label>
+                <label for="hot-tab-upcoming" class="gc-tab-label">Upcoming</label>
               </div>
-              {% endfor %}
+              <div class="gc-tab-panes">
+                <div class="gc-tab-pane gc-tab-pane--all"><div class="gc-row-list">{{ hot_rows(hot.all) }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--current"><div class="gc-row-list">{{ hot_rows(hot.current) }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--upcoming"><div class="gc-row-list">{{ hot_rows(hot.upcoming) }}</div></div>
+              </div>
             </div>
           </div>
         </div>
@@ -332,25 +351,25 @@
           </div>
         </div>
 
-        {# 11. Release radar #}
+        {# 11. Release radar — Phase 3c.1: upcoming games + future dates, IGN calendar link #}
         {% set releases = week.cards.releases %}
         <div>
           <div class="gc-card">
-            {{ card_header("Release radar", "Upcoming launches") }}
+            {{ card_header(
+                 "Release radar",
+                 "Upcoming releases mentioned this week",
+                 '<a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">Calendar →</a>'|safe
+               ) }}
             <div class="gc-row-list">
               {% for r in releases %}
               <div class="gc-row gc-row--release">
-                <div class="gc-row-date">{{ r.date }}</div>
-                <div>
-                  <div class="gc-row-title">{{ r.title }}</div>
-                  <div class="gc-row-sub">{{ r.platform }}</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:4px">
-                  <div class="gc-thin-track"><div class="gc-thin-fill" style="width:{{ r.hype }}%"></div></div>
-                  <span style="font-size:10px;color:var(--gc-fg3);font-variant-numeric:tabular-nums;min-width:20px;text-align:right">{{ r.hype }}</span>
-                </div>
+                <div class="gc-row-date">{{ r.display_date }}</div>
+                <div class="gc-row-title">{{ r.name }}</div>
               </div>
               {% endfor %}
+              {% if not releases %}
+              <div class="gc-row-empty">No upcoming releases mentioned this week.</div>
+              {% endif %}
             </div>
           </div>
         </div>

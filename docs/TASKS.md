@@ -79,11 +79,13 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [x] Execute the Phase 3c.0 staged steps now unblocked: ported `tag_game()` to anthropic.py + swapped import in `scripts/populate_games_dim.py`; ran populate_games_dim (189 games) + `run_cluster.py --per-week` (55 new clusters) + re-embed-all (900/900).
 - [x] Document actual Haiku model version used, observed token costs in DECISIONS.md — see 2026-05-12 (later) addendum.
 
-### Phase 3c.1 — Revisit dropped data with new tags
+### Phase 3c.1 — Revisit dropped data with new tags  *(SHIPPED 2026-05-12)*
 
-- [ ] Hottest Games: restore platform + lifecycle columns (was trimmed pre-tagging).
-- [ ] Release Radar: structured release-date extraction from upcoming-tagged games.
-- [ ] Card 1 "This week in gaming" overview: re-evaluate (was dropped) now that top-genres becomes real data.
+- [x] Hottest Games: restore platform + lifecycle chips (was trimmed pre-tagging). **Done — extended with 3-tab structure (All / Current / Upcoming) via CSS-only radio toggle. Rows show: rank · name · platform chips · `upcoming` chip (when applicable) · `live-service` chip (when applicable) · mention count. "existing" chip explicitly NOT rendered — default state. See DECISIONS 2026-05-12 (Phase 3c.1 shipped).**
+- [x] Release Radar: structured release-date extraction from upcoming-tagged games. **Done — IGN scrape dead-end (React/Next.js rendered, only 1/5 sample games in static HTML); pivoted to corpus-context Haiku extraction. 10 of 28 upcoming-tagged games got initial dates; after broader retag, 50 of 184 games have dates. Card simplified to date + name only; future-date filter via `is_future_or_unknown()`. `Calendar →` link in card header points at IGN.**
+- [x] Card 1 "This week in gaming" overview: re-evaluate (was dropped). **Done — restored. Card title shows `N stories · M sources`; body has top-5 genres + top-6 platforms mini-bars. Net-sentiment block dropped per user call (composite "+X · Mixed" not actionable).**
+- [x] **Bonus / mid-session correction:** corpus-context retag of all 189 games via `scripts/retag_games_with_context.py`. Root cause: `tag_game()` passed only the game name; Haiku's Jan-2026 cutoff misclassified anything shipped after. Result: 129/189 updated, 50 games with dates (was 10). Crimson Desert + 8 others manually flipped on `live_service`. 5 case-fold duplicate pairs dedupedvia `scripts/dedupe_games_dim.py`; queries case-insensitive on `entities.games`. Dim now 184 rows.
+- [ ] **Open hygiene (deferred):** numeral-variant duplicates (Diablo IV ↔ Diablo 4, Endfield ↔ Arknights: Endfield); series-as-game entries (Resident Evil / The Witcher / etc.) — currently lifecycle=null; could filter out of dim.
 
 ### Phase 3c.2 — Build Trends card (5 tabs)
 

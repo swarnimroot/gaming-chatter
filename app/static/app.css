@@ -322,9 +322,9 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row-list { display: flex; flex-direction: column; }
 .gc-row { display: grid; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--gc-border); }
 .gc-row:first-child { border-top: none; }
-.gc-row--hottest   { grid-template-columns: 20px 1fr auto auto; }
+.gc-row--hottest   { grid-template-columns: 20px 1fr auto; }
 .gc-row--watch     { grid-template-columns: 40px 1fr auto; }
-.gc-row--release   { grid-template-columns: 60px 1fr 80px; }
+.gc-row--release   { grid-template-columns: 60px 1fr; }
 .gc-row--studio    { grid-template-columns: 12px 1fr 36px; align-items: flex-start; }
 .gc-row--platform  { grid-template-columns: 100px 1fr 36px; }
 .gc-row--mover     { grid-template-columns: 1fr auto; padding: 7px 0; }
@@ -346,6 +346,72 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row-impact--low  { color: var(--gc-fg3); }
 
 .gc-add-btn { background: transparent; border: none; color: var(--gc-fg3); font-size: 12px; cursor: pointer; padding: 0; }
+
+/* ---------- Phase 3c.1 — Hottest chips + mention-count, empty rows ---------- */
+.gc-row-count {
+  font-size: 14px; font-weight: 600; color: var(--gc-fg);
+  font-variant-numeric: tabular-nums;
+  align-self: center;
+}
+.gc-chip-row {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 4px;
+}
+.gc-chip {
+  display: inline-block;
+  padding: 1px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 500;
+  color: var(--gc-fg2); background: var(--gc-chip);
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.gc-chip--lifecycle-existing { color: #0f6534; background: #e6f4ec; }
+.gc-chip--lifecycle-upcoming { color: #8D441C; background: #FAEAE1; }
+.gc-chip--service            { color: #5b3a8a; background: #ece2f6; }
+
+.gc-row-empty {
+  padding: 16px 4px; font-size: 12px; color: var(--gc-fg3);
+}
+
+/* Card 1 — separator between Top genres and Top platforms bar groups */
+.gc-bars-spacer { height: 14px; }
+
+/* Card 3 — radio-driven Hottest tabs (All / Current / Upcoming) */
+.gc-hot-tabs { position: relative; }
+.gc-tab-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0; height: 0;
+}
+.gc-tab-labels {
+  display: inline-flex;
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.gc-tab-label {
+  font-size: 11px; font-weight: 500;
+  padding: 4px 10px;
+  color: var(--gc-fg2);
+  cursor: pointer;
+  user-select: none;
+  border-right: 1px solid var(--gc-border);
+}
+.gc-tab-label:last-of-type { border-right: none; }
+.gc-tab-label:hover { color: var(--gc-fg); }
+#hot-tab-all:checked       ~ .gc-tab-labels label[for="hot-tab-all"],
+#hot-tab-current:checked   ~ .gc-tab-labels label[for="hot-tab-current"],
+#hot-tab-upcoming:checked  ~ .gc-tab-labels label[for="hot-tab-upcoming"] {
+  background: var(--gc-accent-soft); color: var(--gc-accent);
+}
+.gc-tab-pane { display: none; }
+#hot-tab-all:checked       ~ .gc-tab-panes .gc-tab-pane--all,
+#hot-tab-current:checked   ~ .gc-tab-panes .gc-tab-pane--current,
+#hot-tab-upcoming:checked  ~ .gc-tab-panes .gc-tab-pane--upcoming {
+  display: block;
+}
 
 /* ---------- Biggest card ---------- */
 .gc-big-title { font-size: 28px; font-weight: 600; color: var(--gc-fg); line-height: 1.2; margin: 0; letter-spacing: -0.01em; text-wrap: pretty; }
