@@ -54,6 +54,11 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Phase 4 APScheduler — not blocking 3c.6.
 - Sidebar week-list source flip (`available_weeks` → `weekly_reports`) — waiting on W17/W18 synthesis backfill.
 
+**Post-commit addendum (after `48ebd5e`):**
+- **`:8001` restart cleared the stuck reloader.** First two restart attempts served 500s because two orphan WatchFiles multiprocessing-spawn workers from the original stuck reloader (PIDs 41336 + 13240) had inherited the `:8001` listen socket via Windows socket-handle inheritance — even though their parent reloader PIDs were dead per Get-Process, the children kept the port bound. **Gotcha for next restart:** orphan workers have `CommandLine` set to the bare `multiprocessing.spawn` token (no `uvicorn` substring), so filtering only by `*uvicorn*` misses them. Use `'uvicorn|multiprocessing.spawn'` and exclude unrelated projects (`pulse-check`, `http.server`, the user's other `:8000` uvicorn). Once cleared, the fresh `--reload` spawn was clean: reloader PID 35436, worker PID 22352.
+- **All 3 weeks verified 200 on `:8001`** with full structural counts (W19: 10 cards / 3 Biggest / 5 MM / 1 heated + 2 celebrating + narrative CS / 2 risks / 0 esports honest empty / 1 drama / 5 watch / 72 drawer triggers / 4 nav routes / corpus stats `988 · 55 · 30` / zero occurrences of any dead class. W18 + W17: 7 "Awaiting synthesis" prompts each, chrome + Hottest + Trends + Releases intact). Drawer + exec-summary fragments both 200; exec-summary attributes to `claude-opus-4-7`.
+- **User opened `/reports?week=2026-W19` in browser and confirmed the layout visually.** No regressions reported.
+
 ---
 
 ## 2026-05-13 (Phase 3c.4) — Synthesis (Opus 4.7 + critic) + Sonnet 4.6 cluster labels + cluster drawer
