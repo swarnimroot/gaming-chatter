@@ -87,6 +87,12 @@ class WeeklyReport(SQLModel, table=True):
     week_end: datetime
     markdown_content: Optional[str] = Field(default=None, sa_column=Column(Text))
     html_content: Optional[str] = Field(default=None, sa_column=Column(Text))
+    exec_summary_text: Optional[str] = Field(default=None, sa_column=Column(Text))
+    exec_summary_model: Optional[str] = None
+    exec_summary_generated_at: Optional[datetime] = None
+    synthesis_json: Optional[str] = Field(default=None, sa_column=Column(Text))
+    synthesis_model: Optional[str] = None
+    synthesis_generated_at: Optional[datetime] = None
     generated_at: Optional[datetime] = None
     status: str = "pending"
 

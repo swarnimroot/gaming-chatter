@@ -27,6 +27,14 @@ ENRICH_BODY_CHAR_MIN = int(os.environ.get("ENRICH_BODY_CHAR_MIN", "200"))
 # Key is read by the SDK from ANTHROPIC_API_KEY env var directly; we don't import it here.
 ANTHROPIC_ENRICH_MODEL = os.environ.get("ANTHROPIC_ENRICH_MODEL", "claude-haiku-4-5")
 ANTHROPIC_TIMEOUT = float(os.environ.get("ANTHROPIC_TIMEOUT", "120"))
+# Phase 3c.3: exec-summary modal uses the same Haiku model for the 1-paragraph TLDR.
+ANTHROPIC_EXEC_SUMMARY_MODEL = os.environ.get("ANTHROPIC_EXEC_SUMMARY_MODEL", "claude-haiku-4-5")
+# Phase 3c.4: cluster labels migrate from Ollama qwen2.5:7b to Anthropic Sonnet 4.6.
+# ~$0.002 per cluster label call; ~$10/yr ongoing at weekly cadence.
+ANTHROPIC_CLUSTER_LABEL_MODEL = os.environ.get("ANTHROPIC_CLUSTER_LABEL_MODEL", "claude-sonnet-4-6")
+# Phase 3c.4: weekly synthesis pass — Opus 4.7 with prompt-cached system block,
+# followed by a second Opus call for the critic pass. ~$0.30/run + ~$0.05/run critic.
+ANTHROPIC_SYNTHESIS_MODEL = os.environ.get("ANTHROPIC_SYNTHESIS_MODEL", "claude-opus-4-7")
 
 # Clustering. Cosine similarity on normalized fp32 embeddings, connected-components.
 # 0.85 picked after editorial review of the 908-item corpus on 2026-05-07 — see DECISIONS.md.

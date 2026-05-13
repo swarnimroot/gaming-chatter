@@ -4,6 +4,134 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-13 (Phase 3c.4) — Synthesis (Opus 4.7 + critic) + Sonnet 4.6 cluster labels + cluster drawer
+
+**Done:**
+- **Sonnet 4.6 `label_cluster()` migration shipped.** `app/services/anthropic.py` gained `ClusterLabelData` Pydantic + `CLUSTER_LABEL_SYSTEM_PROMPT` + `label_cluster(titles, tldrs)` mirroring the `tag_game()` pattern. Prompt refined for Sonnet's tighter instruction-following ("If the cluster spans multiple sub-topics, pick the dominant one"). `app/services/cluster.py` import swapped from `ollama` → `anthropic`. New `ANTHROPIC_CLUSTER_LABEL_MODEL` env var in `app/config.py`, default `claude-sonnet-4-6`.
+- **One-time relabel of all 55 per-week clusters.** New `--relabel-existing` CLI flag + `_relabel_existing()` helper in `scripts/run_cluster.py` re-labels every cluster in place (no re-clustering — centroid, members, score, week_id all preserved). Filters out the 63 legacy `week_id='all'` rows (deferred cleanup). Ran in **101s, 55/55 success, ~$0.10 spend**. Sample improvements: "2K NFL and MLB game future" → "Take-Two exits NFL and MLB licensed sports games"; "Aliens: Fireteam Elite 2 announcement" → "Aliens Fireteam Elite 2 officially announced by Cold Iron Studios".
+- **DB migration shipped.** `app/db/models.py` `WeeklyReport` extended with `synthesis_json TEXT`, `synthesis_model TEXT`, `synthesis_generated_at TIMESTAMP`. `app/db/init.py` `_migrate_weekly_reports_columns()` extended idempotently. Confirmed cols added on uvicorn restart.
+- **`app/services/synthesis.py` (new module, ~590 lines).** Single big-call `WeeklySynthesis` Pydantic schema covering all 9 cards' synthesizable fields (biggest plural, hottest_reasons, market_momentum, community_sentiment, risks, esports, drama, release_notes, watch, exec_summary_paragraph). System prompts: `_SYNTHESIS_SYSTEM_PROMPT` (locked rubrics: industry-risks scope, CS Reddit-only, drama narrow; voice constraints; section-by-section instructions) and `_CRITIC_SYSTEM_PROMPT` (groundedness checks, section-placement enforcement, prose tightening, returns revised synthesis drop-and-replace). Input builder fetches top-12 clusters with 5 sample members each + Reddit-cluster sentiment summaries + week_stats + top games/genres/platforms/events + Trends WoW risers + upcoming releases. Single `synthesize_week(session, week_id, force=False) -> dict` public API. Both Opus calls use the same `_call_opus()` wrapper; system block carries `cache_control: ephemeral` marker (forward-compatible).
+- **`scripts/run_synthesis.py` (new).** CLI: `python scripts/run_synthesis.py 2026-W19 [--force] [--dry-run]`. Calls `init_db()` at import so it doesn't depend on FastAPI lifespan. Pretty-prints exec_summary + biggest stories to stdout for visual QA.
+- **First W19 synthesis run.** **57.7s wall-clock for synthesis + critic. ~$0.90 spend on the successful run + ~$0.40 burned on a Pydantic-cap retry (see below) = ~$1.30 total this session.** Synthesis pass returned biggest=3 MM=5 risks=3 esports=0 drama=1 watch=5; critic pass returned biggest=3 MM=5 risks=**2** (dropped 1 out-of-scope item) esports=0 drama=1 watch=5. Persisted as 7395-char JSON in `weekly_reports`.
+- **Critic dropped 1 risks item correctly.** Synthesis pass had 3 risks; critic dropped one (presumably a market-shift story misplaced into risks). The remaining 2: "UK age-verification laws draw coordinated opposition" / "Wizardry IP ownership disputed between Atari and Drecom". Both are honest rubric matches.
+- **Router wired synthesis into the existing 13-card template.** `_load_synthesis()` + `_apply_synthesis()` in `app/routers/reports.py`. Biggest hero card uses `synthesis.biggest[0]` (single); rest stashed under `cards["biggest_list"]` for Phase 3c.5. Risks/drama/watch adapted to the existing row shapes. Hottest reasons + release notes overlaid onto top_games / upcoming_releases by case-insensitive game-name match. Shape-mismatched sections (community_sentiment, market_momentum, esports) stashed under `cards["*_synth"]` keys awaiting the 3c.5 layout restructure.
+- **`exec_summary_text` overwritten** by the synthesis path. Modal footer now reads `cached · claude-opus-4-7 · generated May 13, 18:42 UTC` instead of the 3c.3 Haiku entry. Modal serves the corpus-rich Opus paragraph on the next open.
+- **Drawer extended with `kind=cluster`.** New branch in `items_for_entity_in_week()` resolves `value` as integer cluster_id, fetches `member_item_ids`, joins items+sources+enrichments. Drawer header swaps the numeric ID for the cluster's `label` (which is now the Sonnet-relabeled version). `_DRAWER_KIND_LABELS` extended; `_DRAWER_KINDS` extended.
+- **`reports.html` row triggers wired** for Biggest (whole hero card, with inline `onclick="document.getElementById('drawer-open').checked=true"` because the hero contains the "Read in detail" button — can't wrap in `<label>`), Risks rows (conditional `<label>` when `r.cluster_id` present), Drama rows (same), Watch rows (same; also dropped the "+" Add-reminder button per walkthrough lock). Hottest macro got a `gc-row-reason` subline rendering synthesis-provided `reason`. Releases row got the same for `note`.
+- **CSS additions:** `.gc-card-clickable` + hover, `.gc-row-reason` (sublime), `.gc-row-trigger:hover` extended to color risk/drama/watch titles.
+
+**Decided / verified (full rationale in DECISIONS 2026-05-13 Phase 3c.4 entry):**
+- **One big structured Opus call, not per-section.** PRD's $1-5/month cap + 2026-05-11's ~$0.30/run lock both presume single-call. Confirmed: full schema delivered in ~33s for $0.40.
+- **Critic returns the revised synthesis (drop-and-replace).** Simpler than critique-then-merge. Working as intended — critic dropped 1 misplaced risks item.
+- **`max_length` is a runaway-output guardrail, not a design cap.** First run failed Pydantic validation on 158-char `reason` (cap 140) and 360-char `narrative` (cap 320). Burned ~$0.40. Lesson: re-tuned every field's max_length to ~2x the editorial target; prompt still encodes the editorial intent ("≤140 chars; one sentence").
+- **Synthesis persistence on `weekly_reports.synthesis_json`** as a JSON dump. `markdown_content` / `html_content` columns stay reserved for the Phase 3d standalone-HTML export.
+- **Synthesis run overwrites `exec_summary_text` / `_model` / `_generated_at`** so the 3c.3 modal serves the deeper Opus version once synthesis has run.
+- **Drawer `kind=cluster` is the cluster-drill mechanism**, not a new `synthesis_text` column on `clusters`. Per-cluster narrative deferred indefinitely; the drawer listing member articles is enough editorial context for now.
+- **Biggest hero card uses inline `onclick`** for the radio flip (one-line) because `<label>` can't wrap interactive form controls inside the hero card. Acceptable single inline-JS use; all other row triggers stay on the 3c.3 radio+label pattern.
+
+**State at end of session:**
+- New files: `app/services/synthesis.py` (~590 lines), `scripts/run_synthesis.py`.
+- Modified files: `app/db/models.py` (+3 fields on WeeklyReport), `app/db/init.py` (+3 cols in `_migrate_weekly_reports_columns`), `app/config.py` (+2 model env vars), `app/services/anthropic.py` (+ClusterLabelData/SYSTEM_PROMPT/label_cluster), `app/services/cluster.py` (1-line import swap), `app/services/reports.py` (+ cluster branch in items_for_entity_in_week + `_DRAWER_KINDS` extension, ~60 new lines), `app/routers/reports.py` (+ `_load_synthesis` + `_apply_synthesis` + cluster-drawer label resolution + `_DRAWER_KIND_LABELS` extension, ~120 new lines), `app/templates/reports.html` (Biggest/Risks/Drama/Watch row-trigger wiring + Hottest reason subline + Releases note subline, ~80 net new lines), `app/static/app.css` (~30 new lines), `scripts/run_cluster.py` (+ `--relabel-existing` + helper, ~75 new lines).
+- Docs updated: `docs/DECISIONS.md` 2026-05-13 (Phase 3c.4 shipped) entry, `docs/TASKS.md` 3c.4 boxes ticked, `CHANGELOG.md` Unreleased / Phase 3c.4 entry, this entry, project `CLAUDE.md` Status line updated.
+- Corpus state: 988 items / 887 Haiku-enriched / 900 embeddings / 184 games dim — unchanged. **Cluster labels: all 55 per-week clusters relabeled via Sonnet 4.6.** 63 legacy `week_id='all'` rows still have qwen labels (cleanup still deferred). `weekly_reports` now has 1 row with full synthesis JSON for W19 + the Opus-overwritten exec-summary.
+- Test uvicorn :8001 restarted clean (had a stuck reloader from earlier in session). PID changed; verified live.
+- **Anthropic spend this session: ~$1.40** (Sonnet relabel ~$0.10 + Opus-pass burned-by-pydantic-cap ~$0.40 + Opus synthesis+critic ~$0.90). Cumulative project: ~$7.56, still well under the $500/yr cap.
+
+**Surfaced for next session — `r.trend` still rendered.**
+- The Risks template still includes `<span class="gc-risk-trend">{{ r.trend }}</span>` reading the router-side adapter's hardcoded `"stable"`. Locked walkthrough decision was to drop the trend chip ("'rising' requires multi-week corpus we don't have yet"). Will drop in the 3c.5 template cleanup.
+
+**Next session should:**
+1. **Phase 3c.5 — wire `/reports` to the full synthesized data + apply every locked layout change from the 2026-05-12 walkthrough.** Concretely:
+   - **Card 1 "This week in gaming" — DROP** (locked walkthrough; redundant with sidebar corpus stats).
+   - **Card 2 Biggest — re-render plural top-3** (currently shows synthesis.biggest[0] only; full list is already in `cards["biggest_list"]`).
+   - **Card 4 Market momentum — replace the 4-platform-sparkline placeholder layout with a row list** consuming `cards["market_momentum_synth"]` (acquisitions / funds / platform-policy / structural / people-moves chips).
+   - **Card 6 Community sentiment — replace the aggregate pos/neu/neg bar + top-threads placeholder** with the synthesized narrative + "Reddit is heated about" / "Reddit is celebrating" two-list layout from `cards["community_synth"]`.
+   - **Card 7 Risks — drop the `gc-risk-trend` span** (now always reads "stable").
+   - **Card 8 Studio watch + Card 9 Storefronts — DROP** (locked: folded into MM).
+   - **Card 10 Esports — replace the top_stream/big_event/movers placeholder with a row list** consuming `cards["esports_synth"]`.
+   - **Sidebar nav: drop Watchlist / Trends-nav / All-stories / Archive** (locked: 4 routes only).
+   - **Sidebar corpus-stats user block** instead of the user-avatar.
+   - **Drop the standalone headline block above the grid** (locked: redundant with Biggest title + exec-summary).
+   - **Drop the footer hint block** (locked).
+   - **Drop the header layout/density/theme toggles** (locked: variants are static).
+2. **Phase 3c.6 (formerly 3d) — Markdown / HTML export.** Render `weekly_reports.markdown_content` from the synthesis JSON + a standalone-HTML view with inlined CSS for the export button.
+3. **Optional hygiene (not blocking):**
+   - Drop the 63 legacy `week_id='all'` cluster rows (now that 55 per-week clusters cover the same content with Sonnet labels).
+   - Run synthesis on W17 + W18 to backfill the historical archive (~$1.80 additional spend).
+   - Taxonomy drift audit in `_filter_genres` / `_filter_platforms`.
+   - Numeral-variant dedupe (Diablo IV ↔ Diablo 4).
+   - Series-as-game cleanup.
+   - `Summer Game Fest = 1` casing-variant investigation (Phase 3c.3 finding).
+
+**Open / blocked:**
+- Phase 3c.5 layout restructure to 9 cards — next session's main work.
+- W17 / W18 synthesis backfill — cheap to add; the data is just placeholder for those weeks today.
+- Phase 4 — APScheduler Monday-morning auto-run of synthesis. Not blocking 3c.5 since synthesis can be triggered manually via `scripts/run_synthesis.py`.
+
+---
+
+## 2026-05-13 (Phase 3c.3) — Source drawer + Exec-summary modal port
+
+**Done:**
+- **DB migration shipped.** `app/db/init.py` `_migrate_weekly_reports_columns()` (idempotent, mirrors `_migrate_games_columns()`) adds three columns to `weekly_reports`: `exec_summary_text TEXT`, `exec_summary_model TEXT`, `exec_summary_generated_at TIMESTAMP`. `WeeklyReport` SQLModel extended in `app/db/models.py`.
+- **`app/services/reports.py` extended.** New public `items_for_entity_in_week(session, kind, value, week_id, limit=25) -> list[dict]` with `kind ∈ {game, genre, platform, event}` — backs the drawer. Each row carries id / title / url / published_at / when_display / tldr / sentiment_score / sentiment_summary / category / source_name / source_kind. Reuses existing `json_each` patterns; nothing new at the SQL layer. Helpers: `_drawer_source_kind()` (router-side mapping in one place) and `_relative_when()` ("3 d ago" formatting).
+- **`app/services/exec_summary.py` (new module).** `get_or_generate(session, week_id, force=False) -> dict`. Lazy Haiku 4.5 call on cache miss + persistence to `weekly_reports`. `_build_input_text()` assembles a compact prompt body from existing `services.reports` queries (week_stats, top genres / platforms / games, Trends risers, upcoming releases — no new aggregation duplicated). `_call_haiku()` wraps `client.messages.create()` with prompt-cached system block. System prompt forbids fabrication, requires 3-5 sentences naming the strongest concrete signal first, drops marketing-voice and first/second person.
+- **`app/config.py` addition.** `ANTHROPIC_EXEC_SUMMARY_MODEL` env-overridable, defaults to `claude-haiku-4-5`. Kept separate from `ANTHROPIC_ENRICH_MODEL` so 3c.4 can swap independently if we ever revisit.
+- **`app/routers/reports.py` extended.** Two new endpoints: `GET /reports/drawer?kind=&value=&week=` rendering `_drawer.html`; `GET /reports/exec-summary?week=` rendering `_exec_summary.html`. Both gracefully degrade on bad inputs via an `error` flag in the fragment context. Main `/reports` context now carries `active_week_key` so trigger URLs interpolate cleanly.
+- **`app/templates/_drawer.html` + `_exec_summary.html` (new).** Drawer fragment: header (kind eyebrow + entity name + items + week), body (article cards with `source_pill` macro + when + title + tldr + outbound link), footer placeholder note. Modal fragment: header (eyebrow + week label), body (single `<p class="gc-exec-paragraph">`), footer attribution (`fresh|cached · model · generated-at`).
+- **`app/templates/reports.html` rewired.**
+   - HTMX 2.0.3 `<script>` added to `<head>` (the page is standalone — doesn't extend `base.html` — so HTMX has to load here).
+   - Four hidden state radios as direct children of `<body>` before `.gc-shell`: `drawer-closed` (checked), `drawer-open`, `modal-closed` (checked), `modal-open`. Drawer overlay + panel + close button + body wrap shell, and modal overlay + card + close button + body wrap shell, as direct children of `<body>` after `.gc-shell` — so `:checked ~ .panel` sibling selectors work.
+   - Three exec-summary triggers (sidebar `.gc-sb-cta`, header `.gc-cta`, footer `.gc-ghost-btn`) rewritten as `<label for="modal-open" hx-get="/reports/exec-summary?week={{ active_week_key }}" hx-target="#exec-summary-body" hx-swap="innerHTML">`. Existing classes carry the styling; `<label>` just inherits the visual.
+   - `hot_rows()` macro rewritten — outer row is now `<label class="gc-row gc-row--hottest gc-row-trigger" for="drawer-open" hx-get="/reports/drawer?kind=game&value={{ g.name|urlencode }}&week={{ active_week_key }}" hx-target="#source-drawer-body">`.
+   - `trend_rows()` macro takes a new `kind` parameter (game / genre / platform / event); the Trends card calls it five times with the right kind per tab (games_current → game, games_upcoming → game, genres → genre, platforms → platform, live_service → game, events → event).
+   - Releases row rewritten as a `<label>` trigger with `kind=game`.
+- **`app/static/app.css` extended.** New block at end: `.gc-overlay-state` (hidden radio), `.gc-drawer-overlay` / `.gc-drawer-panel` / `.gc-drawer-close` / `.gc-drawer-header` / `.gc-drawer-title` / `.gc-drawer-meta` / `.gc-drawer-body-wrap` / `.gc-drawer-body` / `.gc-drawer-item` / `.gc-drawer-item-head` / `.gc-drawer-item-when` / `.gc-drawer-item-title` / `.gc-drawer-item-tldr` / `.gc-drawer-footer` / `.gc-drawer-foot-note`; mirror set for `.gc-modal-*`; `.gc-row-trigger` cursor + hover-tint shared between Hottest / Trends / Releases. `:checked ~ ` selectors on `#drawer-open` and `#modal-open` reveal each panel. Overlays use `opacity` + `pointer-events` so backdrop clicks still close. `@media (prefers-reduced-motion: reduce)` disables transitions. HTMX `htmx-request` class on the panel drives a "loading…" / "Generating…" hint inside the panel body during the fetch.
+- **Verified end-to-end on `:8001`.** Restarted uvicorn with `--reload` (prior process didn't have reload set and the stale router code was serving stale 404s on the new endpoints).
+   - `/reports?week=2026-W19` 200, 55 drawer triggers + 3 modal triggers + both shells present.
+   - `/reports/drawer?kind=game&value=Mixtape&week=2026-W19` 200, 15 items.
+   - `/reports/drawer?kind=genre&value=Action&week=2026-W19` 200, 25 items. `kind=platform&value=PC` 25 items. `kind=event&value=Summer%20Game%20Fest` 1 item. `kind=game&value=BadGameThatDoesntExist` 0 items + empty-state row. `kind=bogus&value=x` returns the fragment with the `error` flag.
+   - `/reports/exec-summary?week=2026-W19` first call 5.5s (Haiku cache miss, 1 API call), second call 2.1s (DB cache hit, footer reads `cached · claude-haiku-4-5`). DB row: `week_start=2026-05-04`, `exec_summary_text` 635 chars, `model=claude-haiku-4-5`, `generated_at` populated.
+   - Sample paragraph (W19): "Star Fox dominated gaming coverage this week with 20 mentions and a 3.1 percentage-point rise, driven by anticipation ahead of its June 25 release, while the remaster Star Fox 64 drew 12 mentions and a 2.2pp gain. Action and Adventure genres led discussion across 98 and 56 stories respectively, with PC platforms commanding 121 mentions and both Xbox and Nintendo platforms gaining ground week-over-week. Near-term attention is shifting toward May's release slate, including Thick As Thieves on May 20 and Batman & Robin on May 22, while MMO sentiment climbed 4.4pp with EVE Online picking up mentions alongside live-service tracking." Specific names, specific numbers, no fabrication, 3 sentences.
+
+**Decided / verified (full rationale in DECISIONS 2026-05-13 Phase 3c.3 entry):**
+- **Drawer orientation: entity-drill, not source-drill.** Bundle's source-keyed drawer flipped to entity-keyed (game / genre / platform / event); source pills inside the drawer items give back the outbound-source affordance.
+- **Drawer scope this phase: Trends + Releases + Hottest.** Biggest / Momentum / Risks drawer wiring deferred to 3c.4 — their data is still placeholder.
+- **Toggle: hidden radio + `<label for>` (CSS-only state).** Rejected `:target` URL fragments after realizing HTMX `hx-get` on `<a>` `preventDefault`s the click and suppresses native hash navigation. Radios + labels also avoid hash pollution and history-stack growth.
+- **Exec-summary model: Haiku 4.5.** Cost ~$0.001 per cache miss; one call per week.
+- **Exec-summary persistence: three new columns on `weekly_reports`** — separate `exec_summaries` table rejected (table already owns the week-grain; Phase 3c.4 will fill `markdown_content`/`html_content` on the same row).
+
+**State at end of session:**
+- Modified files: `app/db/models.py` (+3 fields on `WeeklyReport`), `app/db/init.py` (+ `_migrate_weekly_reports_columns()`, called from `init_db()`), `app/services/reports.py` (+ `items_for_entity_in_week` + helpers `_drawer_source_kind` / `_relative_when` + `_DRAWER_KINDS` const, ~135 new lines), `app/routers/reports.py` (+ 2 endpoints, + `active_week_key` in context, ~95 new lines), `app/templates/reports.html` (HTMX `<script>`, 4 state radios, drawer + modal shells, 4 macro/row rewrites for triggers — ~70 net new lines), `app/static/app.css` (+ drawer + modal + trigger block, ~210 new lines), `app/config.py` (+1 env-overridable model name).
+- New files: `app/services/exec_summary.py` (~135 lines), `app/templates/_drawer.html`, `app/templates/_exec_summary.html`.
+- Docs updated: `docs/DECISIONS.md` 2026-05-13 (Phase 3c.3 shipped) entry, `docs/TASKS.md` 3c.3 boxes ticked, `CHANGELOG.md` Unreleased / Phase 3c.3 entry, this entry.
+- Corpus state unchanged from Phase 3c.2 (988 items · 887 Haiku-enriched + 13 preserved-qwen + 88 skipped · 900 embeddings · 184 games dim · 55 per-week clusters + 63 legacy `week_id='all'`).
+- `weekly_reports` table now has 1 row from the smoke test: `week_start=2026-05-04` (W19), 635-char exec summary, `model=claude-haiku-4-5`, `generated_at=2026-05-13 15:48 UTC`.
+- Test uvicorn server running on `:8001` (background process from this session; PID 17020 + reloader 38660). User's `:8000` instance still has stale router code from earlier phases — restart if they want the new endpoints there.
+- Anthropic spend this session: 1 Haiku call (~$0.001). Cumulative project ~$6.16.
+
+**Surfaced for next session — `Summer Game Fest` event count:**
+- The drawer for `kind=event&value=Summer Game Fest` returned 1 item this week. Worth checking whether the corpus actually has only 1 SGF mention or whether casing / phrasing variants split the count (e.g. `Summer Game Fest` vs `SGF` vs `Summer Game Fest 2026`). Low priority; not blocking 3c.4.
+- Same taxonomy-drift caveat noted in Phase 3c.2 still applies (`MMO` / `Indie/Roguelike` / `Multi-platform` in genres / platforms).
+
+**Next session should:**
+1. **Phase 3c.4 — synthesis.** `app/services/synthesis.py` calling Opus 4.7 with prompt-cached system block. Second Opus call for the critic pass. Migrate `label_cluster()` to Sonnet 4.6 (still deferred from 3c.0.5 / 3c.2 / 3c.3). With synthesis in place, the Biggest / Momentum / Risks placeholders become real; THEN wire their drawers (the radio + label trigger pattern from 3c.3 carries straight over).
+2. **Phase 3c.5 — wire `/reports` to real synthesized data** and apply every remaining locked layout change (drop Card 1 if walkthrough still asks; fold Studio Watch + Storefronts into Market Momentum; etc.).
+3. **Optional hygiene (not blocking):**
+   - Audit `_filter_genres` / `_filter_platforms` validators in `app/services/ollama.py` against the Haiku enrichment path. Either fix or expand the locked taxonomies.
+   - Investigate the `Summer Game Fest = 1` count above.
+   - Numeral-variant dedupe (Diablo IV ↔ Diablo 4, Endfield ↔ Arknights: Endfield).
+   - Series-as-game cleanup.
+   - 63 legacy `week_id='all'` cluster cleanup.
+
+**Open / blocked:**
+- Per-cluster synthesis text (`clusters.synthesis_text` or similar) — Phase 3c.4. Drawer footer note already references this.
+- Biggest / Momentum / Risks drawer wiring — Phase 3c.4 (waits on real data).
+- Sonnet 4.6 `label_cluster()` migration — Phase 3c.4.
+- Opus 4.7 synthesis prompt + critic pass — Phase 3c.4.
+
+---
+
 ## 2026-05-13 (Phase 3c.2) — Trends card: 5-tab WoW mention-rate delta
 
 **Done:**

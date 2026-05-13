@@ -1,0 +1,47 @@
+{# Source drawer body fragment (Phase 3c.3).
+   HTMX swaps this into #source-drawer-body when a row is clicked.
+   The outer panel shell + × close button live in reports.html. #}
+{% from "_components.html" import source_pill %}
+
+{% if error %}
+  <div class="gc-drawer-header">
+    <div class="gc-eyebrow">{{ kind_label or "Drawer" }}</div>
+    <div class="gc-drawer-title">{{ value or "Error" }}</div>
+  </div>
+  <div class="gc-drawer-body">
+    <div class="gc-row-empty">{{ error }}</div>
+  </div>
+{% else %}
+  <div class="gc-drawer-header">
+    <div class="gc-eyebrow">{{ kind_label }}</div>
+    <div class="gc-drawer-title">{{ value }}</div>
+    <div class="gc-drawer-meta">
+      {{ items|length }} item{{ 's' if items|length != 1 else '' }} · {{ week_label }}
+    </div>
+  </div>
+
+  <div class="gc-drawer-body">
+    {% if items %}
+      {% for it in items %}
+        <a class="gc-drawer-item" href="{{ it.url }}" target="_blank" rel="noopener">
+          <div class="gc-drawer-item-head">
+            {{ source_pill(it.source_name, it.source_kind) }}
+            <span class="gc-drawer-item-when">{{ it.when_display }}</span>
+          </div>
+          <div class="gc-drawer-item-title">{{ it.title }}</div>
+          {% if it.tldr %}
+          <div class="gc-drawer-item-tldr">{{ it.tldr }}</div>
+          {% endif %}
+        </a>
+      {% endfor %}
+    {% else %}
+      <div class="gc-row-empty">No matching items found this week.</div>
+    {% endif %}
+  </div>
+
+  <div class="gc-drawer-footer">
+    <span class="gc-drawer-foot-note">
+      Deep per-cluster synthesis lands in Phase 3c.4.
+    </span>
+  </div>
+{% endif %}

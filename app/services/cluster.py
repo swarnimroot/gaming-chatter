@@ -17,7 +17,7 @@ from sqlmodel import Session, col, delete, select
 from app.config import CLUSTER_LABEL_SAMPLE, CLUSTER_MIN_SIZE, CLUSTER_THRESHOLD
 from app.db.models import Cluster, Enrichment, Item, RunLog
 from app.db.session import engine
-from app.services.ollama import label_cluster
+from app.services.anthropic import label_cluster
 
 log = logging.getLogger(__name__)
 

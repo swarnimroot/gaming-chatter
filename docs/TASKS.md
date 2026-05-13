@@ -96,17 +96,21 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [x] Events — top-5 by mention-rate delta over `enrichments.event`. Empty-state row (commonly sparse).
 - [x] WoW only; top-N by mention-rate delta; clean empty-state for sparse tabs. **Click-to-drawer deferred to Phase 3c.3** (Source Drawer port).
 
-### Phase 3c.3 — Port Source Drawer + Exec-summary modal
+### Phase 3c.3 — Port Source Drawer + Exec-summary modal  *(SHIPPED 2026-05-13)*
 
-- [ ] Source Drawer = right-side slide-in panel; opens on Biggest/MM/Risks/etc. row clicks; shows cluster synthesis paragraph + member items with outbound source links.
-- [ ] Exec-summary modal = header CTA opens it; second Anthropic call produces 1-paragraph tldr of the synthesized report.
+- [x] Source Drawer = right-side slide-in panel; opens on row clicks. **Done — reframed to entity-drill (game / genre / platform / event) instead of the bundle's source-drill orientation. Trends + Releases + Hottest rows wired in 3c.3; Biggest / Momentum / Risks deferred to 3c.4 because their backing data is still placeholder. Drawer shows article cards (source pill + when + title + tldr + outbound link). Toggle is CSS-only via hidden radio + `<label for>` triggers (mirrors the existing `.gc-hot-tabs` / `.gc-trend-tabs` pattern); HTMX 2.0.3 fetches the `_drawer.html` fragment per row click. Backed by new `items_for_entity_in_week()` in `app/services/reports.py`.**
+- [x] Exec-summary modal = header CTA opens it; second Anthropic call produces 1-paragraph tldr. **Done — three triggers wired (sidebar `gc-sb-cta`, header `gc-cta`, footer `gc-ghost-btn`) all open the same modal. Haiku 4.5 produces a 3-5 sentence factual paragraph on first open; result persists to new `weekly_reports.exec_summary_text / exec_summary_model / exec_summary_generated_at` columns so subsequent opens serve from cache. Service: `app/services/exec_summary.py:get_or_generate()`. Endpoint: `GET /reports/exec-summary?week=...`. Verified end-to-end on `:8001` with one cache-miss + one cache-hit round-trip; ~$0.001 spend.**
 
-### Phase 3c.4 — Write Phase 3c synthesis prompt + service
+### Phase 3c.4 — Write Phase 3c synthesis prompt + service  *(SHIPPED 2026-05-13)*
 
-- [ ] `app/services/synthesis.py` — Anthropic Opus 4.7 (`claude-opus-4-7`), prompt-cached system block.
-- [ ] Schema covers 10 sections (Biggest, Hottest, MM, CS, Risks, Esports, Releases, Drama narrow, Watch, Trends) + exec-summary pass.
-- [ ] First run on most-recent ISO week (no longer `week_id='all'`).
-- [ ] Persist markdown + html to `weekly_reports`.
+- [x] `app/services/synthesis.py` — Anthropic Opus 4.7 (`claude-opus-4-7`), prompt-cached system block. **Done — single-call `WeeklySynthesis` Pydantic schema covering all 9 cards' synthesizable fields. System block carries `cache_control: ephemeral` marker (forward-compatible). Public `synthesize_week(session, week_id, force=False)` API.**
+- [x] Schema covers ~10 sections (Biggest plural, Hottest reasons, MM, CS, Risks, Esports, Drama narrow, Release notes, Watch) + exec-summary pass. **Done — WeeklySynthesis has 10 fields including `exec_summary_paragraph`. Per-field `max_length` tuned as runaway-output guardrails (~2x the editorial intent); the editorial caps live in the prompt.**
+- [x] Critic pass — second Opus 4.7 call. **Done — drop-and-replace critic returning the revised WeeklySynthesis. W19 first run: critic dropped 1 misplaced risks item (3 → 2), preserved every other section count.**
+- [x] First run on most-recent ISO week (no longer `week_id='all'`). **Done — `python scripts/run_synthesis.py 2026-W19`, 57.7s, persisted as 7395-char JSON. ~$0.90 + ~$0.40 burned on a Pydantic-cap retry = ~$1.30 total this session.**
+- [x] Persist to `weekly_reports.synthesis_json` (+ synthesis_model + synthesis_generated_at). **Done — three new columns via idempotent `_migrate_weekly_reports_columns`. Synthesis path also overwrites the 3c.3 `exec_summary_text` / `_model` / `_generated_at` with the Opus paragraph so the modal serves the corpus-aware version.**
+- [x] Sonnet 4.6 `label_cluster()` migration (deferred from 3c.0.5 / 3c.2 / 3c.3). **Done — port mirrors `tag_game()` pattern. `cluster.py` import swapped. All 55 per-week clusters relabeled in 101s, ~$0.10. Labels visibly sharper.**
+- [x] Drawer `kind=cluster` + Biggest / Risks / Drama / Watch row triggers. **Done — `items_for_entity_in_week()` extended with cluster branch (resolves cluster_id, fetches member_item_ids, joins to items+sources+enrichments). Drawer header swaps numeric id for the cluster label. Row triggers conditionally rendered as `<label>`s when `cluster_id` present; Biggest hero card uses one-line inline `onclick` since `<label>` can't wrap interactive form controls.**
+- [x] Router wires synthesis output into existing template fields. **Done — `_load_synthesis` + `_apply_synthesis` overlay; mismatched-shape sections (community, MM, esports) stashed under `cards["*_synth"]` keys for Phase 3c.5.**
 
 ### Phase 3c.5 — Wire `/reports` template to real synthesized data
 

@@ -1,0 +1,30 @@
+{# Exec-summary modal body fragment (Phase 3c.3).
+   HTMX swaps this into #exec-summary-body when the modal opens.
+   The outer modal shell + × close button live in reports.html. #}
+
+{% if error %}
+  <div class="gc-modal-header">
+    <div class="gc-eyebrow">Exec summary</div>
+    <div class="gc-modal-title">Error</div>
+  </div>
+  <div class="gc-modal-body">
+    <div class="gc-row-empty">{{ error }}</div>
+  </div>
+{% else %}
+  <div class="gc-modal-header">
+    <div class="gc-eyebrow">Exec summary</div>
+    <div class="gc-modal-title">{{ week_label }}</div>
+  </div>
+
+  <div class="gc-modal-body">
+    <p class="gc-exec-paragraph">{{ text }}</p>
+  </div>
+
+  <div class="gc-modal-footer">
+    <span class="gc-modal-foot-note">
+      {% if from_cache %}cached{% else %}fresh{% endif %} ·
+      {{ model }}
+      {% if generated_at %} · generated {{ generated_at.strftime('%b %d, %H:%M UTC') }}{% endif %}
+    </span>
+  </div>
+{% endif %}

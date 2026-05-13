@@ -527,6 +527,193 @@ def trends_for_week(session: Session, week_id: str, limit: int = 5) -> dict:
     }
 
 
+# ---------- Source drawer (Phase 3c.3) --------------------------------------
+# Click a row on Hottest / Trends / Releases → drawer shows the articles that
+# backed that entity in the week, with source pill + tldr + permalink. Reuses
+# the same json_each + case-insensitive grouping that powers top_*_for_week.
+
+_DRAWER_KINDS = {"game", "genre", "platform", "event", "cluster"}
+
+
+def _drawer_source_kind(type_: str | None, url_or_handle: str | None, name: str | None) -> str:
+    """Mirror the router's _build_sources_meta heuristic for a single row."""
+    if (type_ or "").lower() == "youtube":
+        return "youtube"
+    if "reddit.com" in (url_or_handle or "") or (name or "").startswith("r/"):
+        return "subreddit"
+    return "outlet"
+
+
+def _relative_when(published_at: datetime | None, now: datetime | None = None) -> str:
+    """Human-readable freshness like '3 h ago' / '2 d ago' / '—'."""
+    if not published_at:
+        return "—"
+    now = now or datetime.utcnow()
+    if isinstance(published_at, str):
+        try:
+            published_at = datetime.fromisoformat(published_at)
+        except ValueError:
+            return str(published_at)[:16]
+    delta = now - published_at
+    secs = int(delta.total_seconds())
+    if secs < 60:
+        return "just now"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins} min ago"
+    hrs = mins // 60
+    if hrs < 48:
+        return f"{hrs} h ago"
+    days = hrs // 24
+    return f"{days} d ago"
+
+
+def items_for_entity_in_week(
+    session: Session,
+    kind: str,
+    value: str,
+    week_id: str,
+    limit: int = 25,
+) -> list[dict]:
+    """Articles backing a given entity (game/genre/platform/event) in an ISO week.
+
+    Output is ordered newest-first. Each row carries enough fields for the
+    drawer template: source pill + when + title + tldr + permalink + sentiment.
+    """
+    if kind not in _DRAWER_KINDS:
+        raise ValueError(f"unknown drawer kind: {kind!r} (expected one of {_DRAWER_KINDS})")
+
+    start, end = iso_week_bounds(week_id)
+
+    if kind == "cluster":
+        # `value` is the cluster_id as a string; fetch member_item_ids and
+        # return their items. No week filter — the cluster row already lives
+        # under one week_id, and we want all its members even if some have
+        # boundary-spanning published_at.
+        try:
+            cluster_id = int(value)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"cluster drawer requires integer value, got {value!r}") from e
+        row = session.exec(text(
+            "SELECT member_item_ids FROM clusters WHERE id = :cid"
+        ).bindparams(cid=cluster_id)).first()
+        if not row or not row[0]:
+            return []
+        import json as _json
+        try:
+            member_ids = _json.loads(row[0])
+        except (TypeError, ValueError):
+            return []
+        if not member_ids:
+            return []
+        placeholders = ",".join(str(int(x)) for x in member_ids[:limit])
+        sql = f"""
+            SELECT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            LEFT JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            WHERE i.id IN ({placeholders})
+            ORDER BY i.published_at DESC
+        """
+        rows = session.exec(text(sql)).all()
+        results: list[dict] = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "title": r[1],
+                "url": r[2],
+                "published_at": r[3],
+                "when_display": _relative_when(r[3]),
+                "tldr": r[4],
+                "sentiment_score": r[5],
+                "sentiment_summary": r[6],
+                "category": r[7],
+                "source_name": r[8],
+                "source_kind": _drawer_source_kind(r[9], r[10], r[8]),
+            })
+        return results
+
+    if kind == "game":
+        sql = """
+            SELECT DISTINCT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            JOIN json_each(e.entities, '$.games') je
+                 ON e.status = 'ok' AND LOWER(TRIM(je.value)) = LOWER(:v)
+            WHERE i.published_at >= :s AND i.published_at < :e
+            ORDER BY i.published_at DESC
+            LIMIT :lim
+        """
+    elif kind == "genre":
+        sql = """
+            SELECT DISTINCT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            JOIN json_each(e.genres) je
+                 ON e.status = 'ok' AND e.genres IS NOT NULL
+                 AND LOWER(TRIM(je.value)) = LOWER(:v)
+            WHERE i.published_at >= :s AND i.published_at < :e
+            ORDER BY i.published_at DESC
+            LIMIT :lim
+        """
+    elif kind == "platform":
+        sql = """
+            SELECT DISTINCT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            JOIN json_each(e.platforms) je
+                 ON e.status = 'ok' AND e.platforms IS NOT NULL
+                 AND LOWER(TRIM(je.value)) = LOWER(:v)
+            WHERE i.published_at >= :s AND i.published_at < :e
+            ORDER BY i.published_at DESC
+            LIMIT :lim
+        """
+    else:  # event — scalar column, case-insensitive match
+        sql = """
+            SELECT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            WHERE i.published_at >= :s AND i.published_at < :e
+              AND e.status = 'ok'
+              AND e.event IS NOT NULL
+              AND LOWER(TRIM(e.event)) = LOWER(:v)
+            ORDER BY i.published_at DESC
+            LIMIT :lim
+        """
+
+    rows = session.exec(text(sql).bindparams(s=start, e=end, v=value, lim=limit)).all()
+    results: list[dict] = []
+    for r in rows:
+        results.append({
+            "id": r[0],
+            "title": r[1],
+            "url": r[2],
+            "published_at": r[3],
+            "when_display": _relative_when(r[3]),
+            "tldr": r[4],
+            "sentiment_score": r[5],
+            "sentiment_summary": r[6],
+            "category": r[7],
+            "source_name": r[8],
+            "source_kind": _drawer_source_kind(r[9], r[10], r[8]),
+        })
+    return results
+
+
 def upcoming_releases(session: Session, week_id: str, limit: int = 12) -> list[dict]:
     """Upcoming-tagged games mentioned in this week, ordered by release_date.
 

@@ -510,3 +510,276 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   background: transparent; border: 1px solid var(--gc-border); color: var(--gc-fg2);
   font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: inherit;
 }
+
+/* =============================================================
+   Phase 3c.3 — Source drawer + Exec-summary modal
+   Radio-driven state mirrors the existing tab pattern; HTMX
+   handles content swap-in, CSS handles open/close visibility.
+   ============================================================= */
+
+/* Hidden state radios — siblings of the panels via direct-body placement */
+.gc-overlay-state {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0; height: 0;
+}
+
+/* ---------- Drawer ---------- */
+.gc-drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8,8,11,0.55);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gc-dur-2) var(--gc-ease);
+  cursor: pointer;
+}
+.gc-drawer-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(440px, 92vw);
+  background: var(--gc-surface);
+  border-left: 1px solid var(--gc-border);
+  box-shadow: -8px 0 24px rgba(23,23,28,0.10);
+  z-index: 101;
+  display: flex; flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 280ms var(--gc-ease);
+}
+.gc-drawer-close {
+  position: absolute;
+  top: 12px; right: 14px;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  background: var(--gc-surface);
+  color: var(--gc-fg2);
+  cursor: pointer;
+  font-size: 18px; line-height: 1;
+  z-index: 1;
+}
+.gc-drawer-close:hover { color: var(--gc-fg); border-color: var(--gc-border-strong); }
+
+#drawer-open:checked ~ .gc-drawer-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+#drawer-open:checked ~ .gc-drawer-panel {
+  transform: translateX(0);
+}
+
+.gc-drawer-body-wrap {
+  display: flex; flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.gc-drawer-header {
+  padding: 20px 48px 16px 20px;
+  border-bottom: 1px solid var(--gc-border);
+  flex-shrink: 0;
+}
+.gc-drawer-title {
+  font-size: 18px; font-weight: 600;
+  color: var(--gc-fg);
+  margin: 4px 0 0;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+}
+.gc-drawer-meta {
+  font-size: 11px; color: var(--gc-fg3);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.gc-drawer-body {
+  flex: 1; overflow: auto;
+  padding: 12px 20px 20px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.gc-drawer-item {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  background: var(--gc-surface);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--gc-dur-1), background var(--gc-dur-1);
+}
+.gc-drawer-item:hover {
+  border-color: var(--gc-accent);
+  background: var(--gc-accent-soft);
+}
+.gc-drawer-item-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px;
+}
+.gc-drawer-item-when {
+  font-size: 10px; color: var(--gc-fg3);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.gc-drawer-item-title {
+  font-size: 13px; font-weight: 600; color: var(--gc-fg);
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.gc-drawer-item-tldr {
+  font-size: 12px; color: var(--gc-fg2);
+  margin-top: 6px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.gc-drawer-footer {
+  padding: 10px 20px;
+  border-top: 1px solid var(--gc-border);
+  flex-shrink: 0;
+}
+.gc-drawer-foot-note {
+  font-size: 10px; color: var(--gc-fg3);
+  letter-spacing: 0.04em;
+}
+
+/* Row trigger — shared visual cue that a row opens the drawer */
+.gc-row-trigger {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.gc-row-trigger:hover .gc-row-title,
+.gc-row-trigger:hover .gc-trend-name,
+.gc-row-trigger:hover .gc-risk-title,
+.gc-row-trigger:hover .gc-drama-title,
+.gc-row-trigger:hover .gc-row-item {
+  color: var(--gc-accent);
+}
+
+/* Phase 3c.4 — Biggest hero card is clickable when synthesis is present */
+.gc-card-clickable {
+  cursor: pointer;
+  transition: border-color var(--gc-dur-1), box-shadow var(--gc-dur-1);
+}
+.gc-card-clickable:hover {
+  border-color: var(--gc-accent);
+  box-shadow: 0 1px 2px rgba(217, 104, 43, 0.08),
+              0 2px 8px rgba(217, 104, 43, 0.05);
+}
+.gc-card-clickable:hover .gc-big-title {
+  color: var(--gc-accent);
+}
+
+/* Phase 3c.4 — Hottest row 'reason' subline + Releases 'note' subline */
+.gc-row-reason {
+  font-size: 11px;
+  color: var(--gc-fg2);
+  margin-top: 4px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+/* HTMX indicator (during fetch) — show a pulsing dot in drawer header */
+.gc-drawer-panel.htmx-request .gc-drawer-meta::after {
+  content: " · loading…";
+  color: var(--gc-fg3);
+}
+
+/* ---------- Modal ---------- */
+.gc-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8,8,11,0.62);
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gc-dur-2) var(--gc-ease);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 24px;
+  overflow: auto;
+  cursor: pointer;
+}
+.gc-modal-card {
+  position: fixed;
+  top: 48px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  width: min(720px, 92vw);
+  max-height: calc(100vh - 96px);
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 8px;
+  box-shadow: 0 24px 48px rgba(8,8,11,0.30);
+  z-index: 201;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gc-dur-2) var(--gc-ease),
+              transform var(--gc-dur-2) var(--gc-ease);
+  display: flex; flex-direction: column;
+  cursor: default;
+}
+.gc-modal-close {
+  position: absolute;
+  top: 12px; right: 14px;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  background: var(--gc-surface);
+  color: var(--gc-fg2);
+  cursor: pointer;
+  font-size: 18px; line-height: 1;
+  z-index: 1;
+}
+.gc-modal-close:hover { color: var(--gc-fg); border-color: var(--gc-border-strong); }
+
+#modal-open:checked ~ .gc-modal-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+#modal-open:checked ~ .gc-modal-card {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.gc-modal-header {
+  padding: 22px 48px 12px 24px;
+  border-bottom: 1px solid var(--gc-border);
+}
+.gc-modal-title {
+  font-size: 20px; font-weight: 600;
+  color: var(--gc-fg);
+  margin: 4px 0 0;
+  letter-spacing: -0.01em;
+}
+.gc-modal-body {
+  padding: 20px 24px 18px;
+  overflow: auto;
+}
+.gc-modal-footer {
+  padding: 10px 24px 14px;
+  border-top: 1px solid var(--gc-border);
+  display: flex; justify-content: flex-end;
+}
+.gc-modal-foot-note {
+  font-size: 10px; color: var(--gc-fg3);
+  letter-spacing: 0.04em;
+}
+.gc-exec-paragraph {
+  font-size: 15px;
+  color: var(--gc-fg);
+  line-height: 1.55;
+  margin: 0;
+  text-wrap: pretty;
+}
+.gc-modal-card.htmx-request .gc-modal-body::before {
+  content: "Generating…";
+  display: block;
+  font-size: 12px; color: var(--gc-fg3);
+  padding: 4px 0 12px;
+}
+
+/* Reduced motion — disable slide/fade transitions */
+@media (prefers-reduced-motion: reduce) {
+  .gc-drawer-overlay,
+  .gc-drawer-panel,
+  .gc-modal-overlay,
+  .gc-modal-card { transition: none; }
+}

@@ -17,6 +17,7 @@ Locked variants: grid + comfortable + light + orange (#D9682B).
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -27,6 +28,7 @@ from sqlmodel import Session
 
 from app.config import TEMPLATES_DIR
 from app.db.session import engine
+from app.services import exec_summary as exec_summary_svc
 from app.services import reports as report_q
 
 router = APIRouter()
@@ -162,6 +164,122 @@ def _latest_ingest_at(session: Session) -> str:
         return str(val)[:16]
 
 
+def _load_synthesis(session: Session, week_id: str) -> dict | None:
+    """Load the weekly_reports.synthesis_json row for the week, or None."""
+    try:
+        week_start, _ = report_q.iso_week_bounds(week_id)
+    except (ValueError, IndexError):
+        return None
+    row = session.exec(_sqltext(
+        "SELECT synthesis_json, synthesis_model, synthesis_generated_at "
+        "FROM weekly_reports WHERE week_start = :s"
+    ).bindparams(s=week_start)).first()
+    if not row or not row[0]:
+        return None
+    try:
+        payload = json.loads(row[0])
+    except (TypeError, ValueError):
+        return None
+    return {
+        "data": payload,
+        "model": row[1],
+        "generated_at": row[2],
+    }
+
+
+def _apply_synthesis(cards: dict, synth: dict) -> None:
+    """Overlay synthesis output onto the placeholder card dict in place.
+
+    Mismatched shapes (community, esports, market_momentum) are stashed
+    under `*_synth` keys for Phase 3c.5 to render once the layout is
+    restructured to the 9-card lock. Shapes that already align (risks,
+    watch, drama) are adapted to the existing template contract.
+    """
+    data = synth["data"]
+
+    # --- Biggest story (template still renders a single hero). Use the first
+    # of the synthesis-locked plural top-3; stash the full list for 3c.5. ---
+    if data.get("biggest"):
+        first = data["biggest"][0]
+        cards["biggest"] = {
+            "title": first["title"],
+            "dek": first["dek"],
+            "cluster_id": first["cluster_id"],
+            # Source pills + hero sparkline + signal cluster are layout pieces
+            # the 3c.5 reskin will drop; keep placeholder values for now so the
+            # current template doesn't break.
+            "sources": cards["biggest"]["sources"],
+            "heat": cards["biggest"]["heat"],
+            "confidence": cards["biggest"]["confidence"],
+            "relevance": cards["biggest"]["relevance"],
+            "sparkline": cards["biggest"]["sparkline"],
+            "first_seen": cards["biggest"]["first_seen"],
+            "threads": cards["biggest"]["threads"],
+        }
+    cards["biggest_list"] = data.get("biggest", [])
+
+    # --- Risks: adapter from synthesis schema to the template's row shape. ---
+    if data.get("risks"):
+        cards["risks"] = [
+            {
+                "title": r["title"],
+                "level": r["severity"],
+                "note": r["note"],
+                "trend": "stable",  # template still expects this field; 3c.5 drops
+                "cluster_id": r["cluster_id"],
+            }
+            for r in data["risks"]
+        ]
+
+    # --- Drama: shape already matches; just add cluster_id passthrough. ---
+    if data.get("drama"):
+        cards["drama"] = [
+            {
+                "title": d["title"],
+                "severity": d["severity"],
+                "recap": d["recap"],
+                "cluster_id": d["cluster_id"],
+            }
+            for d in data["drama"]
+        ]
+
+    # --- Watch: shape matches (day + item) + optional cluster_id. ---
+    if data.get("watch"):
+        cards["watch"] = [
+            {
+                "day": w["day"],
+                "item": w["item"],
+                "cluster_id": w.get("cluster_id"),
+            }
+            for w in data["watch"]
+        ]
+
+    # --- Hottest games: overlay synthesis 1-line reasons onto the existing
+    # top_games rows by game_name match (case-insensitive). ---
+    if data.get("hottest_reasons"):
+        reason_by_name = {r["game_name"].lower(): r["reason"] for r in data["hottest_reasons"]}
+        for bucket in ("all", "current", "upcoming"):
+            for game in cards["hottest"][bucket]:
+                game["reason"] = reason_by_name.get(game["name"].lower())
+
+    # --- Releases: overlay synthesis 1-line notes onto upcoming_releases rows. ---
+    if data.get("release_notes"):
+        note_by_name = {r["game_name"].lower(): r["note"] for r in data["release_notes"]}
+        for r in cards["releases"]:
+            r["note"] = note_by_name.get(r["name"].lower())
+
+    # --- Stash 3c.5-territory sections under `*_synth` keys; template will
+    # render them once the layout restructure lands. ---
+    cards["community_synth"] = data.get("community_sentiment")
+    cards["market_momentum_synth"] = data.get("market_momentum", [])
+    cards["esports_synth"] = data.get("esports", [])
+
+    cards["synthesis_meta"] = {
+        "model": synth["model"],
+        "generated_at": synth["generated_at"],
+    }
+
+
 def _build_week_payload(session: Session, week_id: str) -> dict:
     """Build the full per-week payload, overlaying real data on shared placeholder."""
     label, rng = report_q.week_label_and_range(week_id)
@@ -189,6 +307,11 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
     cards["releases"] = releases     # list of dicts (name, release_date, display_date, mention_count)
     cards["trends"] = trends         # {has_prior, prev_week_id, games_current, games_upcoming,
                                      #  genres, platforms, live_service, events}
+
+    # Phase 3c.4: overlay synthesis output if a row exists for this week.
+    synth = _load_synthesis(session, week_id)
+    if synth is not None:
+        _apply_synthesis(cards, synth)
 
     return {
         "label": label,
@@ -254,6 +377,7 @@ def reports_view(request: Request, week: str = ""):
             return templates.TemplateResponse(
                 request, "reports.html",
                 {"week": _enrich_for_render(blank), "weeks_index": [],
+                 "active_week_key": "",
                  "nav_items": NAV_ITEMS, "user": USER, "source_count": 0,
                  "refreshed_at": "—", "sources_meta": {}},
             )
@@ -273,6 +397,7 @@ def reports_view(request: Request, week: str = ""):
             {
                 "week": week_data,
                 "weeks_index": weeks_index,
+                "active_week_key": active_key,
                 "nav_items": NAV_ITEMS,
                 "user": USER,
                 "source_count": len(sources_meta),
@@ -280,3 +405,116 @@ def reports_view(request: Request, week: str = ""):
                 "sources_meta": sources_meta,
             },
         )
+
+
+# ---------- Phase 3c.3: Source drawer fragment ------------------------------
+# Click a row on Hottest / Trends / Releases → HTMX fetches this and swaps the
+# response into #source-drawer-body. The :target / radio-driven panel handles
+# slide-in visibility from CSS alone.
+
+_DRAWER_KIND_LABELS = {
+    "game": "Game",
+    "genre": "Genre",
+    "platform": "Platform",
+    "event": "Event",
+    "cluster": "Cluster",
+}
+
+
+@router.get("/reports/drawer")
+def reports_drawer(request: Request, kind: str = "", value: str = "", week: str = ""):
+    """Return the drawer fragment for an entity (game/genre/platform/event) in a week."""
+    if kind not in _DRAWER_KIND_LABELS or not value or not week:
+        return templates.TemplateResponse(
+            request, "_drawer.html",
+            {"error": "Drawer requires kind, value, and week parameters.",
+             "kind_label": "", "value": "", "week_label": "", "items": []},
+        )
+    try:
+        week_label, _ = report_q.week_label_and_range(week)
+    except (ValueError, IndexError):
+        return templates.TemplateResponse(
+            request, "_drawer.html",
+            {"error": f"Unknown week id: {week!r}.",
+             "kind_label": _DRAWER_KIND_LABELS[kind], "value": value, "week_label": "", "items": []},
+        )
+
+    with Session(engine) as session:
+        try:
+            items = report_q.items_for_entity_in_week(session, kind, value, week, limit=25)
+        except ValueError as e:
+            return templates.TemplateResponse(
+                request, "_drawer.html",
+                {"error": str(e), "kind_label": _DRAWER_KIND_LABELS[kind],
+                 "value": value, "week_label": week_label, "items": []},
+            )
+
+        # For kind=cluster, swap the bare cluster_id with the human-readable
+        # cluster label so the drawer header reads as a topic, not "Cluster 117".
+        display_value = value
+        if kind == "cluster":
+            try:
+                row = session.exec(_sqltext(
+                    "SELECT label FROM clusters WHERE id = :cid"
+                ).bindparams(cid=int(value))).first()
+                if row and row[0]:
+                    display_value = row[0]
+            except (ValueError, TypeError):
+                pass
+
+    return templates.TemplateResponse(
+        request, "_drawer.html",
+        {
+            "kind_label": _DRAWER_KIND_LABELS[kind],
+            "value": display_value,
+            "week_label": week_label,
+            "items": items,
+            "error": None,
+        },
+    )
+
+
+# ---------- Phase 3c.3: Exec-summary modal fragment -------------------------
+# First open per week hits Haiku 4.5; result persists to weekly_reports row
+# so subsequent opens are free.
+
+@router.get("/reports/exec-summary")
+def reports_exec_summary(request: Request, week: str = ""):
+    """Return the exec-summary modal fragment (1-paragraph TLDR) for a week."""
+    if not week:
+        return templates.TemplateResponse(
+            request, "_exec_summary.html",
+            {"error": "Exec summary requires a week parameter.", "week_label": "",
+             "text": "", "model": "", "generated_at": None, "from_cache": False},
+        )
+    try:
+        report_q.week_label_and_range(week)  # validates the id shape
+    except (ValueError, IndexError):
+        return templates.TemplateResponse(
+            request, "_exec_summary.html",
+            {"error": f"Unknown week id: {week!r}.", "week_label": "",
+             "text": "", "model": "", "generated_at": None, "from_cache": False},
+        )
+
+    with Session(engine) as session:
+        try:
+            result = exec_summary_svc.get_or_generate(session, week)
+        except ValueError as e:
+            log.warning("exec-summary generation failed for %s: %s", week, e)
+            return templates.TemplateResponse(
+                request, "_exec_summary.html",
+                {"error": str(e), "week_label": "", "text": "", "model": "",
+                 "generated_at": None, "from_cache": False},
+            )
+
+    return templates.TemplateResponse(
+        request, "_exec_summary.html",
+        {
+            "error": None,
+            "week_label": result["week_label"],
+            "text": result["text"],
+            "model": result["model"],
+            "generated_at": result["generated_at"],
+            "from_cache": result["from_cache"],
+        },
+    )

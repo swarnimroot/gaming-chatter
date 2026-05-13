@@ -8,10 +8,15 @@ Usage:
                                              # call cluster_window once per week.
                                              # Existing week_id='all' rows are
                                              # NOT deleted; they coexist.
+    python scripts/run_cluster.py --relabel-existing
+                                             # re-label all existing cluster rows
+                                             # via Anthropic Sonnet 4.6 (no re-cluster).
+                                             # Phase 3c.4 one-time migration.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -29,8 +34,10 @@ logging.basicConfig(
 
 from sqlmodel import Session, col, select  # noqa: E402
 
-from app.db.models import Item  # noqa: E402
+from app.config import CLUSTER_LABEL_SAMPLE  # noqa: E402
+from app.db.models import Cluster, Enrichment, Item  # noqa: E402
 from app.db.session import engine  # noqa: E402
+from app.services.anthropic import label_cluster as anthropic_label_cluster  # noqa: E402
 from app.services.cluster import cluster_window  # noqa: E402
 
 log = logging.getLogger("cluster_runner")
@@ -89,6 +96,80 @@ def _run_single(week_id: str) -> int:
     return 0
 
 
+def _relabel_existing() -> int:
+    """Re-label every existing Cluster row in place via Anthropic Sonnet 4.6.
+
+    Does NOT re-cluster — centroid, members, score, week_id all stay. Only
+    `label` is rewritten. Used once during Phase 3c.4 to migrate the 55 per-
+    week cluster labels off qwen2.5:7b. Subsequent cluster_window runs pick
+    up Sonnet automatically via the swapped import in cluster.py.
+    """
+    t0 = time.time()
+    totals = {"attempted": 0, "relabeled": 0, "failed": 0, "missing_members": 0}
+    sample_size = CLUSTER_LABEL_SAMPLE
+
+    with Session(engine) as session:
+        # Skip legacy week_id='all' rows from Phase 3b — their cleanup is deferred
+        # per docs/SESSION_LOG.md, so spending Sonnet calls on them is wasted.
+        clusters = session.exec(
+            select(Cluster).where(Cluster.week_id != "all").order_by(Cluster.id)
+        ).all()
+        totals["attempted"] = len(clusters)
+        log.info(
+            "=== relabel_existing start (%d per-week clusters; legacy week_id='all' rows skipped) ===",
+            len(clusters),
+        )
+
+        for c in clusters:
+            try:
+                member_ids = json.loads(c.member_item_ids or "[]")[:sample_size]
+                if not member_ids:
+                    totals["missing_members"] += 1
+                    log.warning("cluster id=%d has no member_item_ids — skipping", c.id)
+                    continue
+
+                items = session.exec(
+                    select(Item).where(col(Item.id).in_(member_ids))
+                ).all()
+                enrichments = session.exec(
+                    select(Enrichment).where(col(Enrichment.item_id).in_(member_ids))
+                ).all()
+                by_item_id = {it.id: it for it in items}
+                tldr_by_item_id = {e.item_id: (e.tldr or "") for e in enrichments}
+
+                titles: list[str] = []
+                tldrs: list[str] = []
+                for mid in member_ids:
+                    item = by_item_id.get(mid)
+                    if item is None:
+                        continue
+                    titles.append(item.title)
+                    tldrs.append(tldr_by_item_id.get(mid, ""))
+
+                if not titles:
+                    totals["missing_members"] += 1
+                    log.warning("cluster id=%d members not found in items table — skipping", c.id)
+                    continue
+
+                old_label = c.label
+                new_label = anthropic_label_cluster(titles, tldrs)
+                c.label = new_label
+                session.add(c)
+                session.commit()
+                totals["relabeled"] += 1
+                log.info(
+                    "cluster id=%d [%s] '%s' -> '%s'",
+                    c.id, c.week_id, old_label, new_label,
+                )
+            except Exception as e:  # noqa: BLE001
+                totals["failed"] += 1
+                log.warning("cluster id=%d relabel failed: %s", c.id, e)
+                session.rollback()
+
+    log.info("relabel_existing done in %.1fs: %s", time.time() - t0, totals)
+    return 0 if totals["failed"] == 0 else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -99,7 +180,16 @@ def main() -> int:
         "--per-week", action="store_true",
         help="Enumerate ISO weeks in the corpus and run cluster_window per week.",
     )
+    parser.add_argument(
+        "--relabel-existing", action="store_true",
+        help="Re-label every existing cluster via Anthropic Sonnet 4.6 (no re-cluster).",
+    )
     args = parser.parse_args()
+
+    if args.relabel_existing:
+        if args.week_id is not None or args.per_week:
+            parser.error("--relabel-existing cannot be combined with other args")
+        return _relabel_existing()
 
     if args.per_week:
         if args.week_id is not None:
