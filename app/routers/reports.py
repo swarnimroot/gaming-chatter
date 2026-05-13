@@ -101,10 +101,7 @@ _PLACEHOLDER_OTHER: dict = {
         "gamePassNet": {"label": "Game Pass net", "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
         "psnNet":      {"label": "PSN net adds",  "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
     },
-    "trends": {
-        "wow": [{"label": "Trends card — Phase 3c.2", "value": "—", "tone": "neutral"}],
-        "mom": [],
-    },
+    # Trends (Card 5) — wired in Phase 3c.2; placeholder removed.
     "watch": [{"day": "—", "item": "Watch-next-week — synthesis pending"}],
     "community": {
         "positive": 0, "neutral": 100, "negative": 0,
@@ -175,6 +172,7 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
     hottest_current = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="existing")
     hottest_upcoming = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="upcoming")
     releases = report_q.upcoming_releases(session, week_id, limit=10)
+    trends = report_q.trends_for_week(session, week_id, limit=5)
 
     cards = copy.deepcopy(_PLACEHOLDER_OTHER)
     cards["week"] = {
@@ -189,6 +187,8 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
         "upcoming": hottest_upcoming,
     }
     cards["releases"] = releases     # list of dicts (name, release_date, display_date, mention_count)
+    cards["trends"] = trends         # {has_prior, prev_week_id, games_current, games_upcoming,
+                                     #  genres, platforms, live_service, events}
 
     return {
         "label": label,
@@ -247,6 +247,7 @@ def reports_view(request: Request, week: str = ""):
                     "week": {"stories": 0, "sources": 0, "top_genres": [], "top_platforms": []},
                     "hottest": {"all": [], "current": [], "upcoming": []},
                     "releases": [],
+                    "trends": {"has_prior": False, "prev_week_id": "—"},
                     **copy.deepcopy(_PLACEHOLDER_OTHER),
                 },
             }

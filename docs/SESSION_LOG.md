@@ -4,6 +4,50 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-13 (Phase 3c.2) — Trends card: 5-tab WoW mention-rate delta
+
+**Done:**
+- **`app/services/reports.py` extended** with `prev_week_id()`, `week_item_total()`, three count helpers (`_tag_counts_for_week`, `_game_counts_for_week(lifecycle=, live_service_only=)`, `_event_counts_for_week`), a generic `_merge_wow()` that computes signed percentage-point rate deltas and returns top-N rows, plus five public `top_*_wow()` queries and a single `trends_for_week()` aggregator. Rate-delta math: `(count_this / total_this - count_prev / total_prev) * 100`. Sort is signed DESC so risers dominate; falling-and-gone entries (`count_this == 0`) are filtered out.
+- **`app/routers/reports.py` wired** to the new aggregator — `_build_week_payload()` adds `cards["trends"] = trends_for_week(session, week_id, limit=5)`; the empty-corpus fallback gets a defensive `{"has_prior": False}` so the empty-state path still renders. Old `"trends": {"wow": [...], "mom": []}` placeholder dropped from `_PLACEHOLDER_OTHER`.
+- **`app/templates/reports.html` Card 5 rewritten** — replaced the single-list `gc-row--trend` block + WoW/MoM segmented toolbar with a 5-tab CSS-only radio structure. Inputs: `trend-tab-games` (checked), `-genres`, `-platforms`, `-liveservice`, `-events`. Games tab has stacked Current + Upcoming sub-sections via `.gc-trend-subhead` mini-eyebrows. Each row uses a `trend_rows(rows)` macro emitting `gc-row--trend` with `gc-trend-name` (with `count this week · prev prior` title tooltip) and the existing `delta()` macro for the `+X.Xpp ▲` widget. Per-tab `gc-row-empty` for sparse states; full-card empty state ("Need 2 weeks of data to compute WoW deltas.") if `has_prior` is False.
+- **`app/static/app.css` updated** — added `.gc-trend-tabs { position: relative; }` plus five `#trend-tab-*:checked ~ .gc-tab-labels label[...]` rules (active styling) and five `:checked ~ .gc-tab-panes .gc-tab-pane--*` rules (pane display). New `.gc-trend-subhead` (+ `--second` variant) for the stacked Games sub-headers. New `.gc-trend-name` for the row name span. Deleted the legacy `.gc-trend-tabs button` / `.gc-trend-tabs button.is-active` rules. Global `.gc-tab-input` / `.gc-tab-labels` / `.gc-tab-label` / `.gc-tab-pane` rules (from Phase 3c.1) reused unchanged.
+- **Verified end-to-end on `:8001`.** W19/W18/W17 all return 200. Real data sample (W19 Games-Current): Mixtape 15 mentions (+2.7pp), LEGO Batman 10 (+1.8pp), EVE Online 7 (+1.3pp), Civilization 7 (+1.1pp). W19 Genres top: MMO 30 mentions (+4.4pp), Action 98 (+1.9pp). W19 Platforms: Xbox 48 (+2.9pp), Nintendo 34 (+2.5pp), PC -2.4pp (down — share fell despite raw count growth, exactly what rate-delta surfaces). W17 has prior W16 (20 items) so `has_prior=True` even for the earliest visible cluster week — full-card empty state is reachable only via the empty-corpus fallback.
+
+**Decided / verified:**
+- **Mention-rate delta locked over raw count delta** per user choice — week-volume swings (W17:W18:W19 ≈ 89:189:551 items) would let a busy week win every "biggest mover" ranking under raw count. Rate-delta normalizes that out.
+- **New entries (no prior-week mentions) included** — surface naturally with delta = full this-week rate. Rejected alternative was filtering to entities present in both weeks; loses the most useful Trends signal.
+- **CSS-only radio tabs** — mirror Phase 3c.1's `.gc-hot-tabs` pattern exactly, no JS / no HTMX call. 5 tabs scoped via `#trend-tab-*` ids alongside the existing `#hot-tab-*` ids; global tab rules (input/labels/label/pane) work for both.
+- **Click-to-drawer deferred to Phase 3c.3.** The original Phase 3c.2 task line mentioned "click-to-drawer where applicable" but the Source Drawer port is itself a separate phase — no drawer infra exists yet, so trend rows are plain rows for now. Will re-wire in 3c.3.
+
+**State at end of session:**
+- Modified files: `app/services/reports.py` (+~180 lines: helpers + queries + aggregator), `app/routers/reports.py` (1 placeholder dict trim, 1 trends_for_week wire-up, 1 empty-corpus fallback line), `app/templates/reports.html` (Card 5 replaced, ~45 lines), `app/static/app.css` (Trends tabs block replaced, +24 lines of new rules - 7 lines of deleted button rules).
+- Docs updated: `docs/DECISIONS.md` 2026-05-13 entry, `docs/TASKS.md` Phase 3c.2 ticked, this entry.
+- Corpus state unchanged (no ingest/enrich/cluster runs this session).
+- Test uvicorn server still running on `:8001` (background process from this session). No Anthropic spend.
+
+**Surfaced for next session — taxonomy drift in enrichments tags:**
+- Genres column has out-of-taxonomy values (`MMO`, `Indie/Roguelike`, `Survival-horror`, `Multi-platform`) despite the locked 12-genre list. Platforms column has `Multi-platform` despite the locked 6-platform list. Visible right now in W19 Genres tab (MMO is #1) and W19 Platforms tab (Multi-platform shows).
+- Likely cause: Pydantic field validators in `app/services/ollama.py` were the safety net, but the Phase 3c.0.5 Haiku migration may not have wired them through correctly, or Haiku's outputs slip past them. Either fix the validators + re-enrich, or expand the taxonomy lists. Both feasible; the second is faster, the first is more honest to the original design.
+- Not blocking 3c.3 / 3c.4. Flag in the OPEN_QUESTIONS.md as an optional hygiene pass.
+
+**Next session should:**
+1. **Phase 3c.3 — port Source Drawer + Exec-summary modal** from `.tmp_design_bundle/`. Wire bullet/row clicks on Biggest / Momentum / Risks / Trends / Releases to the drawer; modal hosts a second Anthropic call producing a 1-paragraph tldr of the week.
+2. **Phase 3c.4 — synthesis.** `app/services/synthesis.py` calling Opus 4.7 with prompt-cached system block. Second Opus call for the critic pass. Migrate `label_cluster()` to Sonnet 4.6 (deferred from 3c.0.5).
+3. **Phase 3c.5 — wire `/reports` to real synthesized data** and apply every remaining locked layout change.
+4. **Optional hygiene (not blocking):**
+   - Audit `_filter_genres` / `_filter_platforms` validators in `app/services/ollama.py` against the Haiku enrichment path — confirm they actually drop out-of-taxonomy values, fix if not, then re-enrich. OR expand the locked taxonomies to cover `MMO` / `Indie/Roguelike` / `Survival-horror` / `Multi-platform`.
+   - Numeral-variant dedupe (Diablo IV ↔ Diablo 4, Endfield ↔ Arknights: Endfield).
+   - Series-as-game cleanup.
+   - 63 legacy `week_id='all'` clusters.
+
+**Open / blocked:**
+- Source Drawer + Exec-summary modal port — Phase 3c.3.
+- Opus 4.7 synthesis prompt + critic pass — Phase 3c.4.
+- Sonnet 4.6 cluster labels — bundled into Phase 3c.4.
+- Taxonomy drift in genres/platforms columns — surfaced today, not fixed.
+
+---
+
 ## 2026-05-12 (Phase 3c.1) — Real-data wiring for Week / Hottest / Releases + corpus-context retag
 
 **Done:**

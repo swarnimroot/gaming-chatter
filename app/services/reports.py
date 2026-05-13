@@ -25,6 +25,23 @@ def iso_week_bounds(week_id: str) -> tuple[datetime, datetime]:
     return monday, monday + timedelta(days=7)
 
 
+def prev_week_id(week_id: str) -> str:
+    """Return the ISO week id one week prior (handles year rollovers)."""
+    start, _ = iso_week_bounds(week_id)
+    prior = start - timedelta(days=7)
+    iy, iw, _ = prior.isocalendar()
+    return f"{iy}-W{iw:02d}"
+
+
+def week_item_total(session: Session, week_id: str) -> int:
+    """Total items published in the ISO week — denominator for mention-rate."""
+    start, end = iso_week_bounds(week_id)
+    row = session.exec(text(
+        "SELECT COUNT(*) FROM items WHERE published_at >= :s AND published_at < :e"
+    ).bindparams(s=start, e=end)).first()
+    return int(row[0] or 0)
+
+
 def available_weeks(session: Session) -> list[str]:
     """Distinct per-ISO-week ids that have at least one cluster.
 
@@ -275,6 +292,239 @@ def format_release_date(raw: str | None) -> str:
     except ValueError:
         pass
     return s
+
+
+# ---------- Trends (WoW mention-rate delta) ---------------------------------
+# Card 5. Each tab queries this-week counts + prior-week counts for the same
+# dimension, normalizes by week item total, sorts by rate delta (percentage-
+# point) DESC, and returns top-N rows. "Mention-rate delta" is locked over raw
+# count delta because item volume swings 2-3x between weeks on this corpus
+# (W17 89 items, W18 189, W19 551); raw count would surface the busy week's
+# noise instead of actual movement.
+#
+# New entries (no prior-week mentions) surface naturally — prior rate = 0,
+# delta = this-week rate. Falling entries can appear too (negative delta),
+# but the DESC sort puts them last; with N=5 they typically don't show.
+
+
+def _tag_counts_for_week(session: Session, week_id: str, col: str) -> dict[str, tuple[str, int]]:
+    """Return {key_lower: (display, count)} for a JSON-array enrichments column.
+
+    Locked-taxonomy columns (genres / platforms) don't actually have casing
+    drift, but the lowered key keeps the merge symmetric with games/live-svc.
+    """
+    start, end = iso_week_bounds(week_id)
+    rows = session.exec(text(f"""
+        SELECT TRIM(je.value) AS tag, COUNT(*) AS n
+        FROM items i
+        JOIN enrichments e ON e.item_id = i.id
+        JOIN json_each(e.{col}) je ON e.status = 'ok' AND e.{col} IS NOT NULL
+        WHERE i.published_at >= :s AND i.published_at < :e
+        GROUP BY TRIM(je.value)
+    """).bindparams(s=start, e=end)).all()
+    out: dict[str, tuple[str, int]] = {}
+    for tag, n in rows:
+        if not tag:
+            continue
+        key = tag.lower()
+        out[key] = (tag, int(n))
+    return out
+
+
+def _game_counts_for_week(
+    session: Session,
+    week_id: str,
+    lifecycle: str | None = None,
+    live_service_only: bool = False,
+) -> dict[str, tuple[str, int]]:
+    """Return {name_lower: (display, count)} for game mentions in the week.
+
+    Mirrors `top_games_for_week`'s case-insensitive grouping; canonical display
+    comes from the games dim where present, otherwise from the article's casing.
+    `lifecycle` filters via the games dim. `live_service_only` restricts to dim
+    rows with live_service=1.
+    """
+    start, end = iso_week_bounds(week_id)
+    where_extra = []
+    if lifecycle is not None:
+        where_extra.append("g.lifecycle = :lc")
+    if live_service_only:
+        where_extra.append("g.live_service = 1")
+    join = "LEFT JOIN" if (lifecycle is None and not live_service_only) else "JOIN"
+    extra_sql = (" AND " + " AND ".join(where_extra)) if where_extra and join == "JOIN" else ""
+
+    if join == "LEFT JOIN":
+        # No dim filter — keep games not in the dim (rare).
+        sql = """
+            SELECT
+              COALESCE(MAX(g.name), MIN(TRIM(je.value))) AS game,
+              COUNT(DISTINCT i.id) AS n
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN json_each(e.entities, '$.games') je ON e.status = 'ok'
+            LEFT JOIN games g ON LOWER(g.name) = LOWER(TRIM(je.value))
+            WHERE i.published_at >= :s AND i.published_at < :e
+            GROUP BY LOWER(TRIM(je.value))
+            HAVING n > 0
+        """
+        bind = {"s": start, "e": end}
+    else:
+        sql = f"""
+            SELECT g.name AS game, COUNT(DISTINCT i.id) AS n
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN json_each(e.entities, '$.games') je ON e.status = 'ok'
+            JOIN games g ON LOWER(g.name) = LOWER(TRIM(je.value)){extra_sql}
+            WHERE i.published_at >= :s AND i.published_at < :e
+            GROUP BY g.name
+            HAVING n > 0
+        """
+        bind = {"s": start, "e": end}
+        if lifecycle is not None:
+            bind["lc"] = lifecycle
+
+    rows = session.exec(text(sql).bindparams(**bind)).all()
+    out: dict[str, tuple[str, int]] = {}
+    for name, n in rows:
+        if not name:
+            continue
+        out[name.lower()] = (name, int(n))
+    return out
+
+
+def _event_counts_for_week(session: Session, week_id: str) -> dict[str, tuple[str, int]]:
+    """Return {event_lower: (display, count)} for the enrichments.event column."""
+    start, end = iso_week_bounds(week_id)
+    rows = session.exec(text("""
+        SELECT TRIM(e.event) AS ev, COUNT(*) AS n
+        FROM items i
+        JOIN enrichments e ON e.item_id = i.id
+        WHERE i.published_at >= :s AND i.published_at < :e
+          AND e.status = 'ok'
+          AND e.event IS NOT NULL
+          AND TRIM(e.event) != ''
+        GROUP BY TRIM(e.event)
+    """).bindparams(s=start, e=end)).all()
+    out: dict[str, tuple[str, int]] = {}
+    for ev, n in rows:
+        if not ev:
+            continue
+        out[ev.lower()] = (ev, int(n))
+    return out
+
+
+def _format_delta_pp(pp: float) -> tuple[str, str]:
+    """Return (display, tone) for a percentage-point delta."""
+    pp_r = round(pp, 1)
+    if pp_r > 0.5:
+        return (f"+{pp_r:.1f}pp", "up")
+    if pp_r < -0.5:
+        return (f"{pp_r:.1f}pp", "down")
+    return (f"{pp_r:+.1f}pp" if pp_r else "±0pp", "neutral")
+
+
+def _merge_wow(
+    cur: dict[str, tuple[str, int]],
+    prev: dict[str, tuple[str, int]],
+    cur_total: int,
+    prev_total: int,
+    limit: int,
+) -> list[dict]:
+    """Compute rate-delta rows and return top-N sorted by delta DESC.
+
+    Each row: {name, count, prev_count, delta_pp, delta_display, tone}.
+    `count` is this-week absolute count (kept for tooltip / sanity); ranking is
+    by rate delta. Entities with this-week count == 0 are dropped (falling-and-
+    gone entities aren't useful in the read-out; they'd skew the bottom).
+    """
+    cur_total = max(cur_total, 1)
+    prev_total = max(prev_total, 1)
+    keys = set(cur) | set(prev)
+    rows: list[dict] = []
+    for k in keys:
+        cur_disp, cur_n = cur.get(k, ("", 0))
+        prev_disp, prev_n = prev.get(k, ("", 0))
+        if cur_n == 0:
+            continue
+        cur_rate = cur_n / cur_total
+        prev_rate = prev_n / prev_total
+        delta_pp = (cur_rate - prev_rate) * 100
+        delta_display, tone = _format_delta_pp(delta_pp)
+        rows.append({
+            "name": cur_disp or prev_disp,
+            "count": cur_n,
+            "prev_count": prev_n,
+            "delta_pp": delta_pp,
+            "delta_display": delta_display,
+            "tone": tone,
+        })
+    rows.sort(key=lambda r: r["delta_pp"], reverse=True)
+    return rows[:limit]
+
+
+def top_genres_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+    cur = _tag_counts_for_week(session, week_id, "genres")
+    prev = _tag_counts_for_week(session, prev_week_id(week_id), "genres")
+    return _merge_wow(cur, prev, week_item_total(session, week_id),
+                      week_item_total(session, prev_week_id(week_id)), limit)
+
+
+def top_platforms_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+    cur = _tag_counts_for_week(session, week_id, "platforms")
+    prev = _tag_counts_for_week(session, prev_week_id(week_id), "platforms")
+    return _merge_wow(cur, prev, week_item_total(session, week_id),
+                      week_item_total(session, prev_week_id(week_id)), limit)
+
+
+def top_games_wow(
+    session: Session,
+    week_id: str,
+    lifecycle: str | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    """WoW mover-list for games. lifecycle in {None, 'existing', 'upcoming'}."""
+    cur = _game_counts_for_week(session, week_id, lifecycle=lifecycle)
+    prev = _game_counts_for_week(session, prev_week_id(week_id), lifecycle=lifecycle)
+    return _merge_wow(cur, prev, week_item_total(session, week_id),
+                      week_item_total(session, prev_week_id(week_id)), limit)
+
+
+def top_live_service_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+    cur = _game_counts_for_week(session, week_id, live_service_only=True)
+    prev = _game_counts_for_week(session, prev_week_id(week_id), live_service_only=True)
+    return _merge_wow(cur, prev, week_item_total(session, week_id),
+                      week_item_total(session, prev_week_id(week_id)), limit)
+
+
+def top_events_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+    cur = _event_counts_for_week(session, week_id)
+    prev = _event_counts_for_week(session, prev_week_id(week_id))
+    return _merge_wow(cur, prev, week_item_total(session, week_id),
+                      week_item_total(session, prev_week_id(week_id)), limit)
+
+
+def trends_for_week(session: Session, week_id: str, limit: int = 5) -> dict:
+    """Full 5-tab Trends payload for a week.
+
+    has_prior=False means the prior ISO week has zero items — the whole card
+    falls back to an empty state. In practice that only happens for synthetic
+    empty-corpus runs since real-corpus active weeks always have a non-empty
+    predecessor.
+    """
+    prev_id = prev_week_id(week_id)
+    prev_total = week_item_total(session, prev_id)
+    if prev_total == 0:
+        return {"has_prior": False, "prev_week_id": prev_id}
+    return {
+        "has_prior": True,
+        "prev_week_id": prev_id,
+        "games_current": top_games_wow(session, week_id, lifecycle="existing", limit=limit),
+        "games_upcoming": top_games_wow(session, week_id, lifecycle="upcoming", limit=limit),
+        "genres": top_genres_wow(session, week_id, limit=limit),
+        "platforms": top_platforms_wow(session, week_id, limit=limit),
+        "live_service": top_live_service_wow(session, week_id, limit=limit),
+        "events": top_events_wow(session, week_id, limit=limit),
+    }
 
 
 def upcoming_releases(session: Session, week_id: str, limit: int = 12) -> list[dict]:

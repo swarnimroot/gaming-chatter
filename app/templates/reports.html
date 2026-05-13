@@ -209,20 +209,50 @@
           </div>
         </div>
 
-        {# 5. Trends WoW (compact, no MoM tab — locked single view) #}
-        {% set tr = week.cards.trends.wow %}
+        {# 5. Trends — Phase 3c.2: 5-tab WoW mention-rate delta (CSS-only radios) #}
+        {% set tr = week.cards.trends %}
+        {%- macro trend_rows(rows) -%}
+          {% for r in rows %}
+          <div class="gc-row gc-row--trend">
+            <span class="gc-trend-name" title="{{ r.count }} this week · {{ r.prev_count }} prior">{{ r.name }}</span>
+            {{ delta(r.delta_display, r.tone) }}
+          </div>
+          {% endfor %}
+          {% if not rows %}<div class="gc-row-empty">No movement this week.</div>{% endif %}
+        {%- endmacro -%}
         <div>
           <div class="gc-card">
-            {{ card_header("Trends", "What's moving",
-                 '<div class="gc-trend-tabs"><button class="is-active">WoW</button><button>MoM</button></div>'|safe) }}
-            <div class="gc-row-list">
-              {% for row in tr %}
-              <div class="gc-row gc-row--trend">
-                <span style="font-size:13px;color:var(--gc-fg)">{{ row.label }}</span>
-                {{ delta(row.value, row.tone) }}
+            {{ card_header("Trends", "WoW mention-rate delta") }}
+            {% if not tr.has_prior %}
+              <div class="gc-row-empty">Need 2 weeks of data to compute WoW deltas.</div>
+            {% else %}
+            <div class="gc-trend-tabs">
+              <input type="radio" name="trend-tab" id="trend-tab-games" class="gc-tab-input" checked>
+              <input type="radio" name="trend-tab" id="trend-tab-genres" class="gc-tab-input">
+              <input type="radio" name="trend-tab" id="trend-tab-platforms" class="gc-tab-input">
+              <input type="radio" name="trend-tab" id="trend-tab-liveservice" class="gc-tab-input">
+              <input type="radio" name="trend-tab" id="trend-tab-events" class="gc-tab-input">
+              <div class="gc-tab-labels">
+                <label for="trend-tab-games" class="gc-tab-label">Games</label>
+                <label for="trend-tab-genres" class="gc-tab-label">Genres</label>
+                <label for="trend-tab-platforms" class="gc-tab-label">Platforms</label>
+                <label for="trend-tab-liveservice" class="gc-tab-label">Live-service</label>
+                <label for="trend-tab-events" class="gc-tab-label">Events</label>
               </div>
-              {% endfor %}
+              <div class="gc-tab-panes">
+                <div class="gc-tab-pane gc-tab-pane--games">
+                  <div class="gc-trend-subhead">Current</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.games_current) }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Upcoming</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.games_upcoming) }}</div>
+                </div>
+                <div class="gc-tab-pane gc-tab-pane--genres"><div class="gc-row-list">{{ trend_rows(tr.genres) }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--platforms"><div class="gc-row-list">{{ trend_rows(tr.platforms) }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--liveservice"><div class="gc-row-list">{{ trend_rows(tr.live_service) }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--events"><div class="gc-row-list">{{ trend_rows(tr.events) }}</div></div>
+              </div>
             </div>
+            {% endif %}
           </div>
         </div>
 

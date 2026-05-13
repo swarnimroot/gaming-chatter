@@ -4,6 +4,49 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-13 (Phase 3c.2 shipped) — Trends card: 5-tab WoW mention-rate delta
+
+**Phase 3c.2 scope** from the prior session's next-steps list: replace the Card 5 placeholder with a 5-tab Trends view (Games · Genres · Platforms · Live-service · Events). WoW only — MoM dropped pre-coding (locked 2026-05-12 walkthrough).
+
+**Locked decisions:**
+
+- **Delta math: mention-rate delta in percentage points.** Per-entity `(count_this / total_this) - (count_prev / total_prev)`, expressed as `+X.Xpp`. Chosen over raw count delta because corpus item volume swings 2–3× between visible weeks (W17 89 items, W18 189, W19 551); raw count would surface the busy week as positive for everything. Rate-delta normalizes that out.
+- **New entries included.** Entities with zero prior-week mentions surface naturally — their prior rate is 0, delta equals their full this-week rate. This is exactly the "what's newly trending" signal a Trends card should expose.
+- **Falling entries demoted, not dropped.** Sort is by signed `delta_pp DESC`, so negative-delta entities only show up when fewer than N (=5) positive movers exist. Entities with `count_this == 0` (gone-and-falling) are filtered — they'd skew the bottom without adding signal.
+- **Threshold for tone:** `> +0.5pp` → up, `< -0.5pp` → down, else neutral. Below half a percentage point of corpus share is rounding noise, not movement.
+- **Top-N = 5 per tab.** Matches Hottest's row count; trades exhaustive coverage for at-a-glance scannability.
+- **Games tab has two stacked sub-sections** (Current + Upcoming) — not sub-tabs. Each runs its own filtered query against the games dim's `lifecycle` column.
+- **Live-service tab is its own query** against the games dim (`g.live_service = 1`), not a chip filter on the Games tab. Surfaces the seasonal/battle-pass slice independently.
+- **Events tab common-empty.** Per-pane `gc-row-empty` fallback ("No movement this week."). Most weeks have 0–2 events ever mentioned; that's a structural data property, not a bug.
+- **Tab toggling: CSS-only radio pattern** (mirrors Hottest's `.gc-hot-tabs`). Five `<input type="radio" name="trend-tab">` inputs sibling to label + pane containers; `:checked ~` selectors flip the active label and pane. No JS, no HTMX call. Initial state: Games tab checked.
+- **Empty-state gating: `has_prior` flag on the trends payload.** If `prev_total_items == 0`, the whole card renders a "Need 2 weeks of data" notice. In practice this only fires on empty-corpus runs — even the earliest visible cluster week (W17) has 20 items in its prior week W16.
+
+**Rejected:**
+- **Magnitude top-N** (sort by `abs(delta_pp)`): would interleave risers and fallers; muddies the "what's hot this week" read. Signed sort wins.
+- **Filter to entities present in both weeks** (no new entrants): kills the most useful Trends signal — new game/event names that just broke. Rejected.
+- **MoM tab alongside WoW:** locked out 2026-05-12. Will revisit if WoW proves insufficient after ≥4 weeks of clustered data.
+- **Sub-tabs on Games tab** (Current / Upcoming as nested radios): adds CSS complexity; stacked sub-sections fit the card height and read just as cleanly.
+
+**Data layer additions** (all in `app/services/reports.py`):
+- `prev_week_id(week_id)` — handles year rollovers via `isocalendar()`.
+- `week_item_total(session, week_id)` — denominator for rate calculations.
+- `_tag_counts_for_week / _game_counts_for_week / _event_counts_for_week` — case-insensitive entity-count dicts keyed by `name.lower() → (display, count)`.
+- `_merge_wow(cur, prev, cur_total, prev_total, limit)` — generic merge + sort, drops `cur_n == 0` rows.
+- Five public `top_*_wow()` functions + a single `trends_for_week()` aggregator that returns the full 5-tab payload.
+
+**Template / CSS:**
+- Card 5 (`reports.html`) rewritten — new `.gc-trend-tabs` block with 5 inputs + labels + panes. Replaces the old `WoW · MoM` segmented toolbar in the card header (header now shows `Trends · WoW mention-rate delta` instead).
+- Legacy `.gc-trend-tabs button` / `.is-active` rules deleted from `app.css`. New `:checked ~` rules added scoped to the five `#trend-tab-*` ids. Global `.gc-tab-input` / `.gc-tab-labels` / `.gc-tab-label` / `.gc-tab-pane` rules reused (unchanged from Phase 3c.1).
+- New CSS: `.gc-trend-subhead` (uppercased mini-eyebrow for the Games sub-sections), `.gc-trend-name` (row name styling — replaces an inline style).
+
+**Surfaced (not fixed) during Phase 3c.2 — out-of-taxonomy values still present in enrichments tags:**
+- Genres column has rows like `MMO`, `Indie/Roguelike`, `Survival-horror`, `Multi-platform` despite the locked 12-genre taxonomy.
+- Platforms column has `Multi-platform` despite the locked 6-platform taxonomy.
+- Pydantic field validators in `app/services/ollama.py` were supposed to drop these, but they're showing up post-Haiku-backfill. Either the validators weren't ported through the Haiku enrichment path, or Haiku occasionally returns enums the validators silently allow.
+- **Not fixed this session** — out of scope for the Trends layout work, and the values are honest reflections of what's in the DB. Either fix the validators + re-enrich, or add new entries to the taxonomy. Logged under "open hygiene" for the next session.
+
+---
+
 ## 2026-05-12 (Phase 3c.1 shipped) — Real-data wiring for Week / Hottest / Releases + corpus-context retag of the games dim
 
 **Phase 3c.1 scope** locked from the prior session's "Next session should" list: re-evaluate the three cards trimmed/dropped pre-tagging and wire each to real per-ISO-week data from the DB. Synthesis-derived narrative still deferred to 3c.4.

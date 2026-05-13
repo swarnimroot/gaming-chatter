@@ -461,14 +461,27 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-drama-title { font-size: 13px; font-weight: 600; color: var(--gc-fg); }
 .gc-drama-recap { font-size: 12px; color: var(--gc-fg2); line-height: 1.45; text-wrap: pretty; }
 
-/* Trends tab control reuses .gc-segmented */
-.gc-trend-tabs { display: inline-flex; border: 1px solid var(--gc-border); border-radius: 4px; overflow: hidden; }
-.gc-trend-tabs button {
-  font-size: 11px; font-weight: 500; padding: 4px 10px; border: none;
-  background: transparent; color: var(--gc-fg2);
-  cursor: pointer; font-family: inherit;
+/* Card 5 — radio-driven Trends tabs (Games / Genres / Platforms / Live-svc / Events) */
+.gc-trend-tabs { position: relative; }
+#trend-tab-games:checked       ~ .gc-tab-labels label[for="trend-tab-games"],
+#trend-tab-genres:checked      ~ .gc-tab-labels label[for="trend-tab-genres"],
+#trend-tab-platforms:checked   ~ .gc-tab-labels label[for="trend-tab-platforms"],
+#trend-tab-liveservice:checked ~ .gc-tab-labels label[for="trend-tab-liveservice"],
+#trend-tab-events:checked      ~ .gc-tab-labels label[for="trend-tab-events"] {
+  background: var(--gc-accent-soft); color: var(--gc-accent);
 }
-.gc-trend-tabs button.is-active { background: var(--gc-accent-soft); color: var(--gc-accent); }
+#trend-tab-games:checked       ~ .gc-tab-panes .gc-tab-pane--games,
+#trend-tab-genres:checked      ~ .gc-tab-panes .gc-tab-pane--genres,
+#trend-tab-platforms:checked   ~ .gc-tab-panes .gc-tab-pane--platforms,
+#trend-tab-liveservice:checked ~ .gc-tab-panes .gc-tab-pane--liveservice,
+#trend-tab-events:checked      ~ .gc-tab-panes .gc-tab-pane--events {
+  display: block;
+}
+/* Games tab: stacked Current / Upcoming sub-sections */
+.gc-trend-subhead { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+                    color: var(--gc-fg3); margin: 0 0 4px; }
+.gc-trend-subhead--second { margin-top: 12px; }
+.gc-trend-name { font-size: 13px; color: var(--gc-fg); }
 
 /* Community thread sub pill */
 .gc-sub-pill {

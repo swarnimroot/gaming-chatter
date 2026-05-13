@@ -87,14 +87,14 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [x] **Bonus / mid-session correction:** corpus-context retag of all 189 games via `scripts/retag_games_with_context.py`. Root cause: `tag_game()` passed only the game name; Haiku's Jan-2026 cutoff misclassified anything shipped after. Result: 129/189 updated, 50 games with dates (was 10). Crimson Desert + 8 others manually flipped on `live_service`. 5 case-fold duplicate pairs dedupedvia `scripts/dedupe_games_dim.py`; queries case-insensitive on `entities.games`. Dim now 184 rows.
 - [ ] **Open hygiene (deferred):** numeral-variant duplicates (Diablo IV ↔ Diablo 4, Endfield ↔ Arknights: Endfield); series-as-game entries (Resident Evil / The Witcher / etc.) — currently lifecycle=null; could filter out of dim.
 
-### Phase 3c.2 — Build Trends card (5 tabs)
+### Phase 3c.2 — Build Trends card (5 tabs)  *(SHIPPED 2026-05-13)*
 
-- [ ] Games (existing + upcoming sub-blocks)
-- [ ] Genres
-- [ ] Platforms
-- [ ] Live-service
-- [ ] Events
-- [ ] WoW only; top-N by mention-rate delta; click-to-drawer where applicable; clean empty-state for sparse tabs.
+- [x] Games (existing + upcoming sub-blocks) — stacked Current/Upcoming sub-sections in the Games tab, each top-5 by mention-rate delta filtered via games-dim `lifecycle`.
+- [x] Genres — top-5 by mention-rate delta over `enrichments.genres`.
+- [x] Platforms — top-5 by mention-rate delta over `enrichments.platforms`.
+- [x] Live-service — top-5 by mention-rate delta over games-dim where `live_service=1`.
+- [x] Events — top-5 by mention-rate delta over `enrichments.event`. Empty-state row (commonly sparse).
+- [x] WoW only; top-N by mention-rate delta; clean empty-state for sparse tabs. **Click-to-drawer deferred to Phase 3c.3** (Source Drawer port).
 
 ### Phase 3c.3 — Port Source Drawer + Exec-summary modal
 
