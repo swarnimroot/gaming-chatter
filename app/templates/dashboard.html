@@ -1,43 +1,21 @@
-{% extends "base.html" %}
-{% block title %}Dashboard &mdash; gaming-chatter{% endblock %}
-{% block content %}
-<h1>Latest items ({{ items|length }})</h1>
+{% extends "shell_base.html" %}
+{% block title %}Dashboard — Gaming Chatter{% endblock %}
+{% block eyebrow %}Raw data{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block header_meta %}
+  {{ total_count }} items · {{ pending_count }} pending enrichment
+{% endblock %}
+{% block header_actions %}
+  <input type="search" name="q" value="{{ q or '' }}"
+         class="gc-search-input" autocomplete="off"
+         placeholder="Search title, TL;DR, source…"
+         hx-get="/dashboard" hx-trigger="keyup changed delay:300ms, search"
+         hx-target="#dashboard-list" hx-swap="innerHTML"
+         hx-push-url="true">
+{% endblock %}
 
-<div class="actions">
-  <form action="/enrich/pending" method="post" style="display:inline">
-    <button type="submit">Enrich pending ({{ pending_count }})</button>
-  </form>
-  <form action="/embed/pending" method="post" style="display:inline">
-    <button type="submit">Embed pending</button>
-  </form>
+{% block main_content %}
+<div id="dashboard-list">
+  {% include "_dashboard_list.html" %}
 </div>
-
-{% if not items %}
-  <p>No items yet. Run an ingest from the <a href="/sources">Sources</a> page.</p>
-{% else %}
-<table class="items">
-  <thead>
-    <tr><th>Published</th><th>Source</th><th>Title / TL;DR</th><th>Category</th><th>Sent.</th></tr>
-  </thead>
-  <tbody>
-  {% for it in items %}
-    {% set enr = enrichments_by_item.get(it.id) %}
-    <tr>
-      <td>{{ it.published_at.strftime("%Y-%m-%d %H:%M") if it.published_at else "—" }}</td>
-      <td>{{ sources_by_id[it.source_id].name if it.source_id in sources_by_id else "?" }}</td>
-      <td>
-        <a href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>
-        {% if enr and enr.status == "ok" and enr.tldr %}
-          <div class="tldr">{{ enr.tldr }}</div>
-        {% elif enr and enr.status == "failed" %}
-          <div class="tldr error">enrich failed: {{ enr.error }}</div>
-        {% endif %}
-      </td>
-      <td>{% if enr and enr.category %}<span class="cat cat-{{ enr.category }}">{{ enr.category }}</span>{% endif %}</td>
-      <td>{% if enr and enr.sentiment_score is not none %}{{ "%+.2f"|format(enr.sentiment_score) }}{% endif %}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
 {% endblock %}

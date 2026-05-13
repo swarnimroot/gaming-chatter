@@ -4,6 +4,80 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-13 (Phase 3c.7 shipped) — UI consistency + live search
+
+**Phase 3c.7 scope:** Routing swap (`/` = home = weekly read-out), Dashboard / Clusters / Sources re-skinned to share the `/reports` design system, HTMX live-search on each of the three engineer-inspection pages.
+
+**Locked decisions:**
+
+- **`/` is the weekly read-out; `/dashboard` is the raw items table.** Pre-3c.7 the layout was `/` → raw items table, `/reports` → polished read-out. Flipping makes the actual product surface (the read-out) the home URL. Internal HTMX sub-endpoints stay at `/reports/exec-summary`, `/reports/drawer`, `/reports/export` — kept the namespace because (a) they're fragment endpoints, not user-facing routes, and (b) renaming them would have churned all the existing HTMX trigger attributes for zero gain. Rejected: redirecting `/reports` → `/` for backward-compat — this is a personal local tool with no external links to break.
+- **Light re-skin chosen over full `gc-row` card style for the inspection pages.** Each non-home page (Dashboard / Clusters / Sources) wraps content in the shared shell (sidebar + header chrome) and uses the gc design tokens (Arial Nova font, orange accent, surface/border colors), but the actual content stays as a table or labeled-list — what fits the page's purpose. Rejected: converting Dashboard items to `gc-row` cards in the Hottest/Trends visual pattern. Reason: Dashboard is engineer-inspection, not editorial — a table at ~25px/row is denser and easier to scan than a card at ~80px/row.
+- **`shell_base.html` does NOT cover `reports.html`.** The Reports page keeps its own inlined shell because its sidebar has a per-week Read-out section that the other pages don't have, and its header has a different actions/breadcrumb shape. The shared chrome covers Dashboard / Clusters / Sources only. Rejected: forcing reports.html to extend shell_base too — would have required heavy block-overriding for the week-list + Exec-summary CTA, increasing fragility for no rendering benefit.
+- **Sidebar partial conditionally renders the week-list block** based on `weeks_index` being in context (truthy). Dashboard / Clusters / Sources don't pass it; only the reports route does. One template, two render modes. Rejected: two separate sidebar files; the divergence is one block of ~10 lines and the conditional reads cleanly.
+- **`app/services/chrome.py` is the single source of truth for the nav.** `NAV_ITEMS_BASE` + `nav_items_for(active_id)` helper. All four routes call this. Rejected: duplicating NAV_ITEMS in each router; if a fifth route is added (e.g. `/runs` in Phase 4), it's one line in `chrome.py` instead of four places.
+- **One HTMX endpoint per page, branching on `HX-Request` header.** Live-search uses `hx-get="/dashboard?q=..."` (same path as the full page) with a server-side `if request.headers.get("HX-Request"): return fragment`. Rejected: separate `/api/dashboard` or `/dashboard/fragment` routes — would have doubled the URL surface for no semantic gain. The fragment-detection idiom is HTMX-canonical.
+- **300ms keyup debounce** on the search input. Standard HTMX pattern (`hx-trigger="keyup changed delay:300ms"`). Rejected: shorter delays (50-100ms) — would have fired requests on every keystroke without measurable UX gain on a SQLite ILIKE that already returns in <10ms locally.
+- **`hx-push-url="true"` on the search input** so the URL stays in sync as the user types. Filtered searches are bookmarkable / shareable / back-button-able. Rejected: keeping the URL bare and only mutating the DOM — would have broken the "share this filtered view" affordance with no benefit.
+- **Drawer pill rendered inline as `<span class="gc-pill">` (not via the `source_pill` macro).** The macro emits `<a class="gc-pill" href="#">`; nesting it inside the drawer's outer `<a class="gc-drawer-item" href="..." target="_blank">` produced two empty bordered rectangles per item (browser parser auto-closes the outer `<a>` when it sees the inner one). The `<span>` inline keeps the pill's visual styling without the invalid nesting. Other callers of `source_pill` (Biggest stories on the home page) are not inside another `<a>` so they keep the macro's `<a>` form.
+
+**Verification (`:8001 --reload`):**
+- `/` → 200 / 58706 bytes (weekly read-out).
+- `/dashboard` → 200 / 54282 bytes; `?q=nintendo` → 200 / 55085 bytes (filtered to 50 most-recent matching items).
+- `/clusters?week_id=2026-W19` → 200 / 82616 bytes (38 cluster cards); `?q=indie` → 200 / 13851 bytes (filtered to the Griffin-Gaming / Mixtape / Studio-Ricochet clusters).
+- `/sources` → 200 / 24160 bytes; `?q=reddit` → 200 / 10919 bytes (filtered to r/* subreddit sources).
+- `/reports` → 404 (routing swap verified).
+- HX-Request fragment branch verified — no `<aside>` sidebar in the response when `HX-Request: true` is set.
+- Sidebar correctly shows `is-active` on the matching nav item per page.
+- Drawer rendered with `<span class="gc-pill">` × 5 (was `<a class="gc-pill">` × 5 before); empty rectangles gone.
+
+No Anthropic spend this phase. Cumulative ~$7.56.
+
+---
+
+## 2026-05-13 (Phase 3c.6 shipped) — Executive 1-pager + standalone HTML / PDF export
+
+**Phase 3c.6 scope:** Upgrade the "Exec summary" modal from a single Haiku paragraph to a structured 1-pager, and add Export HTML / Export PDF actions inside it. Persists rendered HTML to `weekly_reports.html_content` (the column reserved during Phase 3c.4). No new model spend — the 1-pager pulls from existing `synthesis_json`.
+
+**Locked decisions:**
+
+- **Modal body is the 1-pager; existing header CTA reused.** The header "Exec summary" button already exists from Phase 3c.3. Same `<label for="modal-open" hx-get="/reports/exec-summary?...">` trigger; only the response shape changes. Reason: the user's mental model is "one button for the read-out" — adding a second button or a dropdown would have introduced ambiguity. Rejected: a dedicated "Export" header button next to "Exec summary". The export buttons live inside the modal footer instead, so the user always previews before exporting.
+- **1-pager composition: existing Haiku paragraph (lead) + structured bullets pulled from `synthesis_json`.** Sections: Biggest top-3 (numbered list + dek + source pills) → Market momentum top-3 (with category chip) → two-col Risks top-2 / Community (1 heated + 1 celebrating). Zero new LLM spend. Rejected: a new Opus call re-synthesizing the existing synthesis as a tight exec briefing (~$0.30/wk). Reason: the Haiku paragraph + structured bullets already fits on a page; running another LLM pass to "re-voice" the same data would have been pure cost.
+- **PDF strategy: browser print dialog, not WeasyPrint.** `format=pdf` serves the same standalone HTML inline with `<script>window.print()</script>` injected after `</body>`; the OS print dialog appears and the user picks "Save as PDF". Rejected: server-side WeasyPrint (real PDF, one-click download) — adds ~50MB of cairo / pango deps, has Windows install quirks, and the locked stack is "single Python process, minimal deps". The print-dialog approach costs the user one extra click in exchange for zero new deps; acceptable on a personal local tool.
+- **One stored doc, two render modes.** The cached `html_content` is the plain HTML (no auto-print script). The PDF route injects auto-print *after* the cache read via `export_svc.inject_auto_print()`. Rejected: caching the PDF-variant HTML separately, or computing two cache keys. Reason: a single canonical doc is simpler and avoids stale-cache divergence.
+- **W17 / W18 (no synthesis) graceful degrade.** Modal renders the Haiku paragraph + a one-line `<code>scripts/run_synthesis.py {week}</code>` hint inside a dashed box; export buttons hidden via `{% if synthesis_ran %}`. Server-side guard still returns 409 on the export endpoint as defense-in-depth (URL-shared exports can't bypass the UI gate). Rejected: partial export of just Hottest / Trends / Releases for un-synthesized weeks. Reason: the 1-pager *is* the synthesis — without it, the exported file would be a misleading half-document.
+- **Markdown export deferred to Phase 3d.** The `weekly_reports.markdown_content` column stays unused for now. Reason: the user's request was specifically "HTML or PDF in the modal" — no use case surfaced for a markdown artifact, and adding it would have inflated the modal footer with a third button. Will revisit only if needed.
+- **Inline `<style>` blob, full `app.css` un-stripped (~33KB).** Standalone HTML embeds the entire `app.css` rather than computing a minimal subset. Reason: it's a personal local tool — 33KB is trivial, and a minimal-CSS pipeline (PurgeCSS or hand-curated subset) introduces drift risk. The export inherits all future CSS changes for free.
+- **CSS file read cached at module level in `export_svc.inline_css()`.** First call reads `app/static/app.css` from disk; subsequent calls return the cached string. `refresh=True` re-reads for dev workflows. Rejected: reading from disk on every export (~15KB IO per call) — pointless when the file changes only on deploy. Rejected: bundling the CSS into a Python string at build time — no build step exists.
+- **Export route uses `Response` directly, not `TemplateResponse`.** Because the response needs custom `Content-Disposition` for HTML download vs inline for PDF. Templates are still rendered via `templates.get_template().render()` but wrapped in a manual `Response` object. Idiomatic FastAPI; nothing fancy.
+
+**Verification (`:8002` fresh uvicorn instance, no reload):**
+- W19 modal: 200, 8747 bytes, 4 section labels, 10 list items (3+3+2+1+1), 2 export anchors, 3 MM category chips, 2 risk severity dots, 2 CS tags, two-col layout present, no-synth note absent.
+- W18 modal (no synthesis): 200, 1724 bytes, 0 section labels, 0 export anchors, Haiku paragraph + nosynth note + run-synth CLI hint visible.
+- W19 export HTML (cold): 200, 41935 bytes, `Content-Disposition: attachment; filename="gaming-chatter-2026-W19.html"`, no auto-print script.
+- W19 export HTML (warm): 200, identical 41935 bytes — served from `weekly_reports.html_content` cache.
+- W19 export PDF: 200, 42041 bytes (cold HTML + 106-byte auto-print script), no Content-Disposition (inline), `window.print()` script present before `</body>`.
+- W18 export: 409 with plain-text "Synthesis hasn't run for 2026-W18 — Run: scripts/run_synthesis.py 2026-W18".
+- Bad format: 400.
+- DB: `weekly_reports.html_content` populated 41935 bytes after first W19 export.
+
+**Anthropic spend this session: ~$0.001** (1 Haiku call for the W18 modal-degrade test which auto-generated a fresh exec_summary; no Opus, no synthesis re-run). Cumulative project: ~$7.56.
+
+**`:8001` reloader was stuck again** (same orphan-worker pattern from last session — file touch + 2s wait didn't trigger reload; `/reports` worked because that endpoint hadn't changed but `/reports/export` returned 404 and the modal endpoint 500ed on undefined template vars from a partial Jinja reload). Verified on `:8002` fresh instance instead. User to restart `:8001` to validate in their main session.
+
+**Visual revision (same day, after user reviewed first cut):** User's browser screenshot showed the 1-pager overflowing the modal's white box (body scrolling), and the export buttons in the footer were below the fold (invisible at the user's viewport height). User asked for "the export button at the top right next to the close button" and a "more interactive/visual/infographic (not too much)" layout. Re-shipped under the same Phase 3c.6 banner:
+
+- **Export action moved from modal footer to header**, via a CSS-only `<details><summary>Export ▾</summary>` dropdown positioned `position: absolute; top: 12px; right: 50px` (sits left of the `.gc-modal-close` × at `right: 14px`). Panel pops below with `Save as PDF` + `Download HTML` anchors. Header `padding-right: 130px` clears both buttons. Rejected: native `<select>` (uglier styling, can't host anchor hrefs cleanly). Rejected: inline JS dropdown (locked stack is HTMX + Jinja only). The `<details>` element does open/close natively without script.
+- **Modal footer dropped entirely.** Attribution caption moved to a 9.5px right-aligned `gc-onepager-attribution` line at the bottom of the body. Saves ~50px of fixed chrome → more room for content.
+- **4-tile stat row added at top of body** (`items`, `sources`, `top game · N`, `top genre · N`). Reads from existing `top_games_for_week(limit=1)` + `top_genres_for_week(limit=1)`. Rationale: gives the 1-pager its "infographic" feel cheaply — no new query work, no new viz library. Rejected: a horizontal sparkline / mini-bar chart (locked walkthrough already deferred per-card sparkline geometry; reintroducing it here would have inverted that decision).
+- **Biggest deks dropped from the modal** — single largest vertical-space contributor in the screenshot. Numbered list shows title + source pills only. The full deks still exist in `synthesis_json` and would surface in the cluster drawer if the user wanted to drill in. Rejected: CSS `line-clamp` to truncate deks visually — would have kept the dek tax (extra line per item) and looked uglier than just dropping the line.
+- **Two-col Risks/Community → three-col MM/Risks/Community.** Market momentum joined the column strip instead of getting its own row. Saved one full section's vertical height. Column ratio `1.5fr 1fr 1fr` — MM gets more width since its category chips eat horizontal space. `gc-onepager-itemtitle--clip` ellipsis on titles inside columns.
+- **Type scale shrunk ~25% overall** (lead 15→12.5px, numlist 13→12.5px, bul list 13→11.5px, section labels 10→9px, chip 9→8px). Stat tile values use a typographic hierarchy: 17px bold for numbers, 14px bold for names, 9px uppercase label.
+- **Stale `html_content` cache for W19 invalidated** (one-line `UPDATE`) so the next export re-renders against the new layout. The cache-pattern itself stays canonical.
+
+Total vertical compression: modal body went from ~700px to ~480px of content height (well under the 720p viewport minimum minus chrome). Export now visible without scrolling, dropdown next to close button as requested.
+
+---
+
 ## 2026-05-13 (Phase 3c.5 shipped) — 9-card layout restructure: applied every locked walkthrough decision from 2026-05-12
 
 **Phase 3c.5 scope** from the prior session's next-steps list: wire `/reports` to the full Phase 3c.4 synthesis output and apply every layout lock from the 2026-05-12 walkthrough. No new model calls; this is purely template + router + CSS structural work. Net result: the chrome trimmed to the walkthrough's spec, the 13-card grid cut to 10 (Card 1 / Card 8 / Card 9 dropped per spec; Trends was already re-instated as a single card so net is 10, not the walkthrough header's aspirational 9), and the four cards whose data was being stashed under `*_synth` keys (Biggest plural, MM, CS, Esports) became first-class render targets.

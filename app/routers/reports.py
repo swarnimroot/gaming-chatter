@@ -25,10 +25,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import text as _sqltext
 from sqlmodel import Session
 
+from fastapi.responses import Response
+
 from app.config import TEMPLATES_DIR
 from app.db.session import engine
 from app.services import exec_summary as exec_summary_svc
+from app.services import export as export_svc
 from app.services import reports as report_q
+from app.services.chrome import nav_items_for
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -36,13 +40,8 @@ log = logging.getLogger(__name__)
 
 
 # ---------- Static chrome (sidebar nav) -------------------------------------
-
-NAV_ITEMS = [
-    {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "href": "/reports",  "is_active": True},
-    {"id": "dashboard", "label": "Dashboard",       "icon": "gauge",     "href": "/",         "is_active": False},
-    {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "href": "/clusters", "is_active": False},
-    {"id": "sources",   "label": "Sources",         "icon": "rss",       "href": "/sources",  "is_active": False},
-]
+# Phase 3c.7: nav moved into `app/services/chrome.py` so Dashboard / Clusters /
+# Sources can share it. `nav_items_for("weekly")` keeps this route's is_active.
 
 
 # ---------- Empty-state card shape ------------------------------------------
@@ -270,7 +269,7 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
 
 # ---------- Route -----------------------------------------------------------
 
-@router.get("/reports")
+@router.get("/")
 def reports_view(request: Request, week: str = ""):
     with Session(engine) as session:
         week_ids = report_q.available_weeks(session)
@@ -292,7 +291,7 @@ def reports_view(request: Request, week: str = ""):
             return templates.TemplateResponse(
                 request, "reports.html",
                 {"week": blank, "weeks_index": [], "active_week_key": "",
-                 "nav_items": NAV_ITEMS, "corpus_stats": stats,
+                 "nav_items": nav_items_for("weekly"), "corpus_stats": stats,
                  "refreshed_at": "—", "sources_meta": {}},
             )
 
@@ -312,7 +311,7 @@ def reports_view(request: Request, week: str = ""):
                 "week": week_data,
                 "weeks_index": weeks_index,
                 "active_week_key": active_key,
-                "nav_items": NAV_ITEMS,
+                "nav_items": nav_items_for("weekly"),
                 "corpus_stats": stats,
                 "refreshed_at": _latest_ingest_at(session),
                 "sources_meta": sources_meta,
@@ -391,22 +390,80 @@ def reports_drawer(request: Request, kind: str = "", value: str = "", week: str 
 # First open per week hits Haiku 4.5; result persists to weekly_reports row
 # so subsequent opens are free.
 
+def _one_pager_context(session: Session, week_id: str, exec_result: dict) -> dict:
+    """Build the 1-pager modal context. Phase 3c.6.
+
+    Delegates to `export_svc.build_payload()`; when synthesis is absent,
+    falls back to a Haiku-only context so the modal still renders.
+    """
+    payload = export_svc.build_payload(
+        session, week_id,
+        exec_text=exec_result["text"],
+        exec_model=exec_result["model"],
+        exec_generated_at=exec_result["generated_at"],
+        exec_from_cache=exec_result["from_cache"],
+    )
+    if payload is not None:
+        return payload
+
+    label, rng = report_q.week_label_and_range(week_id)
+    stats = report_q.week_stats(session, week_id)
+    top_games = report_q.top_games_for_week(session, week_id, limit=1)
+    top_genres = report_q.top_genres_for_week(session, week_id, limit=1)
+    return {
+        "week_label": label,
+        "week_range": rng,
+        "week_id": week_id,
+        "stats": {"stories": stats["stories"], "sources": stats["sources"]},
+        "top_game": ({"name": top_games[0]["name"], "count": top_games[0]["count"]}
+                     if top_games else {"name": "—", "count": 0}),
+        "top_genre": ({"name": top_genres[0][0], "count": top_genres[0][1]}
+                      if top_genres else {"name": "—", "count": 0}),
+        "exec_text": exec_result["text"],
+        "exec_paragraphs": export_svc.split_into_paragraphs(exec_result["text"], group=2),
+        "exec_model": exec_result["model"],
+        "exec_generated_at": exec_result["generated_at"],
+        "exec_from_cache": exec_result["from_cache"],
+        "synthesis_ran": False,
+        "synthesis_model": None,
+        "generated_at_display": "—",
+        "biggest": [], "market_momentum": [], "risks": [],
+        "heated_about": [], "celebrating": [],
+    }
+
+
+def _exec_error_ctx(message: str) -> dict:
+    return {
+        "error": message, "week_label": "", "week_range": "", "week_id": "",
+        "stats": {"stories": 0, "sources": 0},
+        "top_game": {"name": "—", "count": 0}, "top_genre": {"name": "—", "count": 0},
+        "exec_text": "", "exec_paragraphs": [],
+        "exec_model": "", "exec_generated_at": None, "exec_from_cache": False,
+        "synthesis_ran": False, "synthesis_model": None, "generated_at_display": "—",
+        "biggest": [], "market_momentum": [], "risks": [],
+        "heated_about": [], "celebrating": [],
+    }
+
+
 @router.get("/reports/exec-summary")
 def reports_exec_summary(request: Request, week: str = ""):
-    """Return the exec-summary modal fragment (1-paragraph TLDR) for a week."""
+    """Return the 1-pager modal fragment for a week (Phase 3c.6).
+
+    Composition: existing Haiku paragraph (lead) + structured bullets from
+    synthesis_json (Biggest top-3, Market Momentum top-3, two-col Risks /
+    Community). Footer carries Export HTML / Export PDF actions.
+    """
     if not week:
         return templates.TemplateResponse(
             request, "_exec_summary.html",
-            {"error": "Exec summary requires a week parameter.", "week_label": "",
-             "text": "", "model": "", "generated_at": None, "from_cache": False},
+            _exec_error_ctx("Exec summary requires a week parameter."),
         )
     try:
-        report_q.week_label_and_range(week)  # validates the id shape
+        report_q.week_label_and_range(week)
     except (ValueError, IndexError):
         return templates.TemplateResponse(
             request, "_exec_summary.html",
-            {"error": f"Unknown week id: {week!r}.", "week_label": "",
-             "text": "", "model": "", "generated_at": None, "from_cache": False},
+            _exec_error_ctx(f"Unknown week id: {week!r}."),
         )
 
     with Session(engine) as session:
@@ -415,19 +472,103 @@ def reports_exec_summary(request: Request, week: str = ""):
         except ValueError as e:
             log.warning("exec-summary generation failed for %s: %s", week, e)
             return templates.TemplateResponse(
-                request, "_exec_summary.html",
-                {"error": str(e), "week_label": "", "text": "", "model": "",
-                 "generated_at": None, "from_cache": False},
+                request, "_exec_summary.html", _exec_error_ctx(str(e)),
             )
+        ctx = _one_pager_context(session, week, result)
 
-    return templates.TemplateResponse(
-        request, "_exec_summary.html",
-        {
-            "error": None,
-            "week_label": result["week_label"],
-            "text": result["text"],
-            "model": result["model"],
-            "generated_at": result["generated_at"],
-            "from_cache": result["from_cache"],
-        },
+    ctx["error"] = None
+    return templates.TemplateResponse(request, "_exec_summary.html", ctx)
+
+
+# ---------- Phase 3c.6: Standalone-HTML / PDF export ------------------------
+# GET /reports/export?week=2026-W19&format=html|pdf[&force=1]
+#   - html: served as attachment (Content-Disposition) — downloads to disk.
+#   - pdf:  served inline with an auto-fire window.print() injection so the
+#           browser print dialog appears immediately. User picks "Save as PDF".
+# Rendered HTML is cached on weekly_reports.html_content (cache pattern mirrors
+# exec_summary). PDF path injects auto-print after cache read; we never cache
+# the auto-print variant so a future "preview standalone" reuse stays clean.
+
+_EXPORT_FORMATS = {"html", "pdf"}
+
+
+@router.get("/reports/export")
+def reports_export(
+    request: Request,
+    week: str = "",
+    format: str = "html",
+    force: int = 0,
+):
+    """Export the executive 1-pager as standalone HTML or print-to-PDF."""
+    fmt = format.lower()
+    if fmt not in _EXPORT_FORMATS:
+        return Response(
+            content=f"Unsupported format: {format!r}. Use html or pdf.",
+            status_code=400, media_type="text/plain",
+        )
+    if not week:
+        return Response(
+            content="Export requires a week parameter.",
+            status_code=400, media_type="text/plain",
+        )
+    try:
+        report_q.week_label_and_range(week)
+    except (ValueError, IndexError):
+        return Response(
+            content=f"Unknown week id: {week!r}.",
+            status_code=400, media_type="text/plain",
+        )
+
+    with Session(engine) as session:
+        # Cache hit short-circuits the full render path when no refresh is asked.
+        cached_html = None if force else export_svc.load_cached_html(session, week)
+        if cached_html:
+            html_text = cached_html
+        else:
+            # Render fresh. Reuses the Haiku exec paragraph (may hit Anthropic
+            # if missing). Synthesis must already exist — we don't auto-run it.
+            try:
+                exec_result = exec_summary_svc.get_or_generate(session, week)
+            except ValueError as e:
+                return Response(
+                    content=f"Exec summary unavailable: {e}",
+                    status_code=502, media_type="text/plain",
+                )
+            payload = export_svc.build_payload(
+                session, week,
+                exec_text=exec_result["text"],
+                exec_model=exec_result["model"],
+                exec_generated_at=exec_result["generated_at"],
+                exec_from_cache=exec_result["from_cache"],
+            )
+            if payload is None:
+                return Response(
+                    content=(
+                        f"Synthesis hasn't run for {week}.\n"
+                        f"Run: scripts/run_synthesis.py {week}\n"
+                    ),
+                    status_code=409, media_type="text/plain",
+                )
+
+            # Render the standalone doc with inlined CSS (no auto-print —
+            # the cached variant stays usable for both export paths).
+            payload["inline_css"] = export_svc.inline_css()
+            payload["auto_print"] = False
+            html_text = templates.get_template(
+                "_report_standalone.html"
+            ).render(payload)
+            export_svc.save_cached_html(session, week, html_text)
+
+    if fmt == "pdf":
+        # Inject the auto-print script after cache read so the cache stays
+        # canonical (one stored doc, two render modes).
+        body = export_svc.inject_auto_print(html_text)
+        return Response(content=body, media_type="text/html; charset=utf-8")
+
+    # HTML: attachment download.
+    filename = f"gaming-chatter-{week}.html"
+    return Response(
+        content=html_text,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

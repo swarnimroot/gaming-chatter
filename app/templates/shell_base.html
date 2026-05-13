@@ -1,0 +1,59 @@
+{# Shared shell layout for non-Reports pages (Dashboard, Clusters, Sources).
+   Phase 3c.7 — extracted so the three engineer-inspection pages match the
+   visual chrome of the Reports page without duplicating the sidebar markup.
+
+   Blocks the child template fills:
+     - title       : <title> tag content
+     - eyebrow     : small text above the header H1 (e.g. "Raw items")
+     - heading     : the H1 text
+     - header_meta : optional meta line below the H1 (e.g. "{{ count }} items")
+     - header_actions : right side of header (search input, action buttons)
+     - main_content : the scrollable content area below the header
+
+   reports.html does NOT extend this template — its sidebar has a Read-out
+   week list that's only relevant to per-week views. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Gaming Chatter{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+</head>
+<body class="gc-shell-body">
+
+<div class="gc-shell">
+
+  {% include "_sidebar.html" %}
+
+  <div class="gc-main">
+
+    <header class="gc-header">
+      <div>
+        <div class="gc-header-eyebrow">{% block eyebrow %}{% endblock %}</div>
+        <h1 class="gc-header-title">{% block heading %}{% endblock %}</h1>
+        <div class="gc-header-meta">{% block header_meta %}{% endblock %}</div>
+      </div>
+      <div class="gc-header-actions">
+        {% block header_actions %}{% endblock %}
+      </div>
+    </header>
+
+    <div class="gc-scroll">
+      {% block main_content %}{% endblock %}
+    </div>
+
+  </div>
+
+</div>
+
+{% block end_scripts %}
+<script>
+  if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+</script>
+{% endblock %}
+
+</body>
+</html>

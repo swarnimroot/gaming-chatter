@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Added — Phase 3c.7: UI consistency + live search (2026-05-13)
+- **Routing swap.** `/` now serves the weekly read-out (was `/reports`). Old `/` (raw items table) moved to `/dashboard`. Internal HTMX sub-endpoints stay at `/reports/exec-summary`, `/reports/drawer`, `/reports/export`. `/reports` returns 404 (no redirect — personal local tool).
+- **Shared shell for Dashboard / Clusters / Sources.** New `app/templates/shell_base.html` + `_sidebar.html` partial provides the dark sidebar (nav + corpus stats) + main column with header chrome — identical visual treatment to the home page. Each non-home page extends `shell_base.html`; reports.html keeps its own inline shell (per-week Read-out section is unique to it).
+- **`app/services/chrome.py` (new).** `NAV_ITEMS_BASE` (Weekly / Dashboard / Clusters / Sources) + `nav_items_for(active_id)` helper. Single source of truth for the sidebar nav.
+- **Dashboard re-skin.** Old `<table>`-in-`base.html` replaced with a `.gc-table` rendering: source pill / when / title-+-TLDR / category-chip / sentiment-score columns. New `app/templates/_dashboard_list.html` partial for HTMX fragment swap.
+- **Clusters re-skin.** Cluster rows render as `.gc-cluster-card`s — label + meta (score · members · sources · latest) + bordered member list with source pills.
+- **Sources re-skin.** `.gc-table` with name pill / type / URL (mono) / status chip / last-fetched / errors columns.
+- **Live HTMX search on Dashboard / Clusters / Sources.** `<input class="gc-search-input" hx-trigger="keyup changed delay:300ms" hx-push-url="true">` in each header. Server detects `HX-Request` and returns just the list partial. Filters use case-insensitive `ILIKE`:
+  - Dashboard: title / TLDR / source.name
+  - Clusters: cluster.label
+  - Sources: name / url_or_handle
+- **CSS additions (~150 lines).** `.gc-search-input` (matches `.gc-cta` height with accent-soft focus ring), `.gc-table` family (sticky header, bordered cells, hover row, tabular-num timestamps, chip variants `--ok`/`--bad`/`--off`), `.gc-cluster-card` family (label + meta + bordered member list), `.gc-pill-dot--youtube` (missing variant added).
+
+### Fixed — Drawer empty rectangles (2026-05-13)
+- Each item in the cluster drawer was rendering with two empty bordered rectangles. Root cause: `_drawer.html` wrapped each item in `<a class="gc-drawer-item" href="...">` and the inner source pill (from the `source_pill` macro) was also an `<a class="gc-pill" href="#">`. HTML doesn't allow nested `<a>`; the browser parser auto-closes the outer link before opening the inner one, producing an empty `.gc-drawer-item` border + orphaned content. Fix: drawer template renders the source pill inline as `<span class="gc-pill">` instead of calling the macro. Other consumers of the macro (Biggest stories on the home page) are unaffected because they're not inside another `<a>`.
+
+### Added — Phase 3c.6: Executive 1-pager + standalone HTML / PDF export (2026-05-13)
+- **Exec-summary modal upgraded to a 1-pager.** Header strip (week label + range + corpus stats) → existing Haiku 4.5 paragraph as the lead → structured sections pulled from `synthesis_json`: Biggest top-3 (numbered, with source-pill subline), Market momentum top-3 (with `gc-onepager-mmcat--{category}` chip), two-col Industry risks top-2 (with severity dot) / Community (1 heated + 1 celebrating). Same modal trigger; only the response shape changes.
+- **`[Export HTML]` + `[Export PDF]` buttons in modal footer.** Both `target="_blank"` anchors to a new `GET /reports/export?week=...&format=html|pdf` endpoint. HTML serves as `Content-Disposition: attachment`; PDF serves inline with a `window.print()` script injected so the OS print dialog fires on load (user picks "Save as PDF"). Zero new deps.
+- **Standalone HTML doc with inlined CSS.** New `_report_standalone.html` template embeds the full `app.css` (~33KB) inside a `<style>` block in `<head>`, plus `.gc-standalone-*` wrapper chrome and a `@media print` block. Self-contained — no external asset request, works as an email attachment, prints clean.
+- **DB cache on `weekly_reports.html_content`.** First export renders + persists; subsequent exports read from the column (mirrors the Phase 3c.3 `exec_summary` cache). `?force=1` refresh. PDF route injects auto-print *after* the cache read so one canonical doc serves both render modes.
+- **Graceful degrade on weeks without synthesis.** Modal renders Haiku paragraph + a `<code>scripts/run_synthesis.py {week}</code>` hint inside a dashed box; export buttons hidden. Server-side guard returns 409 with plain-text on direct URL access.
+- **New module `app/services/export.py`** (~180 lines). `inline_css(refresh=False)` (module-level cached read of `app.css`), `build_payload(session, week_id, exec_*) -> dict | None` (shared between modal endpoint and export endpoint — returns None when synthesis hasn't run), `load_cached_html` / `save_cached_html`, `inject_auto_print`.
+- **Endpoint changes in `app/routers/reports.py`:** `reports_exec_summary` rewritten to load synthesis + stats and render the 1-pager body; new `reports_export` endpoint (~75 lines) handles format validation, cache lookup, fresh render, and the two response shapes.
+- **CSS additions (~170 lines):** `.gc-onepager-headstrip` / `-statstrip` / `-section` / `-sectlabel` / `-numlist` / `-buls` / `-itemtitle` / `-itemdek` / `-srclist` / `-mmcat` (5 category variants) / `-rlvl` (3 severity variants) / `-cstag` (heated + celebrating variants) / `-twocol` / `-empty` / `-nosynth` / `-exports` / `-export` (anchor styling); `.gc-standalone-body` / `-doc` / `-head` / `-eyebrow` / `-title` / `-foot` (export-only chrome); `@media print` block (hides overlays/sidebars, forces light background, page-break-inside avoid on sections, A4 margins). `.gc-modal-footer` `justify-content` flipped from `flex-end` to `space-between` to fit the attribution-text + export-buttons split.
+- **No new Python deps.** Browser print dialog handles the PDF path; WeasyPrint / pdfkit / Playwright explicitly rejected per the locked single-process minimal-deps stack.
+
+### Revised — Phase 3c.6 visual pass (2026-05-13, same-day after user review)
+- **Export action moved from modal footer to header** as a CSS-only `<details><summary>Export ▾</summary>` dropdown next to the `.gc-modal-close` × button. Panel: `Save as PDF` + `Download HTML`. Footer dropped entirely — attribution moved to a one-line `gc-onepager-attribution` caption inline at the bottom of the body.
+- **4-tile stat row at the top of the body** (`items` / `sources` / `top game · N` / `top genre · N`). Pulls from existing `top_games_for_week(limit=1)` + `top_genres_for_week(limit=1)` — no new queries.
+- **Biggest deks dropped** — numbered list now shows title + source pills only. Single largest vertical-space saving.
+- **Two-col Risks/Community → three-col MM/Risks/Community.** Market momentum joined the column strip instead of getting its own section. Column ratio 1.5fr / 1fr / 1fr.
+- **Type scale shrunk ~25%** (lead 15→12.5px, numlist 13→12.5px, bul list 13→11.5px, section labels 10→9px, chip 9→8px). Stat tile values 17px bold (numbers) / 14px bold (names) / 9px uppercase label.
+- **Stale `weekly_reports.html_content` cache invalidated** so the next export re-renders against the new layout.
+- **`.gc-modal-footer` `justify-content`** reverted to original `flex-end` (we no longer use the footer).
+- **Verified on fresh `:8001 --reload`:** W19 modal 200/6971 bytes (down from 8747, 20% smaller); 4 stat tiles, 3-col present, twocol absent, export dropdown + summary + panel with 2 anchors, 7 clipped item titles, 0 dek references, footer absent, attribution caption present. W18 (no-synthesis) degrades correctly: stat tiles + Haiku paragraph + nosynth note + CLI hint, export dropdown hidden. W19 export HTML 200/42401 bytes; PDF 200/42507 with auto-print injected. Test HTML saved to `exec_summary_W19.html` in project root for visual review.
+
+### Verified — Phase 3c.6 end-to-end (on fresh uvicorn `:8002`)
+- W19 modal: 200, 8747 bytes, 4 section labels, 10 list items (3 biggest + 3 MM + 2 risks + 1 heated + 1 celebrating), 2 export anchors, 3 MM chips, 2 risk dots, 2 CS tags, two-col layout, no-synth note absent.
+- W18 modal (no synthesis): 200, 1724 bytes, 0 section labels, 0 export anchors, Haiku paragraph present, nosynth note + `scripts/run_synthesis.py 2026-W18` hint visible.
+- W19 export HTML (cold): 200, 41935 bytes, `Content-Disposition: attachment; filename="gaming-chatter-2026-W19.html"`.
+- W19 export HTML (warm): 200, identical 41935 bytes — DB cache hit.
+- W19 export PDF: 200, 42041 bytes (cold HTML + 106-byte auto-print script), no Content-Disposition (inline), `window.print()` script verified present before `</body>`.
+- W18 export: 409 + plain-text "Synthesis hasn't run for 2026-W18 — Run: `scripts/run_synthesis.py 2026-W18`".
+- Bad format: 400.
+- DB: `weekly_reports.html_content` populated 41935 bytes (matches response length) after first W19 export.
+- Anthropic spend this session: ~$0.001 (1 Haiku call for the W18 modal degrade test, which auto-generated a missing exec_summary).
+- `:8001` reloader stuck on stale code again (export endpoint 404; modal endpoint 500 from partial Jinja-only reload). Verified on fresh `:8002`; user to restart `:8001` to validate in their main session.
+
 ### Changed — Phase 3c.5: 9-card layout restructure (2026-05-13)
 - **Sidebar:** nav trimmed from 6 placeholders to 4 real routes (Weekly read-out / Dashboard / Clusters / Sources); user-avatar block replaced with corpus-stats grid (items / clusters / sources) backed by new `corpus_stats(session)` helper in `app/services/reports.py`; "Generate exec summary" CTA removed (deduped with header).
 - **Header:** Grid / Comfortable / Theme toggles removed (variants are locked statically — buttons were decorative); Exec-summary CTA preserved.

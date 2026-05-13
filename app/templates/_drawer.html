@@ -1,7 +1,12 @@
 {# Source drawer body fragment (Phase 3c.3).
    HTMX swaps this into #source-drawer-body when a row is clicked.
-   The outer panel shell + × close button live in reports.html. #}
-{% from "_components.html" import source_pill %}
+   The outer panel shell + × close button live in reports.html.
+
+   NOTE: each item is wrapped in `<a class="gc-drawer-item" href="...">` so
+   the whole card is clickable. We render the source pill inline as a
+   `<span class="gc-pill">` here (NOT via the `source_pill` macro, which
+   emits its own `<a href="#">`) — nesting `<a>` inside `<a>` makes the
+   browser auto-close the outer link, leaving an empty bordered rectangle. #}
 
 {% if error %}
   <div class="gc-drawer-header">
@@ -25,7 +30,10 @@
       {% for it in items %}
         <a class="gc-drawer-item" href="{{ it.url }}" target="_blank" rel="noopener">
           <div class="gc-drawer-item-head">
-            {{ source_pill(it.source_name, it.source_kind) }}
+            <span class="gc-pill" title="{{ it.source_name }}">
+              <span class="gc-pill-dot gc-pill-dot--{{ it.source_kind }}"></span>
+              {{ it.source_name }}
+            </span>
             <span class="gc-drawer-item-when">{{ it.when_display }}</span>
           </div>
           <div class="gc-drawer-item-title">{{ it.title }}</div>

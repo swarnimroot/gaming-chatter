@@ -214,6 +214,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-pill-dot--subreddit { background: #FF4500; }
 .gc-pill-dot--forum { background: #2C098C; }
 .gc-pill-dot--outlet { background: var(--gc-fg3); }
+.gc-pill-dot--youtube { background: #FF0033; }
 .gc-pill-more { font-size: 10px; color: var(--gc-fg3); }
 
 /* ---------- Bars ---------- */
@@ -684,4 +685,418 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   .gc-drawer-panel,
   .gc-modal-overlay,
   .gc-modal-card { transition: none; }
+}
+
+/* ---------- Phase 3c.6: Executive 1-pager (modal body + standalone) ----------
+   Rev 3 (2026-05-13): tiles dropped (redundant w/ Biggest + Haiku), paragraph
+   split into 2-sentence chunks, MM moved out of the cross-cut strip, columns
+   collapsed to Risks | Community only at the bottom. Export trigger now uses
+   the orange accent to match `.gc-cta`. */
+
+/* Modal header packs eyebrow + title-line; Export floats top-right next to ×. */
+.gc-modal-card .gc-modal-header {
+  padding: 18px 140px 12px 24px;
+  position: relative;
+}
+.gc-onepager-titleline {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-top: 2px;
+}
+.gc-onepager-titleline .gc-modal-title {
+  margin: 0;
+}
+.gc-onepager-titlesep   { color: var(--gc-border-strong); font-size: 13px; }
+.gc-onepager-titlerange { font-size: 12px; color: var(--gc-fg3); letter-spacing: 0.02em; }
+
+/* Export dropdown — orange button matching `.gc-cta`. Positioned absolute
+   at top:12px right:50px so it sits left of the .gc-modal-close × at right:14px. */
+.gc-onepager-export-menu {
+  position: absolute; top: 12px; right: 50px;
+  z-index: 2;
+}
+.gc-onepager-export-menu > summary {
+  list-style: none; cursor: pointer;
+  height: 28px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: 4px;
+  background: var(--gc-accent); color: var(--gc-fg-on-accent);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.01em;
+}
+.gc-onepager-export-menu > summary::-webkit-details-marker { display: none; }
+.gc-onepager-export-menu > summary::marker { content: ""; }
+.gc-onepager-export-menu > summary:hover { background: var(--gc-accent-hover); }
+.gc-onepager-export-menu[open] > summary { background: var(--gc-accent-hover); }
+.gc-onepager-export-caret { font-size: 10px; line-height: 1; }
+.gc-onepager-export-panel {
+  position: absolute; right: 0; top: 34px;
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  box-shadow: 0 8px 20px rgba(8,8,11,0.10);
+  min-width: 170px;
+  padding: 4px;
+  display: flex; flex-direction: column;
+}
+.gc-onepager-export-panel a {
+  padding: 7px 10px; font-size: 12px;
+  color: var(--gc-fg); text-decoration: none;
+  border-radius: 3px;
+}
+.gc-onepager-export-panel a:hover {
+  background: var(--gc-accent-soft); color: var(--gc-accent);
+}
+
+.gc-modal-card .gc-modal-body { padding: 14px 24px 14px; }
+
+/* Stat tiles — 4 across, at-a-glance numbers above the lead paragraph. */
+.gc-onepager-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin: 0 0 14px;
+}
+.gc-onepager-stat {
+  background: var(--gc-surface-alt);
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.gc-onepager-stat-val {
+  font-size: 17px; font-weight: 700;
+  color: var(--gc-fg);
+  line-height: 1.15;
+}
+.gc-onepager-stat-val--name {
+  font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gc-onepager-stat-lab {
+  font-size: 9px; color: var(--gc-fg3);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Lead — wraps multiple <p> elements (sentence-split for breathing room). */
+.gc-onepager-lead { margin: 0 0 14px; }
+.gc-onepager-lead p {
+  font-size: 13px; line-height: 1.55;
+  color: var(--gc-fg);
+  margin: 0 0 8px;
+  text-wrap: pretty;
+}
+.gc-onepager-lead p:last-child { margin-bottom: 0; }
+
+/* Sections + labels */
+.gc-onepager-section { margin-top: 14px; }
+.gc-onepager-sectlabel {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase; color: var(--gc-fg3);
+  margin: 0 0 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--gc-border);
+}
+
+/* Biggest numbered list — titles + source pills only (no deks). */
+.gc-onepager-numlist {
+  list-style: decimal; padding-left: 22px; margin: 0;
+  font-size: 13px; line-height: 1.45; color: var(--gc-fg);
+}
+.gc-onepager-numlist > li { margin: 0 0 7px; padding-left: 4px; }
+.gc-onepager-numlist > li::marker { color: var(--gc-accent); font-weight: 700; }
+
+.gc-onepager-itemtitle { font-weight: 600; color: var(--gc-fg); }
+.gc-onepager-itemtitle--clip {
+  display: inline-block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.gc-onepager-srclist {
+  margin-top: 2px;
+  font-size: 11px; color: var(--gc-fg3);
+  letter-spacing: 0.02em;
+}
+.gc-onepager-srcsep { color: var(--gc-border-strong); }
+
+/* Bul list — used for MM, Risks, Community. */
+.gc-onepager-buls {
+  list-style: none; padding: 0; margin: 0;
+  font-size: 12.5px; line-height: 1.45; color: var(--gc-fg);
+}
+.gc-onepager-buls > li {
+  margin: 0 0 6px;
+  display: flex; align-items: baseline; gap: 6px;
+  min-width: 0;
+}
+.gc-onepager-buls > li > .gc-onepager-itemtitle--clip { flex: 1 1 auto; min-width: 0; }
+
+/* Two-col strip — Risks | Community at the bottom (modal + standalone). */
+.gc-onepager-twocol {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  margin-top: 14px;
+}
+.gc-onepager-twocol .gc-onepager-section { margin-top: 0; }
+@media (max-width: 620px) {
+  .gc-onepager-twocol { grid-template-columns: 1fr; gap: 4px; }
+}
+
+.gc-onepager-mmcat {
+  display: inline-block; flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; border-radius: 3px;
+  line-height: 1.4;
+}
+.gc-onepager-mmcat--acquisitions    { background: var(--gc-accent-soft);  color: var(--gc-accent); }
+.gc-onepager-mmcat--funds           { background: var(--gc-success-soft); color: var(--gc-success); }
+.gc-onepager-mmcat--platform-policy { background: var(--gc-warning-soft); color: var(--gc-warning); }
+.gc-onepager-mmcat--structural      { background: var(--gc-surface-alt);  color: var(--gc-fg2); }
+.gc-onepager-mmcat--people-moves    { background: var(--gc-chip);         color: var(--gc-fg3); }
+
+.gc-onepager-rlvl {
+  display: inline-block; flex: 0 0 auto;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  align-self: center;
+}
+.gc-onepager-rlvl--low  { background: var(--gc-success); }
+.gc-onepager-rlvl--med  { background: var(--gc-warning); }
+.gc-onepager-rlvl--high { background: var(--gc-danger);  }
+
+.gc-onepager-cstag {
+  display: inline-block; flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; border-radius: 3px;
+  line-height: 1.4;
+}
+.gc-onepager-cstag--heated      { background: var(--gc-danger-soft);  color: var(--gc-danger); }
+.gc-onepager-cstag--celebrating { background: var(--gc-success-soft); color: var(--gc-success); }
+
+.gc-onepager-empty {
+  font-size: 12px; color: var(--gc-fg3); font-style: italic;
+}
+
+.gc-onepager-nosynth {
+  margin: 10px 0; padding: 10px 12px;
+  background: var(--gc-surface-alt); border: 1px dashed var(--gc-border);
+  border-radius: 4px; font-size: 12.5px; color: var(--gc-fg2);
+}
+.gc-onepager-nosynth code {
+  font-family: var(--gc-font-mono); font-size: 11.5px;
+  background: var(--gc-bg); padding: 1px 4px; border-radius: 3px;
+}
+
+.gc-onepager-attribution {
+  margin-top: 16px;
+  font-size: 10px; color: var(--gc-fg3);
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* ---------- Standalone-export-only chrome (Phase 3c.6, A4 portrait) ----------
+   Used by _report_standalone.html, NOT loaded in the live app. The doc is
+   sized as A4 portrait (210 × 297mm) so on-screen and in print look
+   identical. Slightly larger font scale inside the doc so the briefing
+   reads as a real document, not a cramped modal. */
+.gc-standalone-body {
+  background: var(--gc-canvas);
+  color: var(--gc-fg);
+  font-family: var(--gc-font-sans);
+  margin: 0; padding: 24px 0;
+}
+.gc-standalone-doc {
+  width: 210mm; min-height: 297mm;
+  margin: 0 auto;
+  padding: 18mm 16mm;
+  background: var(--gc-bg);
+  box-shadow: 0 6px 24px rgba(8, 8, 11, 0.10);
+  box-sizing: border-box;
+}
+.gc-standalone-head {
+  border-bottom: 1px solid var(--gc-border);
+  padding-bottom: 10px; margin-bottom: 16px;
+}
+.gc-standalone-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--gc-fg3);
+}
+.gc-standalone-title {
+  font-size: 22px; font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.gc-standalone-doc .gc-onepager-titleline { margin-top: 4px; }
+.gc-standalone-doc .gc-onepager-titlesep   { font-size: 16px; }
+.gc-standalone-doc .gc-onepager-titlerange { font-size: 13px; }
+
+/* Bump the body type scale ~10% inside the standalone doc — more readable
+   on a printed page than the modal's compact scale. */
+.gc-standalone-doc .gc-onepager-lead p { font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
+.gc-standalone-doc .gc-onepager-sectlabel { font-size: 10.5px; margin: 0 0 8px; padding-bottom: 4px; }
+.gc-standalone-doc .gc-onepager-numlist { font-size: 14px; line-height: 1.5; }
+.gc-standalone-doc .gc-onepager-numlist > li { margin: 0 0 9px; }
+.gc-standalone-doc .gc-onepager-srclist { font-size: 11.5px; }
+.gc-standalone-doc .gc-onepager-buls { font-size: 13px; line-height: 1.5; }
+.gc-standalone-doc .gc-onepager-buls > li { margin: 0 0 7px; }
+.gc-standalone-doc .gc-onepager-mmcat,
+.gc-standalone-doc .gc-onepager-cstag { font-size: 9.5px; padding: 2px 6px; }
+.gc-standalone-doc .gc-onepager-section { margin-top: 16px; }
+.gc-standalone-doc .gc-onepager-twocol  { margin-top: 16px; gap: 22px; }
+.gc-standalone-doc .gc-onepager-stats   { margin-bottom: 16px; gap: 10px; }
+.gc-standalone-doc .gc-onepager-stat    { padding: 10px 12px; }
+.gc-standalone-doc .gc-onepager-stat-val      { font-size: 19px; }
+.gc-standalone-doc .gc-onepager-stat-val--name { font-size: 15px; }
+.gc-standalone-doc .gc-onepager-stat-lab      { font-size: 10px; }
+
+.gc-standalone-foot {
+  margin-top: 22px; padding-top: 10px;
+  border-top: 1px solid var(--gc-border);
+  font-size: 10px; color: var(--gc-fg3); letter-spacing: 0.04em;
+}
+
+/* ---------- @media print (Phase 3c.6) ----------
+   When the user prints the standalone HTML (Save as PDF flow), the body
+   loses its gray canvas + box-shadow and the doc fills the actual paper. */
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .gc-modal-overlay, .gc-modal-card,
+  .gc-drawer-overlay, .gc-drawer-panel,
+  .gc-sb-rail, .gc-shell-sidebar, .gc-header,
+  .gc-onepager-export-menu { display: none !important; }
+  .gc-standalone-body { padding: 0; background: #fff !important; }
+  .gc-standalone-doc  {
+    width: auto; min-height: 0;
+    margin: 0; padding: 0;
+    box-shadow: none; background: #fff;
+  }
+  a { color: #000; text-decoration: none; }
+  .gc-onepager-section { page-break-inside: avoid; }
+  @page { size: A4 portrait; margin: 14mm 14mm; }
+}
+
+/* ---------- Phase 3c.7: shared chrome for Dashboard / Clusters / Sources --- */
+
+/* Header search input — lives in .gc-header-actions, sits at top-right next
+   to the page title. HTMX live-search triggers on keyup. */
+.gc-search-input {
+  height: 30px; min-width: 240px;
+  padding: 0 10px;
+  border: 1px solid var(--gc-border);
+  border-radius: 4px;
+  background: var(--gc-surface);
+  color: var(--gc-fg);
+  font-family: inherit; font-size: 13px;
+  outline: none;
+}
+.gc-search-input:focus {
+  border-color: var(--gc-accent);
+  box-shadow: 0 0 0 3px var(--gc-accent-soft);
+}
+.gc-search-input::placeholder { color: var(--gc-fg3); }
+
+/* gc-table — the row-per-record table used by Dashboard + Sources. Reads as
+   a clean grid: 1px borders, tight padding, sticky header row, monospace
+   numerics, source pill in the first cell, action chips in trailing cells. */
+.gc-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 12.5px;
+}
+.gc-table thead th {
+  text-align: left;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--gc-fg3);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gc-border);
+  background: var(--gc-surface-alt);
+  position: sticky; top: 0; z-index: 1;
+}
+.gc-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gc-border);
+  vertical-align: top;
+  color: var(--gc-fg);
+}
+.gc-table tbody tr:last-child td { border-bottom: none; }
+.gc-table tbody tr:hover td { background: var(--gc-surface-alt); }
+
+.gc-table-when, .gc-table-cat, .gc-table-sent { white-space: nowrap; }
+.gc-table-when { color: var(--gc-fg3); font-variant-numeric: tabular-nums; width: 110px; }
+.gc-table-source { width: 160px; }
+.gc-table-cat   { width: 110px; }
+.gc-table-sent  { width: 70px;  font-variant-numeric: tabular-nums; }
+
+.gc-table-title {
+  font-weight: 600; color: var(--gc-fg);
+  text-decoration: none; line-height: 1.35;
+  text-wrap: pretty;
+}
+.gc-table-title:hover { color: var(--gc-accent); }
+.gc-table-tldr {
+  margin-top: 3px;
+  font-size: 11.5px; color: var(--gc-fg2);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.gc-table-mono {
+  font-family: var(--gc-font-mono); font-size: 11px;
+  color: var(--gc-fg2);
+  background: var(--gc-surface-alt); padding: 1px 6px; border-radius: 3px;
+  word-break: break-all;
+}
+.gc-table-chip {
+  display: inline-block; padding: 2px 7px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; border-radius: 3px;
+  background: var(--gc-chip); color: var(--gc-fg2);
+}
+.gc-table-chip--ok  { background: var(--gc-success-soft); color: var(--gc-success); }
+.gc-table-chip--bad { background: var(--gc-danger-soft);  color: var(--gc-danger);  }
+.gc-table-chip--off { background: var(--gc-surface-alt);  color: var(--gc-fg3);     }
+.gc-table-sent-val { font-weight: 600; color: var(--gc-fg2); }
+
+/* Cluster card list — used by /clusters. Each cluster is its own card,
+   members listed below in a flat row pattern. */
+.gc-cluster-card {
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.gc-cluster-head { margin-bottom: 10px; }
+.gc-cluster-label {
+  margin: 0;
+  font-size: 14px; font-weight: 600; color: var(--gc-fg);
+  letter-spacing: -0.005em; line-height: 1.3;
+}
+.gc-cluster-meta {
+  margin-top: 4px;
+  font-size: 11px; color: var(--gc-fg3); letter-spacing: 0.02em;
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.gc-cluster-sep { color: var(--gc-border-strong); }
+.gc-cluster-members {
+  list-style: none; padding: 0; margin: 0;
+  border-top: 1px solid var(--gc-border);
+}
+.gc-cluster-members > li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--gc-border);
+  font-size: 12.5px;
+}
+.gc-cluster-members > li:last-child { border-bottom: none; }
+.gc-cluster-member-title {
+  flex: 1;
+  color: var(--gc-fg); text-decoration: none;
+  font-weight: 500;
+}
+.gc-cluster-member-title:hover { color: var(--gc-accent); }
+.gc-cluster-member-when {
+  color: var(--gc-fg3); font-size: 11px; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

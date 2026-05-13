@@ -1,10 +1,19 @@
-{# Exec-summary modal body fragment (Phase 3c.3).
+{# Executive summary modal body — 1-pager (Phase 3c.6, rev 3 2026-05-13).
    HTMX swaps this into #exec-summary-body when the modal opens.
-   The outer modal shell + × close button live in reports.html. #}
+
+   Revision 3 (user-feedback driven):
+   - Stat tiles dropped (top game / top genre were redundant with Biggest #1
+     and the Haiku paragraph).
+   - Haiku paragraph split into 2-sentence chunks via `exec_paragraphs` for
+     breathing room.
+   - Vertical layout: Biggest / Market momentum / 2-col Risks | Community.
+     The all-3-cols horizontal strip was too cramped at modal width.
+   - Export button moved to orange-accent style (matches `.gc-cta`).
+   - Week range moved inline with title (single header line, not stacked). #}
 
 {% if error %}
   <div class="gc-modal-header">
-    <div class="gc-eyebrow">Exec summary</div>
+    <div class="gc-eyebrow">Executive summary</div>
     <div class="gc-modal-title">Error</div>
   </div>
   <div class="gc-modal-body">
@@ -12,19 +21,139 @@
   </div>
 {% else %}
   <div class="gc-modal-header">
-    <div class="gc-eyebrow">Exec summary</div>
-    <div class="gc-modal-title">{{ week_label }}</div>
+    <div class="gc-eyebrow">Executive summary</div>
+    <div class="gc-onepager-titleline">
+      <span class="gc-modal-title" id="exec-summary-title">{{ week_label }}</span>
+      <span class="gc-onepager-titlesep">·</span>
+      <span class="gc-onepager-titlerange">{{ week_range }}</span>
+    </div>
+
+    {% if synthesis_ran %}
+      <details class="gc-onepager-export-menu">
+        <summary class="gc-onepager-export-trigger" title="Export 1-pager">
+          <span>Export</span>
+          <span class="gc-onepager-export-caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="gc-onepager-export-panel">
+          <a target="_blank" rel="noopener"
+             href="/reports/export?week={{ week_id }}&format=pdf">Save as PDF</a>
+          <a target="_blank" rel="noopener"
+             href="/reports/export?week={{ week_id }}&format=html">Download HTML</a>
+        </div>
+      </details>
+    {% endif %}
   </div>
 
   <div class="gc-modal-body">
-    <p class="gc-exec-paragraph">{{ text }}</p>
-  </div>
+    <div class="gc-onepager-stats">
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val">{{ stats.stories }}</div>
+        <div class="gc-onepager-stat-lab">items</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val">{{ stats.sources }}</div>
+        <div class="gc-onepager-stat-lab">sources</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val gc-onepager-stat-val--name" title="{{ top_game.name }}">{{ top_game.name }}</div>
+        <div class="gc-onepager-stat-lab">top game{% if top_game.count %} · {{ top_game.count }}{% endif %}</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val gc-onepager-stat-val--name" title="{{ top_genre.name }}">{{ top_genre.name }}</div>
+        <div class="gc-onepager-stat-lab">top genre{% if top_genre.count %} · {{ top_genre.count }}{% endif %}</div>
+      </div>
+    </div>
 
-  <div class="gc-modal-footer">
-    <span class="gc-modal-foot-note">
-      {% if from_cache %}cached{% else %}fresh{% endif %} ·
-      {{ model }}
-      {% if generated_at %} · generated {{ generated_at.strftime('%b %d, %H:%M UTC') }}{% endif %}
-    </span>
+    <div class="gc-onepager-lead">
+      {% for para in exec_paragraphs %}<p>{{ para }}</p>{% endfor %}
+    </div>
+
+    {% if synthesis_ran %}
+      {% if biggest %}
+        <section class="gc-onepager-section">
+          <div class="gc-onepager-sectlabel">Biggest stories</div>
+          <ol class="gc-onepager-numlist">
+            {% for b in biggest %}
+              <li>
+                <span class="gc-onepager-itemtitle">{{ b.title }}</span>
+                {% if b.sources %}
+                  <div class="gc-onepager-srclist">
+                    {%- for s in b.sources -%}
+                      {{ s }}{% if not loop.last %} <span class="gc-onepager-srcsep">·</span> {% endif %}
+                    {%- endfor -%}
+                  </div>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ol>
+        </section>
+      {% endif %}
+
+      {% if market_momentum %}
+        <section class="gc-onepager-section">
+          <div class="gc-onepager-sectlabel">Market momentum</div>
+          <ul class="gc-onepager-buls">
+            {% for m in market_momentum %}
+              <li>
+                <span class="gc-onepager-mmcat gc-onepager-mmcat--{{ m.category }}">{{ m.category|replace('-', ' ') }}</span>
+                <span class="gc-onepager-itemtitle gc-onepager-itemtitle--clip">{{ m.title }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      {% if risks or heated_about or celebrating %}
+        <div class="gc-onepager-twocol">
+          <section class="gc-onepager-section">
+            <div class="gc-onepager-sectlabel">Industry risks</div>
+            {% if risks %}
+              <ul class="gc-onepager-buls">
+                {% for r in risks %}
+                  <li>
+                    <span class="gc-onepager-rlvl gc-onepager-rlvl--{{ r.level }}" title="{{ r.level }} severity"></span>
+                    <span class="gc-onepager-itemtitle gc-onepager-itemtitle--clip">{{ r.title }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="gc-onepager-empty">No risks flagged.</div>
+            {% endif %}
+          </section>
+
+          <section class="gc-onepager-section">
+            <div class="gc-onepager-sectlabel">Community</div>
+            {% if heated_about or celebrating %}
+              <ul class="gc-onepager-buls">
+                {% for h in heated_about %}
+                  <li>
+                    <span class="gc-onepager-cstag gc-onepager-cstag--heated">Heated</span>
+                    <span class="gc-onepager-itemtitle gc-onepager-itemtitle--clip">{{ h.title }}</span>
+                  </li>
+                {% endfor %}
+                {% for c in celebrating %}
+                  <li>
+                    <span class="gc-onepager-cstag gc-onepager-cstag--celebrating">Celebrating</span>
+                    <span class="gc-onepager-itemtitle gc-onepager-itemtitle--clip">{{ c.title }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="gc-onepager-empty">No standout signal.</div>
+            {% endif %}
+          </section>
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="gc-onepager-nosynth">
+        Run <code>scripts/run_synthesis.py {{ week_id }}</code> for the full read-out (Biggest, Market momentum, Risks, Community).
+      </div>
+    {% endif %}
+
+    <div class="gc-onepager-attribution">
+      {% if exec_from_cache %}cached{% else %}fresh{% endif %} ·
+      {{ exec_model }}
+      {% if exec_generated_at %} · generated {{ exec_generated_at.strftime('%b %d, %H:%M UTC') }}{% endif %}
+    </div>
   </div>
 {% endif %}

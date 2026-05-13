@@ -118,12 +118,26 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [x] Apply all locked layout changes (drop Card 1, fold Studio Watch + Storefronts into MM, etc.). — **Done 2026-05-13.** Dropped: Card 1 / Card 8 / Card 9 / standalone headline / footer hint / header Grid+Comfortable+Theme toggles / sidebar "Generate exec summary" CTA / sidebar user-avatar / Risks `gc-risk-trend` chip. Reworked: Card 2 plural top-3 with rank badge + source pills (span-2 preserved); Card 4 MM row list with category chip; Card 6 CS narrative + heated/celebrating; Card 10 Esports row list. Sidebar nav trimmed to 4 real routes (`/reports` / `/` / `/clusters` / `/sources`). Sidebar bottom now corpus stats (items / clusters / sources).
 - [x] Smoke test end-to-end. — **Done 2026-05-13.** Verified on `:8002`: W19 (200, full synthesis: 3 biggest / 5 MM / 1 heated + 2 celebrating / 2 risks / 0 esports → "No esports stories" honest empty / 1 drama / 5 watch); W18 + W17 200 with "Awaiting synthesis" empty-states on the 7 synthesis-dependent cards. Drawer + exec-summary fragment endpoints unchanged.
 
-### Phase 3d — Archive + export
+### Phase 3c.6 — Executive 1-pager + HTML / PDF export
 
-- [ ] Markdown → standalone HTML rendering with inlined CSS
-- [ ] "Generate report" manual button
+- [x] Upgrade exec-summary modal body to a structured 1-pager (Haiku paragraph lead + Biggest top-3 + Market Momentum top-3 + two-col Risks top-2 / Community 1 heated + 1 celebrating). — **Done 2026-05-13.** Pulls from `synthesis_json` already in `weekly_reports`; no new LLM call. Modal degrades to Haiku-only + run-synthesis hint on weeks without synthesis; export buttons hidden in that state.
+- [x] Standalone HTML rendering with inlined CSS. — **Done 2026-05-13.** New `app/services/export.py` + `_report_standalone.html` template. Full `<style>` block embeds the live `app.css` (~33KB) so the exported doc is self-contained. Includes `@media print` rules so direct Ctrl+P from the live `/reports` view also prints clean.
+- [x] PDF export via browser print dialog (no new deps). — **Done 2026-05-13.** `format=pdf` serves the same standalone HTML inline with a `window.print()` script injected after `</body>`. Cached HTML stays canonical (one stored doc, two render modes).
+- [x] `[Export HTML]` + `[Export PDF]` buttons inside the exec-summary modal footer. — **Done 2026-05-13.** Anchors open in new tab; modal stays accessible. Buttons hidden when synthesis hasn't run.
+- [x] DB cache on `weekly_reports.html_content`. — **Done 2026-05-13.** Mirrors `exec_summary` cache pattern; `?force=1` refresh.
+
+### Phase 3c.7 — UI consistency + live search
+
+- [x] Routing swap: `/` is the weekly read-out (was `/reports`); raw items table moved to `/dashboard`. — **Done 2026-05-13.** Internal HTMX sub-endpoints (`/reports/exec-summary` / `/reports/drawer` / `/reports/export`) kept under their existing `/reports/*` namespace. `/reports` correctly 404s.
+- [x] Re-skin Dashboard / Clusters / Sources to share the home page's design system. — **Done 2026-05-13.** New `app/templates/shell_base.html` + `_sidebar.html` shared shell. New `app/services/chrome.py` (`NAV_ITEMS_BASE` + `nav_items_for(active_id)`). Light re-skin: tables/lists kept (better for inspection than card grids), gc design tokens applied (Arial Nova, orange accent, gc-canvas/gc-border colors, source pills).
+- [x] Live HTMX search on Dashboard / Clusters / Sources. — **Done 2026-05-13.** `<input class="gc-search-input" hx-get hx-trigger="keyup changed delay:300ms" hx-push-url="true">` in each header. Servers branch on `HX-Request` header → return list-only partial. URL stays in sync with the search term. Filters: dashboard = title/TLDR/source name (ILIKE), clusters = label, sources = name/URL.
+- [x] Drawer `<a>`-nesting bug fix. — **Done 2026-05-13.** Each drawer item was rendering with two empty bordered rectangles per card because `source_pill` macro emits `<a href="#">` and we wrapped each item in `<a href="article-url">` — invalid HTML, browser auto-closes the outer `<a>` early. Fix: drawer renders the source pill inline as `<span class="gc-pill">` instead of calling the macro.
+
+### Phase 3d — Archive (optional, deferred)
+
+- [ ] Markdown rendering from synthesis_json → `weekly_reports.markdown_content`
+- [ ] "Generate report" manual button (UI trigger for `scripts/run_synthesis.py`)
 - [ ] Reports archive view — sibling of `/reports/{id}`
-- [ ] Export-as-HTML button
 
 - [ ] **End of Phase 3 = working product.**
 

@@ -1,0 +1,48 @@
+{# Sources list fragment — swap target for HTMX live-search. #}
+{% if sources %}
+  <table class="gc-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th class="gc-table-cat">Type</th>
+        <th>URL / Handle</th>
+        <th class="gc-table-cat">Status</th>
+        <th class="gc-table-when">Last fetch</th>
+        <th class="gc-table-cat">Errors</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sources %}
+        <tr>
+          <td>
+            <span class="gc-pill">
+              <span class="gc-pill-dot gc-pill-dot--{{ s.kind }}"></span>
+              {{ s.name }}
+            </span>
+          </td>
+          <td class="gc-table-cat">
+            <span class="gc-table-chip">{{ s.type }}</span>
+          </td>
+          <td><code class="gc-table-mono">{{ s.url_or_handle }}</code></td>
+          <td class="gc-table-cat">
+            {% if s.enabled %}
+              <span class="gc-table-chip gc-table-chip--ok">enabled</span>
+            {% else %}
+              <span class="gc-table-chip gc-table-chip--off">disabled</span>
+            {% endif %}
+          </td>
+          <td class="gc-table-when">
+            {{ s.last_fetched_at.strftime('%b %d, %H:%M') if s.last_fetched_at else '—' }}
+          </td>
+          <td class="gc-table-cat">
+            {% if s.error_count > 0 %}
+              <span class="gc-table-chip gc-table-chip--bad" title="{{ s.last_error }}">{{ s.error_count }}</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="gc-row-empty">{% if q %}No sources match "{{ q }}".{% else %}No sources configured.{% endif %}</div>
+{% endif %}

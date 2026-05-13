@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ week_label }} — Executive summary</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="generator" content="gaming-chatter">
+  <style>{{ inline_css|safe }}</style>
+</head>
+<body class="gc-standalone-body">
+
+<div class="gc-standalone-doc">
+
+  <header class="gc-standalone-head">
+    <div class="gc-standalone-eyebrow">Executive summary</div>
+    <div class="gc-onepager-titleline">
+      <span class="gc-standalone-title">{{ week_label }}</span>
+      <span class="gc-onepager-titlesep">·</span>
+      <span class="gc-onepager-titlerange">{{ week_range }}</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="gc-onepager-stats">
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val">{{ stats.stories }}</div>
+        <div class="gc-onepager-stat-lab">items</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val">{{ stats.sources }}</div>
+        <div class="gc-onepager-stat-lab">sources</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val gc-onepager-stat-val--name">{{ top_game.name }}</div>
+        <div class="gc-onepager-stat-lab">top game{% if top_game.count %} · {{ top_game.count }}{% endif %}</div>
+      </div>
+      <div class="gc-onepager-stat">
+        <div class="gc-onepager-stat-val gc-onepager-stat-val--name">{{ top_genre.name }}</div>
+        <div class="gc-onepager-stat-lab">top genre{% if top_genre.count %} · {{ top_genre.count }}{% endif %}</div>
+      </div>
+    </div>
+
+    <div class="gc-onepager-lead">
+      {% for para in exec_paragraphs %}<p>{{ para }}</p>{% endfor %}
+    </div>
+
+    {% if biggest %}
+      <section class="gc-onepager-section">
+        <div class="gc-onepager-sectlabel">Biggest stories</div>
+        <ol class="gc-onepager-numlist">
+          {% for b in biggest %}
+            <li>
+              <span class="gc-onepager-itemtitle">{{ b.title }}</span>
+              {% if b.sources %}
+                <div class="gc-onepager-srclist">
+                  {%- for s in b.sources -%}
+                    {{ s }}{% if not loop.last %} <span class="gc-onepager-srcsep">·</span> {% endif %}
+                  {%- endfor -%}
+                </div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      </section>
+    {% endif %}
+
+    {% if market_momentum %}
+      <section class="gc-onepager-section">
+        <div class="gc-onepager-sectlabel">Market momentum</div>
+        <ul class="gc-onepager-buls">
+          {% for m in market_momentum %}
+            <li>
+              <span class="gc-onepager-mmcat gc-onepager-mmcat--{{ m.category }}">{{ m.category|replace('-', ' ') }}</span>
+              <span class="gc-onepager-itemtitle">{{ m.title }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    <div class="gc-onepager-twocol">
+      <section class="gc-onepager-section">
+        <div class="gc-onepager-sectlabel">Industry risks</div>
+        {% if risks %}
+          <ul class="gc-onepager-buls">
+            {% for r in risks %}
+              <li>
+                <span class="gc-onepager-rlvl gc-onepager-rlvl--{{ r.level }}" title="{{ r.level }} severity"></span>
+                <span class="gc-onepager-itemtitle">{{ r.title }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="gc-onepager-empty">No risks flagged.</div>
+        {% endif %}
+      </section>
+
+      <section class="gc-onepager-section">
+        <div class="gc-onepager-sectlabel">Community</div>
+        {% if heated_about or celebrating %}
+          <ul class="gc-onepager-buls">
+            {% for h in heated_about %}
+              <li>
+                <span class="gc-onepager-cstag gc-onepager-cstag--heated">Heated</span>
+                <span class="gc-onepager-itemtitle">{{ h.title }}</span>
+              </li>
+            {% endfor %}
+            {% for c in celebrating %}
+              <li>
+                <span class="gc-onepager-cstag gc-onepager-cstag--celebrating">Celebrating</span>
+                <span class="gc-onepager-itemtitle">{{ c.title }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="gc-onepager-empty">No standout signal.</div>
+        {% endif %}
+      </section>
+    </div>
+  </main>
+
+  <footer class="gc-standalone-foot">
+    Generated {{ generated_at_display }} · gaming-chatter · synthesis {{ synthesis_model or '—' }} · exec summary {{ exec_model or '—' }}
+  </footer>
+
+</div>
+
+{% if auto_print %}
+<script>
+  window.addEventListener("load", function() {
+    setTimeout(function() { window.print(); }, 100);
+  });
+</script>
+{% endif %}
+
+</body>
+</html>

@@ -1,5 +1,9 @@
+"""GET /clusters — cluster inspection view with live HTMX search.
+
+Phase 3c.7 — re-skinned to shell_base.html and gained a `?q=` filter that
+matches against cluster.label (case-insensitive).
+"""
 import json
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -9,40 +13,37 @@ from sqlmodel import Session, col, select
 from app.config import TEMPLATES_DIR
 from app.db.models import Cluster, Item, Source
 from app.db.session import get_session
+from app.services.chrome import nav_items_for
 from app.services.cluster import cluster_window
+from app.services.reports import corpus_stats
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-@router.post("/clusters/run")
-def clusters_run(
-    bg: BackgroundTasks,
-    week_id: str = "all",
-    sync: bool = False,
-):
-    """Run clustering over all ok-enriched items, persisting under `week_id`."""
-    if sync:
-        return JSONResponse(cluster_window(week_id=week_id))
-    bg.add_task(cluster_window, week_id=week_id)
-    return RedirectResponse(f"/clusters?week_id={week_id}", status_code=303)
+def _source_kind(s: Source) -> str:
+    if s.type == "youtube":
+        return "youtube"
+    if "reddit.com" in (s.url_or_handle or "") or s.name.startswith("r/"):
+        return "subreddit"
+    return "outlet"
 
 
-@router.get("/clusters")
-def clusters_view(
-    request: Request,
-    week_id: str = "all",
-    session: Session = Depends(get_session),
-):
-    clusters = session.exec(
+def _build_clusters_context(session: Session, week_id: str, q: str) -> dict:
+    """Run the clusters query (optionally filtered by q) and enrich members."""
+    stmt = (
         select(Cluster)
         .where(Cluster.week_id == week_id)
         .order_by(Cluster.score.desc().nulls_last(), Cluster.member_count.desc())
-    ).all()
+    )
+    if q:
+        stmt = stmt.where(Cluster.label.ilike(f"%{q.strip()}%"))
+
+    clusters_rows = session.exec(stmt).all()
 
     all_member_ids: set[int] = set()
     cluster_member_ids: list[list[int]] = []
-    for c in clusters:
+    for c in clusters_rows:
         try:
             ids = json.loads(c.member_item_ids or "[]")
         except json.JSONDecodeError:
@@ -51,7 +52,7 @@ def clusters_view(
         all_member_ids.update(ids)
 
     items_by_id: dict[int, Item] = {}
-    sources_by_id: dict[int, Source] = {}
+    sources_by_id: dict[int, dict] = {}
     if all_member_ids:
         items = session.exec(
             select(Item).where(col(Item.id).in_(list(all_member_ids)))
@@ -62,10 +63,13 @@ def clusters_view(
             sources = session.exec(
                 select(Source).where(col(Source.id).in_(list(source_ids)))
             ).all()
-            sources_by_id = {s.id: s for s in sources if s.id is not None}
+            sources_by_id = {
+                s.id: {"name": s.name, "kind": _source_kind(s)}
+                for s in sources if s.id is not None
+            }
 
     enriched = []
-    for c, member_ids in zip(clusters, cluster_member_ids):
+    for c, member_ids in zip(clusters_rows, cluster_member_ids):
         members = []
         seen_sources: set[int] = set()
         for iid in member_ids:
@@ -81,12 +85,42 @@ def clusters_view(
             "source_count": len(seen_sources),
         })
 
-    return templates.TemplateResponse(
-        request,
-        "clusters.html",
-        {
-            "clusters": enriched,
-            "sources_by_id": sources_by_id,
-            "week_id": week_id,
-        },
-    )
+    return {
+        "clusters": enriched,
+        "sources_by_id": sources_by_id,
+        "week_id": week_id,
+        "q": q,
+    }
+
+
+@router.post("/clusters/run")
+def clusters_run(
+    bg: BackgroundTasks,
+    week_id: str = "all",
+    sync: bool = False,
+):
+    if sync:
+        return JSONResponse(cluster_window(week_id=week_id))
+    bg.add_task(cluster_window, week_id=week_id)
+    return RedirectResponse(f"/clusters?week_id={week_id}", status_code=303)
+
+
+@router.get("/clusters")
+def clusters_view(
+    request: Request,
+    week_id: str = "all",
+    q: str = "",
+    session: Session = Depends(get_session),
+):
+    """Clusters list — full page or HTMX fragment."""
+    ctx = _build_clusters_context(session, week_id, q)
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "_clusters_list.html", ctx)
+
+    ctx.update({
+        "nav_items": nav_items_for("clusters"),
+        "corpus_stats": corpus_stats(session),
+        "total_count": len(ctx["clusters"]),
+    })
+    return templates.TemplateResponse(request, "clusters.html", ctx)

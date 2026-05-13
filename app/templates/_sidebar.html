@@ -1,0 +1,53 @@
+{# Sidebar — shared between Home (reports), Dashboard, Clusters, Sources.
+   Context: nav_items (list with is_active), corpus_stats (items/clusters/sources).
+   When `weeks_index` is also in context, the Read-out section renders;
+   otherwise it's skipped (non-reports pages don't have weekly tabs). #}
+<aside class="gc-sidebar">
+  <div class="gc-sb-logo">
+    <img src="/static/img/alienware-head-light.svg" alt="">
+    <div class="gc-sb-logo-name">Gaming Chatter</div>
+  </div>
+  <div class="gc-sb-tagline">Personal news intelligence</div>
+
+  {% if weeks_index %}
+    <div class="gc-sb-section-label">Read-out</div>
+    <div class="gc-sb-week-list">
+      {% for w in weeks_index %}
+        <a href="?week={{ w.key }}" class="gc-sb-week{% if w.is_active %} is-active{% endif %}">
+          <span class="gc-sb-week-label">{{ w.label }}</span>
+          <span class="gc-sb-week-range">{{ w.range }}</span>
+        </a>
+      {% endfor %}
+    </div>
+    <div class="gc-sb-divider"></div>
+  {% endif %}
+
+  <div class="gc-sb-section-label">Navigate</div>
+  <div class="gc-sb-nav">
+    {% for n in nav_items %}
+      <a href="{{ n.href }}" class="gc-sb-nav-item{% if n.is_active %} is-active{% endif %}">
+        <i data-lucide="{{ n.icon }}"></i>{{ n.label }}
+      </a>
+    {% endfor %}
+  </div>
+
+  <div class="gc-sb-bottom">
+    <div class="gc-sb-corpus">
+      <div class="gc-sb-corpus-label">Corpus</div>
+      <div class="gc-sb-corpus-grid">
+        <div class="gc-sb-corpus-cell">
+          <div class="gc-sb-corpus-value">{{ corpus_stats['items'] }}</div>
+          <div class="gc-sb-corpus-name">items</div>
+        </div>
+        <div class="gc-sb-corpus-cell">
+          <div class="gc-sb-corpus-value">{{ corpus_stats['clusters'] }}</div>
+          <div class="gc-sb-corpus-name">clusters</div>
+        </div>
+        <div class="gc-sb-corpus-cell">
+          <div class="gc-sb-corpus-value">{{ corpus_stats['sources'] }}</div>
+          <div class="gc-sb-corpus-name">sources</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>

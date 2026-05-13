@@ -1,0 +1,48 @@
+{# Dashboard list fragment — swap target for HTMX live-search.
+   Server returns this alone when HX-Request header is set, or wrapped in
+   shell_base via dashboard.html on normal requests. #}
+{% if items %}
+  <table class="gc-table">
+    <thead>
+      <tr>
+        <th class="gc-table-when">When</th>
+        <th class="gc-table-source">Source</th>
+        <th>Title / TL;DR</th>
+        <th class="gc-table-cat">Category</th>
+        <th class="gc-table-sent">Sentiment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for it in items %}
+        {% set enr = enrichments_by_item.get(it.id) %}
+        <tr>
+          <td class="gc-table-when">{{ it.published_at.strftime('%b %d, %H:%M') if it.published_at else '—' }}</td>
+          <td class="gc-table-source">
+            <span class="gc-pill">
+              <span class="gc-pill-dot gc-pill-dot--{{ sources_by_id[it.source_id].kind if it.source_id in sources_by_id else 'outlet' }}"></span>
+              {{ sources_by_id[it.source_id].name if it.source_id in sources_by_id else '—' }}
+            </span>
+          </td>
+          <td>
+            <a class="gc-table-title" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>
+            {% if enr and enr.tldr %}
+              <div class="gc-table-tldr">{{ enr.tldr }}</div>
+            {% endif %}
+          </td>
+          <td class="gc-table-cat">
+            {% if enr and enr.category %}
+              <span class="gc-table-chip">{{ enr.category }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="gc-table-sent">
+            {% if enr and enr.sentiment_score is not none %}
+              <span class="gc-table-sent-val">{{ '%+.2f' | format(enr.sentiment_score) }}</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="gc-row-empty">{% if q %}No items match "{{ q }}".{% else %}No items in the corpus yet.{% endif %}</div>
+{% endif %}

@@ -48,3 +48,6 @@ Gaming Chatter - Corrections.txt
 data/
 logs/
 reports_cache/
+
+# Generated export artifacts saved for visual review (Phase 3c.6)
+exec_summary_*.html
