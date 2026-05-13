@@ -114,9 +114,9 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 
 ### Phase 3c.5 — Wire `/reports` template to real synthesized data
 
-- [ ] Replace placeholder data in `app/routers/reports.py` with real `weekly_reports` rows.
-- [ ] Apply all locked layout changes (drop Card 1, fold Studio Watch + Storefronts into MM, etc.).
-- [ ] Smoke test end-to-end.
+- [x] Replace placeholder data in `app/routers/reports.py` with real `weekly_reports` rows. — **Done 2026-05-13.** `_apply_synthesis` now writes community / market_momentum / esports as first-class card keys (no more `*_synth` stash). Placeholder dicts dropped: `momentum_raw`, `studios`, `platforms`, old esports/community shapes. Empty-corpus fallback rewired to `_empty_cards()` helper.
+- [x] Apply all locked layout changes (drop Card 1, fold Studio Watch + Storefronts into MM, etc.). — **Done 2026-05-13.** Dropped: Card 1 / Card 8 / Card 9 / standalone headline / footer hint / header Grid+Comfortable+Theme toggles / sidebar "Generate exec summary" CTA / sidebar user-avatar / Risks `gc-risk-trend` chip. Reworked: Card 2 plural top-3 with rank badge + source pills (span-2 preserved); Card 4 MM row list with category chip; Card 6 CS narrative + heated/celebrating; Card 10 Esports row list. Sidebar nav trimmed to 4 real routes (`/reports` / `/` / `/clusters` / `/sources`). Sidebar bottom now corpus stats (items / clusters / sources).
+- [x] Smoke test end-to-end. — **Done 2026-05-13.** Verified on `:8002`: W19 (200, full synthesis: 3 biggest / 5 MM / 1 heated + 2 celebrating / 2 risks / 0 esports → "No esports stories" honest empty / 1 drama / 5 watch); W18 + W17 200 with "Awaiting synthesis" empty-states on the 7 synthesis-dependent cards. Drawer + exec-summary fragment endpoints unchanged.
 
 ### Phase 3d — Archive + export
 

@@ -4,6 +4,37 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-13 (Phase 3c.5 shipped) — 9-card layout restructure: applied every locked walkthrough decision from 2026-05-12
+
+**Phase 3c.5 scope** from the prior session's next-steps list: wire `/reports` to the full Phase 3c.4 synthesis output and apply every layout lock from the 2026-05-12 walkthrough. No new model calls; this is purely template + router + CSS structural work. Net result: the chrome trimmed to the walkthrough's spec, the 13-card grid cut to 10 (Card 1 / Card 8 / Card 9 dropped per spec; Trends was already re-instated as a single card so net is 10, not the walkthrough header's aspirational 9), and the four cards whose data was being stashed under `*_synth` keys (Biggest plural, MM, CS, Esports) became first-class render targets.
+
+**Locked decisions (every one is from the 2026-05-12 walkthrough; this session is execution + a few small tactical micro-decisions called out below):**
+
+- **Sidebar week-list source: kept `available_weeks()`** (clusters table) — the walkthrough spec said `weekly_reports desc by generated_at`, but the synthesis table currently has 1 row (W19) so switching would hide W17 + W18 from the picker. Decided to flip the source once the W17/W18 synthesis backfill runs (~$1.80; already on the optional-hygiene list). Stating this explicitly so the next session can audit and flip without rediscovery.
+- **Empty-state messaging differentiates "synthesis hasn't run" vs "synthesis ran, list empty".** Gate: `synth_ran = week.cards.synthesis_meta`. When synthesis hasn't run for the week → action prompt with the exact CLI to run (`scripts/run_synthesis.py 2026-W18`). When synthesis ran and a card's list is honestly empty → topic-specific message ("No esports / streaming stories in this week's corpus" / "No exec / PR drama in this week's corpus" / "No layoff / regulation / legal stories in this week's corpus" / "No market-momentum stories in this week's corpus"). Reason: the same "Awaiting synthesis" string under both states misleads the reader.
+- **Source pills on Biggest rows derived from cluster members, not synthesized.** New helper `source_pills_for_clusters(session, cluster_ids, limit=5)` queries `clusters.member_item_ids` → `items` → `sources` per cluster_id. Adds one extra query per `/reports` render (for the top-3 cluster_ids together). Rejected alternative: extend the synthesis Pydantic schema with a per-Biggest `sources: list[str]` field. Would have meant re-running W19 synthesis (~$0.90) with no editorial gain.
+- **`gc-card-clickable` block deleted, not just unused.** The 3c.4 hover-tint card-as-whole click affordance was used only on the Biggest hero card; with the new plural row pattern using `gc-row-trigger` + `gc-biggest:hover`, the whole-card-clickable mechanism is dead code. Reverse decision possible if a future card wants whole-card click.
+- **`_enrich_for_render` removed entirely.** All three things it did (Biggest hero sparkline geometry, momentum-cell sparkline geometry, esports.movers delta_tone) are no longer rendered. Sparkline-geometry helpers `sparkline_path` + `delta_tone` also removed. Reduces router surface by ~50 lines.
+- **`_apply_synthesis` signature changed to take `session`** so the source-pills query lives next to the rest of the synthesis-to-card mapping. Alternative: caller pre-fetches pills and passes a dict. Rejected — the session is already available at the call site and the helper has a natural place to live.
+- **Walkthrough header said 13→9, actual lock yields 10 cards.** Math: 13 originals - 3 dropped (Card 1, Card 8 Studio watch, Card 9 Storefronts) = 10. The walkthrough's "13→9" header was off-by-one — likely an inaccuracy in the moment, since the explicit per-card decisions sum to 10. Flagging here so it isn't relitigated later.
+- **Jinja `corpus_stats['items']` bracket access, not `corpus_stats.items` attribute access.** Bug caught mid-verification: `dict.items()` is a built-in method, so Jinja's attribute-then-item resolution hits the method first and renders `<built-in method items of dict object at 0x...>`. Rejected alternative: rename the dict key. Bracket access is the smaller change and the only place this matters is the corpus-stats template block.
+
+**Surfaced for next session:**
+- The 7 "Awaiting synthesis" prompts on W17/W18 are an in-product callout for the W17/W18 synthesis backfill. Running `scripts/run_synthesis.py 2026-W17` + `... 2026-W18` would clear 14 prompts across the two weeks. Spend forecast: ~$1.80 (2× the W19 ~$0.90 run). Becomes the natural unlock for the sidebar-week-list source flip noted above.
+
+**State:**
+- Files modified: `app/services/reports.py` (+ `corpus_stats` + `source_pills_for_clusters` helpers), `app/routers/reports.py` (heavy refactor — see SESSION_LOG), `app/templates/reports.html` (Cards 2/4/6/10 rewritten; Cards 1/8/9 + standalone headline + footer hint + header toggles + sidebar CTA + avatar dropped; Risks trend chip dropped; empty-state pattern added across 6 cards), `app/static/app.css` (~17 dead blocks dropped + 5 new blocks added).
+- No corpus / DB state change.
+- No Anthropic spend.
+
+**Rejected / reversed:**
+- **Render Biggest as one hero + 2 secondary rows** — rejected. The walkthrough explicitly says "Top-3 clusters by score… top-3 are usually close in score and equally relevant; heroing one is a forced choice." Implemented as three equally-weighted rows.
+- **Source pills via synthesis schema extension** — rejected; see above.
+- **Switch sidebar to weekly_reports table per walkthrough spec** — deferred; see above.
+- **Remove `gc-ghost-link` along with the other footer-hint cleanup** — the Calendar → link in Card 11 Release radar still uses it. Restored.
+
+---
+
 ## 2026-05-13 (Phase 3c.4 shipped) — Synthesis (Opus 4.7 + critic) + Sonnet 4.6 cluster labels + cluster drawer
 
 **Phase 3c.4 scope** from the prior session's next-steps list: ship the weekly synthesis pipeline (Opus 4.7 structured call + Opus 4.7 critic pass), migrate `label_cluster()` to Sonnet 4.6, wire the synthesis output into the `/reports` template, and extend the source drawer with a `kind=cluster` variant so Biggest / Risks / Drama / Watch rows drill into their cluster's articles.

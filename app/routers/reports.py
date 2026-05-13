@@ -1,22 +1,21 @@
-"""GET /reports — claude.ai/design 'Gaming Chatter' weekly read-out.
+"""GET /reports — weekly read-out (9-card layout per 2026-05-12 walkthrough).
 
-Phase 3c.1 wires three cards to real per-ISO-week data from the DB:
-  - Week overview (Card 1): stories + sources count, top genres + top platforms
-                            mini-bars, net sentiment
-  - Hottest games (Card 3): top-N games by mention count with platform /
-                            lifecycle / live-service chips
-  - Release radar (Card 11): upcoming-tagged games with structured release
-                             dates (from IGN via Haiku, persisted in games dim)
-                             and source pills
+Card data sources:
+  - Week / Hottest / Trends / Releases — real per-ISO-week aggregation from
+    services.reports (Phases 3c.1 / 3c.2).
+  - Biggest / Market momentum / Community sentiment / Risks / Esports /
+    Drama / Watch — Opus 4.7 synthesis JSON on weekly_reports (Phase 3c.4).
+    Weeks without a synthesis row render an empty-state row per card.
 
-All other cards still render the design-bundle placeholder data; Phase 3c.4
-will replace them with real synthesized output from Opus 4.7.
+Sidebar:
+  - Read-out picker (one per week with clusters, descending)
+  - Navigate (4 routes: Weekly read-out, Dashboard, Clusters, Sources)
+  - Corpus stats (items / clusters / sources) — Phase 3c.5
 
 Locked variants: grid + comfortable + light + orange (#D9682B).
 """
 from __future__ import annotations
 
-import copy
 import json
 import logging
 from datetime import datetime, timezone
@@ -36,91 +35,30 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 log = logging.getLogger(__name__)
 
 
-# ---------- Sparkline geometry ----------------------------------------------
-
-def sparkline_path(data: list[float], width: int = 80, height: int = 24) -> dict:
-    """Mirror of the primitives.jsx Sparkline math: returns {points, area}."""
-    if not data:
-        return {"points": "", "area": ""}
-    lo = min(min(data), 0)
-    hi = max(max(data), 1)
-    rng = hi - lo or 1
-    x_step = width / (len(data) - 1) if len(data) > 1 else width
-
-    def y(v: float) -> float:
-        return height - 2 - ((v - lo) / rng) * (height - 4)
-
-    pts = " ".join(f"{i * x_step:.2f},{y(v):.2f}" for i, v in enumerate(data))
-    area = f"0,{height} {pts} {width},{height}"
-    return {"points": pts, "area": area}
-
-
-def delta_tone(value: str) -> str:
-    if value.startswith("+"):
-        return "up"
-    if value.startswith("-") or value.startswith("−"):  # ASCII '-' or Unicode minus
-        return "down"
-    return "neutral"
-
-
-# ---------- Static chrome (sidebar + nav) -----------------------------------
+# ---------- Static chrome (sidebar nav) -------------------------------------
 
 NAV_ITEMS = [
-    {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper",    "is_active": True},
-    {"id": "stories",   "label": "All stories",     "icon": "list",         "is_active": False},
-    {"id": "watchlist", "label": "Watchlist",       "icon": "eye",          "is_active": False},
-    {"id": "trends",    "label": "Trends",          "icon": "trending-up",  "is_active": False},
-    {"id": "sources",   "label": "Sources",         "icon": "rss",          "is_active": False},
-    {"id": "archive",   "label": "Archive",         "icon": "archive",      "is_active": False},
+    {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "href": "/reports",  "is_active": True},
+    {"id": "dashboard", "label": "Dashboard",       "icon": "gauge",     "href": "/",         "is_active": False},
+    {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "href": "/clusters", "is_active": False},
+    {"id": "sources",   "label": "Sources",         "icon": "rss",       "href": "/sources",  "is_active": False},
 ]
 
-# Sidebar user-block — placeholder until Phase 3c.5 swaps it for corpus stats.
-USER = {"name": "Jordan T.", "initials": "JT"}
 
+# ---------- Empty-state card shape ------------------------------------------
 
-# ---------- Placeholder for non-3c.1 cards ----------------------------------
-# Phase 3c.4 will replace these dicts with synthesized output keyed off real
-# clusters. Reused for every real ISO week so the layout stays intact.
-
-_PLACEHOLDER_OTHER: dict = {
-    "biggest": {
-        "title": "Phase 3c.4 will surface the highest-scoring cluster here",
-        "dek": "This card renders the design-bundle placeholder until Opus 4.7 synthesis lands. The other cards below the Week overview, Hottest games, and Release radar are similarly placeholder — Phase 3c.1 only wired those three.",
-        "sources": ["IGN", "Eurogamer", "VGC", "r/Games", "ResetEra"],
-        "heat": 60, "confidence": 60, "relevance": 60,
-        "sparkline": [12, 18, 22, 31, 48, 60, 70],
-        "first_seen": "—",
-        "threads": 0,
-    },
-    "risks": [
-        {"title": "Industry risks — synthesis pending", "level": "med",
-         "note": "Phase 3c.4 will produce real layoff / regulation / policy callouts from the corpus.",
-         "trend": "stable"},
-    ],
-    "momentum_raw": {
-        "steamCCU":    {"label": "Steam CCU",     "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
-        "twitchHrs":   {"label": "Twitch hrs",    "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
-        "gamePassNet": {"label": "Game Pass net", "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
-        "psnNet":      {"label": "PSN net adds",  "value": "—",  "delta": "+0%", "spark": [0, 0, 0, 0, 0, 0, 0]},
-    },
-    # Trends (Card 5) — wired in Phase 3c.2; placeholder removed.
-    "watch": [{"day": "—", "item": "Watch-next-week — synthesis pending"}],
-    "community": {
-        "positive": 0, "neutral": 100, "negative": 0,
-        "top_threads": [{"sub": "r/Games", "title": "Community sentiment — synthesis pending", "score": "—", "sentiment": 0}],
-    },
-    "studios": [{"studio": "Studio watch — synthesis pending", "event": "Phase 3c.4 will fill this card", "tone": "neutral", "date": "—"}],
-    "platforms": [{"name": "Storefronts", "change": "Synthesis pending", "impact": "low", "tone": "neutral"}],
-    "esports": {
-        "top_stream": {"game": "—", "hrs": "—", "delta": "+0%"},
-        "big_event":  {"name": "Esports — synthesis pending", "peak": "—"},
-        "movers": [],
-    },
-    "drama": [{"title": "Controversy tracker — synthesis pending", "severity": "low",
-               "recap": "Phase 3c.4 narrows this card to exec / PR drama from the corpus."}],
-}
-
-_MOMENTUM_KEYS = ["steamCCU", "twitchHrs", "gamePassNet", "psnNet"]
+def _empty_cards() -> dict:
+    """Default per-week card shape — used both for the empty-corpus fallback
+    and as the base into which `_apply_synthesis` writes real data."""
+    return {
+        "biggest": [],
+        "market_momentum": [],
+        "community": {"narrative": None, "heated_about": [], "celebrating": []},
+        "risks": [],
+        "esports": [],
+        "drama": [],
+        "watch": [],
+    }
 
 
 # ---------- Per-request helpers --------------------------------------------
@@ -187,92 +125,111 @@ def _load_synthesis(session: Session, week_id: str) -> dict | None:
     }
 
 
-def _apply_synthesis(cards: dict, synth: dict) -> None:
-    """Overlay synthesis output onto the placeholder card dict in place.
+def _apply_synthesis(session: Session, cards: dict, synth: dict) -> None:
+    """Overlay synthesis JSON onto the per-week card dict in place.
 
-    Mismatched shapes (community, esports, market_momentum) are stashed
-    under `*_synth` keys for Phase 3c.5 to render once the layout is
-    restructured to the 9-card lock. Shapes that already align (risks,
-    watch, drama) are adapted to the existing template contract.
+    Writes directly to first-class keys (no `*_synth` stash — that was the
+    3c.4 transition shape). Biggest rows get source pills derived from
+    cluster members so the template can render them without a second query.
     """
     data = synth["data"]
 
-    # --- Biggest story (template still renders a single hero). Use the first
-    # of the synthesis-locked plural top-3; stash the full list for 3c.5. ---
+    # Biggest stories — plural top-3, each with source pills derived from
+    # cluster members so the template doesn't need a second query.
     if data.get("biggest"):
-        first = data["biggest"][0]
-        cards["biggest"] = {
-            "title": first["title"],
-            "dek": first["dek"],
-            "cluster_id": first["cluster_id"],
-            # Source pills + hero sparkline + signal cluster are layout pieces
-            # the 3c.5 reskin will drop; keep placeholder values for now so the
-            # current template doesn't break.
-            "sources": cards["biggest"]["sources"],
-            "heat": cards["biggest"]["heat"],
-            "confidence": cards["biggest"]["confidence"],
-            "relevance": cards["biggest"]["relevance"],
-            "sparkline": cards["biggest"]["sparkline"],
-            "first_seen": cards["biggest"]["first_seen"],
-            "threads": cards["biggest"]["threads"],
+        cluster_ids = [int(b["cluster_id"]) for b in data["biggest"]]
+        pills = report_q.source_pills_for_clusters(session, cluster_ids)
+        cards["biggest"] = [
+            {
+                "cluster_id": b["cluster_id"],
+                "title": b["title"],
+                "dek": b["dek"],
+                "sources": pills.get(int(b["cluster_id"]), []),
+            }
+            for b in data["biggest"]
+        ]
+
+    # Market momentum — row list (acquisitions / funds / platform-policy /
+    # structural / people-moves).
+    cards["market_momentum"] = [
+        {
+            "cluster_id": m["cluster_id"],
+            "title": m["title"],
+            "note": m["note"],
+            "category": m["category"],
         }
-    cards["biggest_list"] = data.get("biggest", [])
+        for m in data.get("market_momentum", [])
+    ]
 
-    # --- Risks: adapter from synthesis schema to the template's row shape. ---
-    if data.get("risks"):
-        cards["risks"] = [
-            {
-                "title": r["title"],
-                "level": r["severity"],
-                "note": r["note"],
-                "trend": "stable",  # template still expects this field; 3c.5 drops
-                "cluster_id": r["cluster_id"],
-            }
-            for r in data["risks"]
-        ]
+    # Community sentiment — narrative + heated/celebrating clusters.
+    cs = data.get("community_sentiment")
+    if cs:
+        cards["community"] = {
+            "narrative": cs.get("narrative"),
+            "heated_about": [
+                {"cluster_id": c["cluster_id"], "title": c["title"], "note": c["note"]}
+                for c in cs.get("heated_about", [])
+            ],
+            "celebrating": [
+                {"cluster_id": c["cluster_id"], "title": c["title"], "note": c["note"]}
+                for c in cs.get("celebrating", [])
+            ],
+        }
 
-    # --- Drama: shape already matches; just add cluster_id passthrough. ---
-    if data.get("drama"):
-        cards["drama"] = [
-            {
-                "title": d["title"],
-                "severity": d["severity"],
-                "recap": d["recap"],
-                "cluster_id": d["cluster_id"],
-            }
-            for d in data["drama"]
-        ]
+    # Risks — severity bar + title + level badge + note; trend chip dropped.
+    cards["risks"] = [
+        {
+            "cluster_id": r["cluster_id"],
+            "title": r["title"],
+            "level": r["severity"],
+            "note": r["note"],
+        }
+        for r in data.get("risks", [])
+    ]
 
-    # --- Watch: shape matches (day + item) + optional cluster_id. ---
-    if data.get("watch"):
-        cards["watch"] = [
-            {
-                "day": w["day"],
-                "item": w["item"],
-                "cluster_id": w.get("cluster_id"),
-            }
-            for w in data["watch"]
-        ]
+    # Esports — row list of cluster-anchored items.
+    cards["esports"] = [
+        {
+            "cluster_id": e["cluster_id"],
+            "title": e["title"],
+            "note": e["note"],
+        }
+        for e in data.get("esports", [])
+    ]
 
-    # --- Hottest games: overlay synthesis 1-line reasons onto the existing
-    # top_games rows by game_name match (case-insensitive). ---
+    # Drama — narrow scope (exec/PR + studio feuds).
+    cards["drama"] = [
+        {
+            "cluster_id": d["cluster_id"],
+            "title": d["title"],
+            "severity": d["severity"],
+            "recap": d["recap"],
+        }
+        for d in data.get("drama", [])
+    ]
+
+    # Watch next week.
+    cards["watch"] = [
+        {
+            "day": w["day"],
+            "item": w["item"],
+            "cluster_id": w.get("cluster_id"),
+        }
+        for w in data.get("watch", [])
+    ]
+
+    # Hottest games — overlay synthesis 1-line reasons by game-name match.
     if data.get("hottest_reasons"):
         reason_by_name = {r["game_name"].lower(): r["reason"] for r in data["hottest_reasons"]}
         for bucket in ("all", "current", "upcoming"):
             for game in cards["hottest"][bucket]:
                 game["reason"] = reason_by_name.get(game["name"].lower())
 
-    # --- Releases: overlay synthesis 1-line notes onto upcoming_releases rows. ---
+    # Releases — overlay synthesis 1-line notes by game-name match.
     if data.get("release_notes"):
         note_by_name = {r["game_name"].lower(): r["note"] for r in data["release_notes"]}
         for r in cards["releases"]:
             r["note"] = note_by_name.get(r["name"].lower())
-
-    # --- Stash 3c.5-territory sections under `*_synth` keys; template will
-    # render them once the layout restructure lands. ---
-    cards["community_synth"] = data.get("community_sentiment")
-    cards["market_momentum_synth"] = data.get("market_momentum", [])
-    cards["esports_synth"] = data.get("esports", [])
 
     cards["synthesis_meta"] = {
         "model": synth["model"],
@@ -281,75 +238,34 @@ def _apply_synthesis(cards: dict, synth: dict) -> None:
 
 
 def _build_week_payload(session: Session, week_id: str) -> dict:
-    """Build the full per-week payload, overlaying real data on shared placeholder."""
+    """Assemble the full per-week card payload."""
     label, rng = report_q.week_label_and_range(week_id)
     stats = report_q.week_stats(session, week_id)
-    genres = report_q.top_genres_for_week(session, week_id, limit=5)
-    platforms = report_q.top_platforms_for_week(session, week_id, limit=6)
     hottest_all = report_q.top_games_for_week(session, week_id, limit=5)
     hottest_current = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="existing")
     hottest_upcoming = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="upcoming")
     releases = report_q.upcoming_releases(session, week_id, limit=10)
     trends = report_q.trends_for_week(session, week_id, limit=5)
 
-    cards = copy.deepcopy(_PLACEHOLDER_OTHER)
-    cards["week"] = {
-        "stories": stats["stories"],
-        "sources": stats["sources"],
-        "top_genres": genres,        # list[(name, count)]
-        "top_platforms": platforms,  # list[(name, count)]
-    }
+    cards = _empty_cards()
     cards["hottest"] = {
         "all": hottest_all,
         "current": hottest_current,
         "upcoming": hottest_upcoming,
     }
-    cards["releases"] = releases     # list of dicts (name, release_date, display_date, mention_count)
-    cards["trends"] = trends         # {has_prior, prev_week_id, games_current, games_upcoming,
-                                     #  genres, platforms, live_service, events}
+    cards["releases"] = releases
+    cards["trends"] = trends
 
-    # Phase 3c.4: overlay synthesis output if a row exists for this week.
     synth = _load_synthesis(session, week_id)
     if synth is not None:
-        _apply_synthesis(cards, synth)
+        _apply_synthesis(session, cards, synth)
 
     return {
         "label": label,
         "range": rng,
-        "summary": {
-            "headline": (
-                "Phase 3c.1 preview · real data for Week overview, Hottest games, "
-                "and Release radar. Remaining cards await Phase 3c.4 synthesis."
-            ),
-            "stats": {
-                "stories": stats["stories"],
-                "sources": stats["sources"],
-            },
-        },
+        "stats": {"stories": stats["stories"], "sources": stats["sources"]},
         "cards": cards,
     }
-
-
-def _enrich_for_render(week: dict) -> dict:
-    """Add sparkline geometry + delta tones the template macros expect."""
-    cards = week["cards"]
-
-    big = cards["biggest"]
-    big["spark_path"] = sparkline_path(big["sparkline"], width=100, height=28)
-
-    momentum_list = []
-    for key in _MOMENTUM_KEYS:
-        cell = dict(cards["momentum_raw"][key])
-        tone = delta_tone(cell["delta"])
-        cell["color"] = "var(--gc-success)" if tone == "up" else "var(--gc-danger)"
-        cell["spark_path"] = sparkline_path(cell["spark"], width=56, height=20)
-        momentum_list.append(cell)
-    cards["momentum"] = momentum_list
-
-    for m in cards["esports"]["movers"]:
-        m["delta_tone"] = delta_tone(m["delta"])
-
-    return week
 
 
 # ---------- Route -----------------------------------------------------------
@@ -358,27 +274,25 @@ def _enrich_for_render(week: dict) -> dict:
 def reports_view(request: Request, week: str = ""):
     with Session(engine) as session:
         week_ids = report_q.available_weeks(session)
+        stats = report_q.corpus_stats(session)
 
         # Empty-corpus fallback — renders the chrome with one blank week.
         if not week_ids:
             blank = {
                 "label": "No clustered weeks yet",
                 "range": "—",
-                "summary": {"headline": "Run the ingest + cluster pipeline to populate this view.",
-                            "stats": {"stories": 0, "sources": 0, "sentiment": 0}},
+                "stats": {"stories": 0, "sources": 0},
                 "cards": {
-                    "week": {"stories": 0, "sources": 0, "top_genres": [], "top_platforms": []},
                     "hottest": {"all": [], "current": [], "upcoming": []},
                     "releases": [],
                     "trends": {"has_prior": False, "prev_week_id": "—"},
-                    **copy.deepcopy(_PLACEHOLDER_OTHER),
+                    **_empty_cards(),
                 },
             }
             return templates.TemplateResponse(
                 request, "reports.html",
-                {"week": _enrich_for_render(blank), "weeks_index": [],
-                 "active_week_key": "",
-                 "nav_items": NAV_ITEMS, "user": USER, "source_count": 0,
+                {"week": blank, "weeks_index": [], "active_week_key": "",
+                 "nav_items": NAV_ITEMS, "corpus_stats": stats,
                  "refreshed_at": "—", "sources_meta": {}},
             )
 
@@ -389,7 +303,7 @@ def reports_view(request: Request, week: str = ""):
             label, rng = report_q.week_label_and_range(k)
             weeks_index.append({"key": k, "label": label, "range": rng, "is_active": k == active_key})
 
-        week_data = _enrich_for_render(_build_week_payload(session, active_key))
+        week_data = _build_week_payload(session, active_key)
         sources_meta = _build_sources_meta(session)
 
         return templates.TemplateResponse(
@@ -399,8 +313,7 @@ def reports_view(request: Request, week: str = ""):
                 "weeks_index": weeks_index,
                 "active_week_key": active_key,
                 "nav_items": NAV_ITEMS,
-                "user": USER,
-                "source_count": len(sources_meta),
+                "corpus_stats": stats,
                 "refreshed_at": _latest_ingest_at(session),
                 "sources_meta": sources_meta,
             },

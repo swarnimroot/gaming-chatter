@@ -132,24 +132,16 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-sb-nav-item.is-active { background: rgba(217,104,43,0.22); color: #FFF; box-shadow: inset 2px 0 0 var(--gc-accent); }
 .gc-sb-nav-item i { width: 16px; height: 16px; stroke-width: 1.5; flex-shrink: 0; }
-.gc-sb-bottom { margin-top: auto; }
-.gc-sb-cta {
-  width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 10px 12px; margin: 0 0 12px;
-  background: var(--gc-accent); color: #FFF;
-  border: none; border-radius: 4px; cursor: pointer;
-  font-size: 12px; font-weight: 600; font-family: inherit;
+.gc-sb-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--gc-sidebar-divider); }
+.gc-sb-corpus { padding: 10px 12px; }
+.gc-sb-corpus-label {
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.55); font-weight: 600; margin-bottom: 8px;
 }
-.gc-sb-cta:hover { background: var(--gc-accent-hover); }
-.gc-sb-user { padding: 10px 12px; display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--gc-sidebar-divider); }
-.gc-sb-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: var(--gc-accent); color: #FFF;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 600;
-}
-.gc-sb-user-name { font-weight: 600; font-size: 12px; line-height: 1.3; }
-.gc-sb-user-meta { color: rgba(255,255,255,0.55); font-size: 11px; }
+.gc-sb-corpus-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.gc-sb-corpus-cell { display: flex; flex-direction: column; gap: 2px; }
+.gc-sb-corpus-value { font-size: 16px; font-weight: 600; color: #FFF; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.gc-sb-corpus-name { font-size: 10px; color: rgba(255,255,255,0.55); }
 
 /* ---------- Main column ---------- */
 .gc-main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
@@ -165,32 +157,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-header-meta { font-size: 12px; color: var(--gc-fg3); margin-top: 2px; }
 .gc-header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-.gc-segmented { display: inline-flex; border: 1px solid var(--gc-border); border-radius: 4px; overflow: hidden; background: var(--gc-surface); }
-.gc-segmented button {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 10px; height: 30px; font-size: 12px; font-weight: 500;
-  background: transparent; color: var(--gc-fg2);
-  border: none; cursor: pointer; font-family: inherit;
-  border-right: 1px solid var(--gc-border);
-}
-.gc-segmented button:last-child { border-right: none; }
-.gc-segmented button.is-active { background: var(--gc-accent-soft); color: var(--gc-accent); }
-.gc-segmented button i { width: 14px; height: 14px; stroke-width: 1.5; }
-
-.gc-icon-btn {
-  height: 30px; width: 30px; border: 1px solid var(--gc-border); border-radius: 4px;
-  background: var(--gc-surface); color: var(--gc-fg2);
-  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-}
-.gc-icon-btn i { width: 14px; height: 14px; stroke-width: 1.5; }
-
-.gc-toolbar-btn {
-  height: 30px; padding: 0 10px; border: 1px solid var(--gc-border); border-radius: 4px;
-  background: var(--gc-surface); color: var(--gc-fg2); font-size: 12px; font-weight: 500;
-  cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
-}
-.gc-toolbar-btn i { width: 14px; height: 14px; stroke-width: 1.5; }
-
 .gc-cta {
   height: 30px; padding: 0 12px; border-radius: 4px; border: none;
   background: var(--gc-accent); color: #FFF; font-size: 12px; font-weight: 600;
@@ -201,11 +167,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 
 /* ---------- Scroll area ---------- */
 .gc-scroll { flex: 1; overflow: auto; padding: 28px 32px 80px; background: var(--gc-canvas); }
-
-/* ---------- Headline strip ---------- */
-.gc-headline-block { margin: 0 0 24px; }
-.gc-headline-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gc-fg3); }
-.gc-headline { font-size: 26px; font-weight: 600; color: var(--gc-fg); line-height: 1.25; letter-spacing: -0.015em; margin: 6px 0 0; text-wrap: pretty; }
 
 /* ---------- Grid layout ---------- */
 .gc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
@@ -225,20 +186,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gc-fg3); }
 .gc-card-title { font-size: 16px; font-weight: 600; color: var(--gc-fg); margin: 2px 0 0; }
 .gc-card-action { flex-shrink: 0; font-size: 11px; color: var(--gc-fg3); }
-
-/* ---------- Stat (week card) ---------- */
-.gc-stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.gc-stat-value { font-size: 22px; font-weight: 600; color: var(--gc-fg); margin-top: 2px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-
-/* Genre rows */
-.gc-genres { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.gc-genre-row { display: flex; align-items: center; gap: 8px; }
-.gc-genre-name { width: 80px; font-size: 12px; color: var(--gc-fg2); }
-.gc-genre-pct { font-size: 11px; color: var(--gc-fg3); font-variant-numeric: tabular-nums; width: 28px; text-align: right; }
-
-/* Net sentiment bar */
-.gc-net-sent { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--gc-border); display: flex; align-items: center; justify-content: space-between; }
-.gc-net-sent-value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ---------- Meters / SignalCluster ---------- */
 .gc-cluster-stack { display: flex; flex-direction: column; gap: 4px; }
@@ -269,10 +216,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-pill-dot--outlet { background: var(--gc-fg3); }
 .gc-pill-more { font-size: 10px; color: var(--gc-fg3); }
 
-/* ---------- Freshness ---------- */
-.gc-fresh { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--gc-fg3); }
-.gc-fresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gc-success); box-shadow: 0 0 0 2px var(--gc-success-soft); }
-
 /* ---------- Bars ---------- */
 .gc-mini-track { flex: 1; height: 6px; background: var(--gc-border); border-radius: 1px; overflow: hidden; }
 .gc-mini-fill { height: 100%; background: var(--gc-accent); border-radius: 1px; }
@@ -282,15 +225,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-heat-fill { height: 100%; background: var(--gc-accent); }
 .gc-heat-value { font-size: 11px; color: var(--gc-fg2); font-weight: 600; font-variant-numeric: tabular-nums; width: 22px; text-align: right; }
 .gc-heat-cell { display: flex; align-items: center; gap: 8px; }
-
-/* Community sentiment 3-segment stacked bar */
-.gc-sent-bar { display: flex; height: 8px; border-radius: 1px; overflow: hidden; border: 1px solid var(--gc-border); }
-.gc-sent-bar > .seg-pos { background: var(--gc-success); }
-.gc-sent-bar > .seg-neu { background: var(--gc-fg3); }
-.gc-sent-bar > .seg-neg { background: var(--gc-danger); }
-.gc-sent-legend { display: flex; justify-content: space-between; font-size: 10px; color: var(--gc-fg3); margin-top: 6px; }
-.gc-sent-legend .pos { color: var(--gc-success); }
-.gc-sent-legend .neg { color: var(--gc-danger); }
 
 /* ---------- Delta ---------- */
 .gc-delta { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -325,27 +259,17 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row--hottest   { grid-template-columns: 20px 1fr auto; }
 .gc-row--watch     { grid-template-columns: 40px 1fr auto; }
 .gc-row--release   { grid-template-columns: 60px 1fr; }
-.gc-row--studio    { grid-template-columns: 12px 1fr 36px; align-items: flex-start; }
-.gc-row--platform  { grid-template-columns: 100px 1fr 36px; }
-.gc-row--mover     { grid-template-columns: 1fr auto; padding: 7px 0; }
-.gc-row--thread    { grid-template-columns: auto 1fr auto auto; padding: 8px 0; gap: 10px; }
+.gc-row--mm        { grid-template-columns: 100px 1fr; align-items: flex-start; }
+.gc-row--cs        { grid-template-columns: 12px 1fr; align-items: flex-start; }
+.gc-row--esports   { grid-template-columns: 1fr; }
 .gc-row--trend     { display: flex; justify-content: space-between; padding: 8px 0; }
 
 .gc-row-rank { font-size: 11px; color: var(--gc-fg3); font-variant-numeric: tabular-nums; font-weight: 600; }
 .gc-row-title { font-size: 13px; font-weight: 600; color: var(--gc-fg); }
-.gc-row-sub   { font-size: 11px; color: var(--gc-fg3); }
 .gc-row-note  { font-size: 11px; color: var(--gc-fg2); margin-top: 2px; text-wrap: pretty; }
 .gc-row-day   { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--gc-fg3); text-transform: uppercase; }
 .gc-row-item  { font-size: 13px; color: var(--gc-fg); text-wrap: pretty; }
 .gc-row-date  { font-size: 11px; font-weight: 600; color: var(--gc-accent); font-variant-numeric: tabular-nums; }
-.gc-row-event { font-size: 12px; color: var(--gc-fg2); text-wrap: pretty; }
-.gc-row-platform-name { font-size: 12px; font-weight: 600; color: var(--gc-fg); }
-.gc-row-impact { font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; text-align: right; }
-.gc-row-impact--high { color: var(--gc-danger); }
-.gc-row-impact--med  { color: var(--gc-warning); }
-.gc-row-impact--low  { color: var(--gc-fg3); }
-
-.gc-add-btn { background: transparent; border: none; color: var(--gc-fg3); font-size: 12px; cursor: pointer; padding: 0; }
 
 /* ---------- Phase 3c.1 — Hottest chips + mention-count, empty rows ---------- */
 .gc-row-count {
@@ -372,9 +296,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row-empty {
   padding: 16px 4px; font-size: 12px; color: var(--gc-fg3);
 }
-
-/* Card 1 — separator between Top genres and Top platforms bar groups */
-.gc-bars-spacer { height: 14px; }
 
 /* Card 3 — radio-driven Hottest tabs (All / Current / Upcoming) */
 .gc-hot-tabs { position: relative; }
@@ -413,27 +334,48 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   display: block;
 }
 
-/* ---------- Biggest card ---------- */
-.gc-big-title { font-size: 28px; font-weight: 600; color: var(--gc-fg); line-height: 1.2; margin: 0; letter-spacing: -0.01em; text-wrap: pretty; }
-.gc-big-dek   { font-size: 14px; color: var(--gc-fg2); line-height: 1.5; margin: 10px 0 14px; text-wrap: pretty; }
-.gc-big-meta  { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
-.gc-big-meta-left { display: flex; align-items: center; gap: 12px; }
-.gc-big-spark-meta { font-size: 11px; color: var(--gc-fg3); }
-.gc-big-footer { padding-top: 12px; border-top: 1px solid var(--gc-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.gc-ghost-link { background: transparent; border: none; color: var(--gc-accent); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; }
+.gc-ghost-link { background: transparent; border: none; color: var(--gc-accent); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; text-decoration: none; }
 
-/* ---------- Momentum mini-cards ---------- */
-.gc-momentum-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.gc-momentum-cell { padding: 12px; background: var(--gc-surface-alt); border-radius: 4px; border: 1px solid var(--gc-border); }
-.gc-momentum-row  { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 6px; }
-.gc-momentum-val  { font-size: 18px; font-weight: 600; color: var(--gc-fg); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.gc-momentum-delta { font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+/* ---------- Biggest stories — plural top-3 (3c.5) ---------- */
+.gc-biggest-list { display: flex; flex-direction: column; gap: 4px; }
+.gc-biggest {
+  display: grid; grid-template-columns: 36px 1fr; gap: 12px;
+  padding: 14px 0; border-top: 1px solid var(--gc-border);
+  align-items: flex-start; cursor: pointer; text-decoration: none;
+  transition: background var(--gc-dur-1);
+}
+.gc-biggest:first-child { border-top: none; }
+.gc-biggest:hover { background: var(--gc-accent-soft); }
+.gc-biggest:hover .gc-biggest-title { color: var(--gc-accent); }
+.gc-biggest-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gc-biggest-title { font-size: 16px; font-weight: 600; color: var(--gc-fg); line-height: 1.3; letter-spacing: -0.005em; text-wrap: pretty; }
+.gc-biggest-dek { font-size: 13px; color: var(--gc-fg2); line-height: 1.5; text-wrap: pretty; }
+.gc-biggest-sources { margin-top: 2px; }
 
-/* ---------- Esports cells ---------- */
-.gc-es-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-.gc-es-cell { padding: 10px; background: var(--gc-surface-alt); border: 1px solid var(--gc-border); border-radius: 4px; }
-.gc-es-headline { font-size: 13px; font-weight: 600; color: var(--gc-fg); margin-top: 4px; }
-.gc-es-sub      { font-size: 11px; color: var(--gc-fg2); font-variant-numeric: tabular-nums; }
+/* ---------- Market momentum — category chip + row (3c.5) ---------- */
+.gc-mm-category {
+  display: inline-block; padding: 2px 8px; border-radius: 2px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--gc-chip); color: var(--gc-fg2); white-space: nowrap;
+  align-self: flex-start; margin-top: 2px;
+}
+.gc-mm-category--acquisitions    { background: var(--gc-accent-soft);   color: var(--gc-accent); }
+.gc-mm-category--funds           { background: var(--gc-success-soft);  color: var(--gc-success); }
+.gc-mm-category--platform-policy { background: var(--gc-warning-soft);  color: var(--gc-warning); }
+.gc-mm-category--structural      { background: var(--gc-surface-alt);   color: var(--gc-fg2); }
+.gc-mm-category--people-moves    { background: var(--gc-chip);          color: var(--gc-fg3); }
+
+/* ---------- Community sentiment — narrative + heated/celebrating (3c.5) ---------- */
+.gc-cs-narrative {
+  font-size: 13px; color: var(--gc-fg2); line-height: 1.5;
+  text-wrap: pretty; margin: 0 0 14px;
+}
+.gc-cs-divider { height: 14px; }
+.gc-cs-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0;
+}
+.gc-cs-dot--neg { background: var(--gc-danger); }
+.gc-cs-dot--pos { background: var(--gc-success); }
 
 /* ---------- Risks + Drama callout blocks ---------- */
 .gc-risks { display: flex; flex-direction: column; gap: 12px; }
@@ -445,7 +387,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-risk-body { flex: 1; }
 .gc-risk-head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .gc-risk-title { font-size: 13px; font-weight: 600; color: var(--gc-fg); }
-.gc-risk-trend { font-size: 10px; color: var(--gc-fg3); margin-left: auto; }
 .gc-risk-note  { font-size: 12px; color: var(--gc-fg2); line-height: 1.45; text-wrap: pretty; }
 
 .gc-drama-list { display: flex; flex-direction: column; gap: 12px; }
@@ -483,33 +424,8 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-trend-subhead--second { margin-top: 12px; }
 .gc-trend-name { font-size: 13px; color: var(--gc-fg); }
 
-/* Community thread sub pill */
-.gc-sub-pill {
-  background: var(--gc-chip); color: var(--gc-fg2);
-  border: 1px solid var(--gc-border); border-radius: 2px;
-  font-size: 10px; padding: 1px 5px; height: 18px;
-  cursor: pointer; font-family: inherit;
-}
-.gc-thread-score { font-size: 11px; color: var(--gc-fg3); font-variant-numeric: tabular-nums; }
-.gc-thread-sentiment { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
-.gc-thread-sentiment--pos { color: var(--gc-success); }
-.gc-thread-sentiment--neg { color: var(--gc-danger); }
-.gc-thread-sentiment--neu { color: var(--gc-fg3); }
-
 /* ---------- Sparkline ---------- */
 .gc-spark { display: inline-block; vertical-align: middle; }
-
-/* ---------- Footer hint ---------- */
-.gc-footer-hint {
-  margin-top: 48px; padding-top: 16px;
-  border-top: 1px solid var(--gc-border);
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 11px; color: var(--gc-fg3);
-}
-.gc-ghost-btn {
-  background: transparent; border: 1px solid var(--gc-border); color: var(--gc-fg2);
-  font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: inherit;
-}
 
 /* =============================================================
    Phase 3c.3 — Source drawer + Exec-summary modal
@@ -651,20 +567,6 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row-trigger:hover .gc-risk-title,
 .gc-row-trigger:hover .gc-drama-title,
 .gc-row-trigger:hover .gc-row-item {
-  color: var(--gc-accent);
-}
-
-/* Phase 3c.4 — Biggest hero card is clickable when synthesis is present */
-.gc-card-clickable {
-  cursor: pointer;
-  transition: border-color var(--gc-dur-1), box-shadow var(--gc-dur-1);
-}
-.gc-card-clickable:hover {
-  border-color: var(--gc-accent);
-  box-shadow: 0 1px 2px rgba(217, 104, 43, 0.08),
-              0 2px 8px rgba(217, 104, 43, 0.05);
-}
-.gc-card-clickable:hover .gc-big-title {
   color: var(--gc-accent);
 }
 

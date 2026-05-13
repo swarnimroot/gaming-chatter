@@ -749,3 +749,56 @@ def upcoming_releases(session: Session, week_id: str, limit: int = 12) -> list[d
             "mention_count": n,
         })
     return results
+
+
+def corpus_stats(session: Session) -> dict:
+    """Corpus-wide counts for the sidebar bottom block (items / clusters / sources).
+
+    Clusters count excludes the legacy week_id='all' bucket so the number
+    matches what the read-out picker shows.
+    """
+    items = session.exec(text("SELECT COUNT(*) FROM items")).first()[0] or 0
+    clusters = session.exec(text(
+        "SELECT COUNT(*) FROM clusters WHERE week_id != 'all'"
+    )).first()[0] or 0
+    sources = session.exec(text("SELECT COUNT(*) FROM sources")).first()[0] or 0
+    return {"items": int(items), "clusters": int(clusters), "sources": int(sources)}
+
+
+def source_pills_for_clusters(
+    session: Session,
+    cluster_ids: list[int],
+    limit_per_cluster: int = 5,
+) -> dict[int, list[str]]:
+    """Distinct source names per cluster, capped at limit_per_cluster.
+
+    Used by the Biggest card to render source pills under each top-3 row.
+    Returns {} for any cluster_id that has no member items.
+    """
+    if not cluster_ids:
+        return {}
+    import json as _json
+
+    placeholders = ",".join(str(int(c)) for c in cluster_ids)
+    rows = session.exec(text(
+        f"SELECT id, member_item_ids FROM clusters WHERE id IN ({placeholders})"
+    )).all()
+
+    out: dict[int, list[str]] = {}
+    for cid, mids_json in rows:
+        try:
+            mids = _json.loads(mids_json) if mids_json else []
+        except (TypeError, ValueError):
+            mids = []
+        if not mids:
+            out[int(cid)] = []
+            continue
+        id_ph = ",".join(str(int(x)) for x in mids)
+        srows = session.exec(text(f"""
+            SELECT DISTINCT s.name
+            FROM items i JOIN sources s ON s.id = i.source_id
+            WHERE i.id IN ({id_ph})
+        """)).all()
+        names = [r[0] for r in srows if r[0]]
+        out[int(cid)] = names[:limit_per_cluster]
+    return out
