@@ -1,43 +1,89 @@
-{# Clusters list fragment — swap target for HTMX live-search. #}
+{# Clusters list fragment — swap target for HTMX live-search.
+   Renders BOTH the card grid and the flat list; the view toggle on the parent
+   page (.gc-clusters-view radio inputs) shows one and hides the other via CSS. #}
 {% if clusters %}
-  {% for c in clusters %}
-    <section class="gc-cluster-card">
-      <header class="gc-cluster-head">
-        <h2 class="gc-cluster-label">{{ c.cluster.label }}</h2>
-        <div class="gc-cluster-meta">
-          {% if c.cluster.score is not none %}
-            <span>score {{ '%.1f' | format(c.cluster.score) }}</span>
-            <span class="gc-cluster-sep">·</span>
-          {% endif %}
-          <span>{{ c.cluster.member_count }} items</span>
-          <span class="gc-cluster-sep">·</span>
-          <span>{{ c.source_count }} source{% if c.source_count != 1 %}s{% endif %}</span>
-          {% if c.cluster.latest_published_at %}
-            <span class="gc-cluster-sep">·</span>
-            <span>latest {{ c.cluster.latest_published_at.strftime('%b %d') }}</span>
-          {% endif %}
-        </div>
-      </header>
-      <ul class="gc-cluster-members">
-        {% for it in c.members %}
-          <li>
-            <span class="gc-pill">
-              <span class="gc-pill-dot gc-pill-dot--{{ sources_by_id[it.source_id].kind if it.source_id in sources_by_id else 'outlet' }}"></span>
-              {{ sources_by_id[it.source_id].name if it.source_id in sources_by_id else '—' }}
-            </span>
-            <a class="gc-cluster-member-title" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>
-            {% if it.published_at %}
-              <span class="gc-cluster-member-when">{{ it.published_at.strftime('%b %d') }}</span>
+  <div class="gc-clusters-cards">
+    {% for c in clusters %}
+      <section class="gc-cluster-card">
+        <header class="gc-cluster-head">
+          <div class="gc-cluster-head-top">
+            <h2 class="gc-cluster-label">{{ c.cluster.label }}</h2>
+            <div class="gc-cluster-chips">
+              {% if c.sections %}
+                {% for s in c.sections %}
+                  <span class="gc-section-chip gc-section-chip--{{ s.section }}">{{ s.label }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="gc-section-chip gc-section-chip--not_surfaced">Not surfaced</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="gc-cluster-meta">
+            {% if c.cluster.score is not none %}
+              <span>score {{ '%.1f' | format(c.cluster.score) }}</span>
+              <span class="gc-cluster-sep">·</span>
             {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-    </section>
-  {% endfor %}
+            <span>{{ c.cluster.member_count }} items</span>
+            <span class="gc-cluster-sep">·</span>
+            <span>{{ c.source_count }} source{% if c.source_count != 1 %}s{% endif %}</span>
+            {% if c.cluster.latest_published_at %}
+              <span class="gc-cluster-sep">·</span>
+              <span>latest {{ c.cluster.latest_published_at.strftime('%b %d') }}</span>
+            {% endif %}
+            {% if not week_id and c.cluster.week_id %}
+              <span class="gc-cluster-sep">·</span>
+              <span>{{ c.cluster.week_id }}</span>
+            {% endif %}
+          </div>
+        </header>
+        <ul class="gc-cluster-members">
+          {% for it in c.members %}
+            <li>
+              <span class="gc-pill">
+                <span class="gc-pill-dot gc-pill-dot--{{ sources_by_id[it.source_id].kind if it.source_id in sources_by_id else 'outlet' }}"></span>
+                {{ sources_by_id[it.source_id].name if it.source_id in sources_by_id else '—' }}
+              </span>
+              <a class="gc-cluster-member-title" href="{{ it.url }}" target="_blank" rel="noopener">{{ it.title }}</a>
+              {% if it.published_at %}
+                <span class="gc-cluster-member-when">{{ it.published_at.strftime('%b %d') }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
+
+  <ol class="gc-cluster-flatlist">
+    {% for c in clusters %}
+      <li class="gc-cluster-flatrow">
+        <span class="gc-cluster-flatrow-rank">{{ '%02d'|format(loop.index) }}</span>
+        <div class="gc-cluster-flatrow-body">
+          <div class="gc-cluster-flatrow-label-row">
+            <span class="gc-cluster-flatrow-label">{{ c.cluster.label }}</span>
+            {% if c.sections %}
+              {% for s in c.sections %}
+                <span class="gc-section-chip gc-section-chip--{{ s.section }}">{{ s.label }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="gc-section-chip gc-section-chip--not_surfaced">Not surfaced</span>
+            {% endif %}
+          </div>
+          <div class="gc-cluster-flatrow-meta">
+            {% if c.cluster.score is not none %}score {{ '%.1f' | format(c.cluster.score) }} · {% endif %}
+            {{ c.cluster.member_count }} item{% if c.cluster.member_count != 1 %}s{% endif %} ·
+            {{ c.source_count }} source{% if c.source_count != 1 %}s{% endif %}
+            {% if c.cluster.latest_published_at %} · latest {{ c.cluster.latest_published_at.strftime('%b %d') }}{% endif %}
+            {% if not week_id and c.cluster.week_id %} · {{ c.cluster.week_id }}{% endif %}
+          </div>
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
 {% else %}
   <div class="gc-row-empty">
     {% if q %}No clusters match "{{ q }}".{% else %}
-      No clusters for week <code>{{ week_id }}</code>. Run <code>scripts/run_cluster.py</code> to generate them.
+      No clusters{% if week_id %} for week <code>{{ week_id }}</code>{% endif %}. Run <code>scripts/run_cluster.py</code> to generate them.
     {% endif %}
   </div>
 {% endif %}

@@ -1,5 +1,5 @@
-{# Sidebar — shared between Home (reports), Dashboard, Clusters, Sources.
-   Context: nav_items (list with is_active), corpus_stats (items/clusters/sources).
+{# Sidebar — shared between Home (reports), Stories, Clusters, Sources, About.
+   Context: nav_items (list with is_active).
    When `weeks_index` is also in context, the Read-out section renders;
    otherwise it's skipped (non-reports pages don't have weekly tabs). #}
 <aside class="gc-sidebar">
@@ -31,23 +31,4 @@
     {% endfor %}
   </div>
 
-  <div class="gc-sb-bottom">
-    <div class="gc-sb-corpus">
-      <div class="gc-sb-corpus-label">Corpus</div>
-      <div class="gc-sb-corpus-grid">
-        <div class="gc-sb-corpus-cell">
-          <div class="gc-sb-corpus-value">{{ corpus_stats['items'] }}</div>
-          <div class="gc-sb-corpus-name">items</div>
-        </div>
-        <div class="gc-sb-corpus-cell">
-          <div class="gc-sb-corpus-value">{{ corpus_stats['clusters'] }}</div>
-          <div class="gc-sb-corpus-name">clusters</div>
-        </div>
-        <div class="gc-sb-corpus-cell">
-          <div class="gc-sb-corpus-value">{{ corpus_stats['sources'] }}</div>
-          <div class="gc-sb-corpus-name">sources</div>
-        </div>
-      </div>
-    </div>
-  </div>
 </aside>

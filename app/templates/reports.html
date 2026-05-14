@@ -1,11 +1,19 @@
 {# Standalone — does NOT extend base.html. The design has its own shell. #}
 {% from "_components.html" import eyebrow, source_pill, source_row, delta, card_header %}
+
+{# Phase 3c.10 — per-card "See all clusters" footer link. Goes to /clusters
+   with the active week pre-filtered (no section filter) so the user can browse
+   the full topic list and see which clusters landed in which editorial card. #}
+{%- macro seeall_footer(week_key) -%}
+<a class="gc-card-seeall" href="/clusters?week_id={{ week_key }}">See all stories this week →</a>
+{%- endmacro -%}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gaming Chatter — Weekly Read-out</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/alienware-head-light.svg">
   <link rel="stylesheet" href="/static/app.css">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
@@ -49,25 +57,6 @@
       {% endfor %}
     </div>
 
-    <div class="gc-sb-bottom">
-      <div class="gc-sb-corpus">
-        <div class="gc-sb-corpus-label">Corpus</div>
-        <div class="gc-sb-corpus-grid">
-          <div class="gc-sb-corpus-cell">
-            <div class="gc-sb-corpus-value">{{ corpus_stats['items'] }}</div>
-            <div class="gc-sb-corpus-name">items</div>
-          </div>
-          <div class="gc-sb-corpus-cell">
-            <div class="gc-sb-corpus-value">{{ corpus_stats['clusters'] }}</div>
-            <div class="gc-sb-corpus-name">clusters</div>
-          </div>
-          <div class="gc-sb-corpus-cell">
-            <div class="gc-sb-corpus-value">{{ corpus_stats['sources'] }}</div>
-            <div class="gc-sb-corpus-name">sources</div>
-          </div>
-        </div>
-      </div>
-    </div>
   </aside>
 
   {# ===== Main column ===== #}
@@ -79,10 +68,31 @@
         <div class="gc-header-eyebrow">Weekly read-out</div>
         <h1 class="gc-header-title">{{ week.label }}</h1>
         <div class="gc-header-meta">
-          {{ week.range }} &middot; {{ week.stats.stories }} stories &middot; refreshed {{ refreshed_at }}
+          {{ week.range }} &middot; {{ week.stats.stories }} stories
         </div>
       </div>
       <div class="gc-header-actions">
+        <div class="gc-meta-tags">
+          <span class="gc-meta-tag" title="Last successful data pull from sources">
+            <span class="gc-meta-tag-label">Last pull</span>
+            <span class="gc-meta-tag-value">{{ last_pull }}</span>
+          </span>
+          <span class="gc-meta-tag" title="Last successful synthesis = end-to-end workflow completion">
+            <span class="gc-meta-tag-label">Last workflow</span>
+            <span class="gc-meta-tag-value">{{ last_workflow }}</span>
+          </span>
+        </div>
+        <button class="gc-cta gc-cta--ghost{% if not can_run_pipeline %} is-disabled{% endif %}"
+                {% if can_run_pipeline %}
+                title="Run ingest → enrich → embed → cluster → synthesize. ~5 min, ~$0.50 cost."
+                hx-post="/pipeline/run-full" hx-swap="outerHTML"
+                hx-confirm="Run the full pipeline? Fetches new items, enriches with Haiku, re-clusters, and re-synthesizes. ~5 min, ~$0.50 in Anthropic cost."
+                {% else %}
+                disabled
+                title="Last pull was within the past 6 days. Wait until it's >6 days old to refresh."
+                {% endif %}>
+          <i data-lucide="refresh-cw"></i>Run pipeline
+        </button>
         <label class="gc-cta" for="modal-open"
                hx-get="/reports/exec-summary?week={{ active_week_key }}"
                hx-target="#exec-summary-body" hx-swap="innerHTML">
@@ -113,8 +123,11 @@
                 <div class="gc-biggest-body">
                   <div class="gc-biggest-title">{{ b.title }}</div>
                   <div class="gc-biggest-dek">{{ b.dek }}</div>
-                  {% if b.sources %}
-                  <div class="gc-biggest-sources">{{ source_row(b.sources, sources_meta) }}</div>
+                  {% if b.sources or b.mention_count %}
+                  <div class="gc-biggest-sources">
+                    {% if b.sources %}{{ source_row(b.sources, sources_meta) }}{% endif %}
+                    {% if b.mention_count %}<span class="gc-mention-badge" title="Items in this cluster">{{ b.mention_count }} mention{{ 's' if b.mention_count != 1 else '' }}</span>{% endif %}
+                  </div>
                   {% endif %}
                 </div>
               </label>
@@ -123,6 +136,7 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 
@@ -195,6 +209,7 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 
@@ -293,6 +308,7 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 
@@ -323,64 +339,12 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 
-        {# 10. Esports & streaming — Phase 3c.5: row list of corpus-anchored clusters #}
-        {% set es = week.cards.esports %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Esports & streaming", "Stories present in this week's corpus") }}
-            {% if es %}
-            <div class="gc-row-list">
-              {% for e in es %}
-              <label class="gc-row gc-row--esports gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ e.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div>
-                  <div class="gc-row-title">{{ e.title }}</div>
-                  <div class="gc-row-note">{{ e.note }}</div>
-                </div>
-              </label>
-              {% endfor %}
-            </div>
-            {% elif synth_ran %}
-            <div class="gc-row-empty">No esports / streaming stories in this week's corpus.</div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-          </div>
-        </div>
-
-        {# 11. Release radar — Phase 3c.1: upcoming games + future dates, IGN calendar link #}
-        {% set releases = week.cards.releases %}
-        <div>
-          <div class="gc-card">
-            {{ card_header(
-                 "Release radar",
-                 "Upcoming releases mentioned this week",
-                 '<a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">Calendar →</a>'|safe
-               ) }}
-            <div class="gc-row-list">
-              {% for r in releases %}
-              <label class="gc-row gc-row--release gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=game&value={{ r.name|urlencode }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div class="gc-row-date">{{ r.display_date }}</div>
-                <div>
-                  <div class="gc-row-title">{{ r.name }}</div>
-                  {% if r.note %}<div class="gc-row-reason">{{ r.note }}</div>{% endif %}
-                </div>
-              </label>
-              {% endfor %}
-              {% if not releases %}
-              <div class="gc-row-empty">No upcoming releases mentioned this week.</div>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-
-        {# 12. Drama — narrow scope per walkthrough; empty list is a valid outcome. #}
+        {# Drama / Controversy tracker — moved up per Phase 3c.8 reorder
+             (risks → drama → esports → release → watch). #}
         {% set drama = week.cards.drama %}
         <div>
           <div class="gc-card">
@@ -404,10 +368,66 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 
-        {# 13. Watch next week — rows → cluster drawer when cluster_id present. #}
+        {# Esports & streaming — Phase 3c.5: row list of corpus-anchored clusters #}
+        {% set es = week.cards.esports %}
+        <div>
+          <div class="gc-card">
+            {{ card_header("Esports & streaming", "Stories present in this week's corpus") }}
+            {% if es %}
+            <div class="gc-row-list">
+              {% for e in es %}
+              <label class="gc-row gc-row--esports gc-row-trigger" for="drawer-open"
+                     hx-get="/reports/drawer?kind=cluster&value={{ e.cluster_id }}&week={{ active_week_key }}"
+                     hx-target="#source-drawer-body" hx-swap="innerHTML">
+                <div>
+                  <div class="gc-row-title">{{ e.title }}</div>
+                  <div class="gc-row-note">{{ e.note }}</div>
+                </div>
+              </label>
+              {% endfor %}
+            </div>
+            {% elif synth_ran %}
+            <div class="gc-row-empty">No esports / streaming stories in this week's corpus.</div>
+            {% else %}
+            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
+            {% endif %}
+            {{ seeall_footer(active_week_key) }}
+          </div>
+        </div>
+
+        {# Release radar — Phase 3c.8: top-6 visible, scroll within card #}
+        {% set releases = week.cards.releases %}
+        <div>
+          <div class="gc-card">
+            {{ card_header(
+                 "Release radar",
+                 "Upcoming releases mentioned this week",
+                 '<a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">Calendar →</a>'|safe
+               ) }}
+            <div class="gc-row-list gc-row-list--scrollable">
+              {% for r in releases %}
+              <label class="gc-row gc-row--release gc-row-trigger" for="drawer-open"
+                     hx-get="/reports/drawer?kind=game&value={{ r.name|urlencode }}&week={{ active_week_key }}"
+                     hx-target="#source-drawer-body" hx-swap="innerHTML">
+                <div class="gc-row-date">{{ r.display_date }}</div>
+                <div>
+                  <div class="gc-row-title">{{ r.name }}</div>
+                  {% if r.note %}<div class="gc-row-reason">{{ r.note }}</div>{% endif %}
+                </div>
+              </label>
+              {% endfor %}
+              {% if not releases %}
+              <div class="gc-row-empty">No upcoming releases mentioned this week.</div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {# Watch next week — rows → cluster drawer when cluster_id present. #}
         {% set watch = week.cards.watch %}
         <div>
           <div class="gc-card">
@@ -435,6 +455,7 @@
             {% else %}
             <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
             {% endif %}
+            {{ seeall_footer(active_week_key) }}
           </div>
         </div>
 

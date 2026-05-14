@@ -2,6 +2,11 @@
 
 Phase 3c.7 — re-skinned to shell_base.html and gained a `?q=` filter that
 matches against cluster.label (case-insensitive).
+Phase 3c.10 — editorial-section overlay: each cluster gets a chip showing
+where it landed in the weekly synthesis (Biggest / MM / Risks / Community /
+Esports / Drama / Watch / Not surfaced), and a `?section=` dropdown filter.
+Phase 3c.11 — section helpers extracted to `app/services/sections.py`;
+added a `?week_id=` dropdown alongside section + search.
 """
 import json
 
@@ -15,7 +20,12 @@ from app.db.models import Cluster, Item, Source
 from app.db.session import get_session
 from app.services.chrome import nav_items_for
 from app.services.cluster import cluster_window
-from app.services.reports import corpus_stats
+from app.services.reports import available_weeks
+from app.services.sections import (
+    SECTION_OPTIONS,
+    load_synthesis_section_map,
+    section_label_for,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -29,13 +39,21 @@ def _source_kind(s: Source) -> str:
     return "outlet"
 
 
-def _build_clusters_context(session: Session, week_id: str, q: str) -> dict:
-    """Run the clusters query (optionally filtered by q) and enrich members."""
+def _build_clusters_context(session: Session, week_id: str, q: str, section: str) -> dict:
+    """Run the clusters query (optionally filtered by q) and enrich members.
+
+    Default (empty week_id): show per-ISO-week clusters from every week, ordered
+    by score desc — excludes the legacy `week_id='all'` partition. Explicit
+    `?week_id=all` still works for opting in to the legacy set.
+    """
     stmt = (
         select(Cluster)
-        .where(Cluster.week_id == week_id)
         .order_by(Cluster.score.desc().nulls_last(), Cluster.member_count.desc())
     )
+    if week_id:
+        stmt = stmt.where(Cluster.week_id == week_id)
+    else:
+        stmt = stmt.where(Cluster.week_id != "all")
     if q:
         stmt = stmt.where(Cluster.label.ilike(f"%{q.strip()}%"))
 
@@ -68,8 +86,21 @@ def _build_clusters_context(session: Session, week_id: str, q: str) -> dict:
                 for s in sources if s.id is not None
             }
 
+    # Build section overlay for the weeks represented in the result set.
+    weeks_in_result = {c.week_id for c in clusters_rows if c.week_id and c.week_id != "all"}
+    section_map = load_synthesis_section_map(session, list(weeks_in_result))
+
     enriched = []
     for c, member_ids in zip(clusters_rows, cluster_member_ids):
+        cluster_sections = section_map.get(c.id, [])  # list (possibly empty)
+        # Apply section filter — match if ANY of the cluster's sections matches.
+        if section:
+            if section == "not_surfaced":
+                if cluster_sections:
+                    continue
+            else:
+                if not any(s["section"] == section for s in cluster_sections):
+                    continue
         members = []
         seen_sources: set[int] = set()
         for iid in member_ids:
@@ -83,13 +114,22 @@ def _build_clusters_context(session: Session, week_id: str, q: str) -> dict:
             "cluster": c,
             "members": members,
             "source_count": len(seen_sources),
+            "sections": cluster_sections,
         })
+
+    # Week dropdown: "All weeks" + each non-legacy week_id with clusters.
+    wk_ids = available_weeks(session)
+    week_options = [("", "All weeks")] + [(w, w) for w in wk_ids]
 
     return {
         "clusters": enriched,
         "sources_by_id": sources_by_id,
         "week_id": week_id,
         "q": q,
+        "section": section,
+        "section_label": section_label_for(section),
+        "section_options": SECTION_OPTIONS,
+        "week_options": week_options,
     }
 
 
@@ -108,19 +148,19 @@ def clusters_run(
 @router.get("/clusters")
 def clusters_view(
     request: Request,
-    week_id: str = "all",
+    week_id: str = "",
     q: str = "",
+    section: str = "",
     session: Session = Depends(get_session),
 ):
     """Clusters list — full page or HTMX fragment."""
-    ctx = _build_clusters_context(session, week_id, q)
+    ctx = _build_clusters_context(session, week_id, q, section)
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "_clusters_list.html", ctx)
 
     ctx.update({
         "nav_items": nav_items_for("clusters"),
-        "corpus_stats": corpus_stats(session),
         "total_count": len(ctx["clusters"]),
     })
     return templates.TemplateResponse(request, "clusters.html", ctx)

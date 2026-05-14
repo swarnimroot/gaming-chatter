@@ -4,6 +4,10 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 ---
 
+## Open from 2026-05-14 (Phase 3c.12)
+
+- **YouTube public RSS endpoint broken across many channels.** Last successful pull: 2026-05-07 16:20 (all 6 sources × 15 items each). Today's pipeline run: all 6 returned 404 (IGN got 500). Verified via direct curl that 3 unrelated control channels (Computerphile, Veritasium, Vsauce) also return 404/500 — so the issue is broader than our channel set; YouTube appears to be deprecating or restricting `feeds/videos.xml?channel_id=…`. Workarounds tried + failed: `?playlist_id=UU…` (uploads-playlist mirror), browser User-Agent + consent cookies, alt formats. **User chose to wait, retry next week** before deciding whether to migrate to YouTube Data API v3 (free quota covers 6 channels easily — Phase 4 work if RSS doesn't return). The 6 sources remain `enabled=1` in the DB and will continue to fail until either RSS heals or we cut over to the API.
+
 ## Pending external delivery
 
 - ~~**UI template**~~ — **delivered + ported 2026-05-11.** claude.ai/design bundle for the weekly read-out ported to `/reports` with the locked variants (grid + comfortable + light + orange `#D9682B`). All 13 cards render with placeholder data. Section trim + production-data wiring is the next session's walkthrough work. See SESSION_LOG 2026-05-11.

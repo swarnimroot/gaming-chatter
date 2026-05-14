@@ -4,6 +4,123 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-14 (Phase 3c.9 → 3c.12) — Corpus sidebar drop · Dashboard→Stories · /stories URL · header pull/workflow tags · Run-pipeline button · cluster toggle view · section overlay · multi-chip per cluster · dropdowns on /clusters + /stories · See-all card footers · 63 legacy clusters dropped · first end-to-end pipeline run (~$1.29) · W19 re-synth · incremental clustering · skip-synth · favicon · YouTube RSS broken (deferred)
+
+This session compounded across four loose phases. Grouped here for readability — every change is on disk; the cumulative ChangeSet covers ~12 files + 1 new module + 2 new templates + ~280 lines of CSS.
+
+**Phase 3c.9 — Corpus-stats sidebar removed; Dashboard renamed to Stories; clusters default flipped to per-week:**
+- `_sidebar.html` + `reports.html` lost their `.gc-sb-bottom` corpus-stats block. `corpus_stats(session)` call removed from all 5 routers that were passing it in context (reports / about / sources / clusters / dashboard); the helper stays in `services/reports.py` for future use.
+- Nav label "Dashboard" → "Stories" in `chrome.py` (`id` flipped from `dashboard` → `stories`, icon `gauge` → `list`). The `Dashboard` H1 was killed from the template; eyebrow now reads "Last 7 days" (or "Week 2026-W17" when filtered).
+- Stories filter: dropped the `_ITEM_LIMIT = 50` cap. Items now scoped by `published_at >= now - 7 days` (267 items on the active corpus, was visually misleading 50 of 988 before). Header reads `267 items` instead of the misleading `988 items` from the old all-items count.
+- `/clusters` default URL now serves the per-week partitions (W17 + W18 + W19 = 55 clusters) instead of the 63 legacy `week_id='all'` rows. Explicit `?week_id=all` still works for opting in to the legacy bucket. Then the legacy bucket was **deleted** (see below).
+- **Dropped the 63 legacy `week_id='all'` cluster rows** at user request. Backup written to `data/legacy_clusters_backup_20260514_023447.json` (full row payload, in case anything ever needs to be inspected). Remaining clusters total: 55 per-week (later 247 after pipeline run added W19+W20).
+
+**Phase 3c.10 — URL rename · header tags + Run-pipeline button · cluster toggle · favicon:**
+- `/dashboard` → `/stories` URL rename. `chrome.py` href, `dashboard.py` route path, `dashboard.html` `hx-get` URL all updated. File path stayed `app/routers/dashboard.py` to keep blast-radius small (the file name is internal; rename can come later if naming-vs-file mismatch bugs anyone).
+- `reports.html` header: dropped the "refreshed X ago" suffix from `gc-header-meta`. Two new tag-chips in `gc-header-actions`:
+  - **Last pull** — `MAX(completed_at)` from `run_log WHERE job_type='ingest' AND status='ok'`, formatted as `N min/h/d ago` via new `_format_ago` helper.
+  - **Last workflow** — `MAX(synthesis_generated_at)` from `weekly_reports`; "workflow completion" = last synthesis since that's the user-visible weekly deliverable.
+- **Run pipeline** button next to Exec summary. `gc-cta--ghost` style (secondary, outline + muted bg). Enabled iff `now - last_pull > 6 days` (or last_pull is null). When disabled, `disabled` attribute + hover tooltip explaining the 6-day gate. When enabled: HTMX `POST /pipeline/run-full` with a confirm dialog ("~5 min, ~$0.50 cost"), `hx-swap=outerHTML` to replace the button with a "Running… refresh in ~5 min" status chip.
+- New `app/routers/pipeline.py` (~80 lines): module-level `threading.Lock` prevents double-click; `BackgroundTasks` runs the worker after the response. 5-step pipeline: ingest_all → enrich_pending → embed_pending → cluster(prev+curr) → synthesize_week(curr, force=True). Returns a `.gc-pipeline-status` HTML fragment.
+- `/clusters` CSS-only **Cluster cards / List** view toggle. Radio-input pattern (matches the existing trend/hot tabs) — both views render in HTML, sibling `:checked` selectors show one and hide the other. List view = compact `gc-cluster-flatlist` with rank + label + meta (score + items + sources + latest date) per cluster.
+- Favicon: `<link rel="icon" type="image/svg+xml" href="/static/img/alienware-head-light.svg">` added to `reports.html` + `shell_base.html`. Browsers now use the Alienware-head SVG as the tab icon; the `/favicon.ico` 404 in the dev log is gone.
+
+**Phase 3c.11 — Section overlay on /clusters · "See all" footers · dropdowns on both inspection pages · first end-to-end pipeline run · W19 re-synth · `app/services/sections.py` extracted:**
+- New module `app/services/sections.py` — moved the section-overlay helpers out of `clusters.py` so the Stories page can share them. Exposes `SECTION_OPTIONS` (9 keys: All / Biggest / Market momentum / Risks / Community sentiment / Esports / Drama / Watch / Not surfaced), `load_synthesis_section_map(session, week_ids)`, `section_label_for(section)`, and the new `items_in_section(session, week_ids, section) -> Optional[set[int]]`.
+- `/clusters` cluster cards + list rows now show **section chips** — the editorial card the cluster landed in on the weekly read-out. Special chip for clusters not in any synthesis section ("Not surfaced"). Each section has a distinct color (Biggest=accent, MM=purple, Risks=danger, Community=warning, Esports=blue, Drama=danger-darker, Watch=neutral, Not surfaced=outlined-muted).
+- **Section dropdown** on `/clusters` (next to search): "All sections" + 8 editorial sections + "Not surfaced". HTMX `change` trigger swaps `#clusters-list` while keeping search + week_id in sync via `hx-include`.
+- **Week dropdown** on `/clusters` (next to section): "All weeks" + each per-ISO-week id from `available_weeks(session)`. Same HTMX swap pattern.
+- "See all stories this week →" footer link on **7 editorial cards** on the home page (Biggest, Market momentum, Community, Risks, Drama, Esports, Watch) — Hottest/Trends/Release are per-entity not per-cluster, so they were skipped. Link → `/clusters?week_id={active_week_key}` (no section filter — landing on the full list lets the user see what got surfaced vs. left out, with chips telling them which).
+- Stories page got **both dropdowns** (section + week). Same shape as /clusters. The section filter on Stories uses `items_in_section(session, available_weeks(session), section)` to compute the set of item IDs that belong to clusters in the requested section, then `Item.id IN (…)` against the items query. The week dropdown swaps the time window from "last 7 days" (default) to a specific ISO-week's `[start, end)` bounds.
+- **First end-to-end pipeline run** triggered via the new button (accidentally — verification curl hit POST /pipeline/run-full instead of GET; the BG task started before I could pause). Ran to completion in 44.5 min:
+  - Ingest: 898 fetched, 568 new, 330 dedup-skipped, 6 errors (all YouTube — see Open Questions)
+  - Enrich: 568 attempted, 477 ok (Haiku 4.5), 4 failed, 87 skipped (body < 200 chars)
+  - Embed: 477/477 ok via Ollama `nomic-embed-text` (much slower than expected — ~2.3 s/call locally instead of the ~10 ms I'd ballparked; total embed step took ~19 min instead of seconds)
+  - Cluster prev (W19): re-clustered destructively → 115 groups, all relabeled via Sonnet 4.6 (~$0.23)
+  - Cluster curr (W20): fresh clustering → 115 groups, all labeled (~$0.23)
+  - Synth W20: Opus 4.7 synthesis + critic — 3 biggest / 5 MM / 1 risk / 0 esports / 0 drama / 4 watch (critic dropped one each from risks and watch). 6705 chars JSON. ~$0.35.
+  - Pipeline cost: **~$1.29**
+- **W19 invalidation fix** ($0.35 extra): the cluster_window for W19 was destructive — it deleted all 38 W19 cluster rows and rebuilt 115 new ones with new IDs. W19's existing synthesis_json (from the previous Phase 3c.8 backfill) still referenced the **old** IDs. So W19's home page was rendering titles/decks correctly but every drawer click, mention count, and source-pill lookup would have failed (dead IDs). Fix: `python scripts/run_synthesis.py 2026-W19 --force` to regenerate W19's synthesis JSON against the new cluster IDs. Took 73.6 sec, produced 7897 chars JSON (3 biggest / 5 MM / 2 risks / 0 esports / 2 drama / 5 watch).
+
+**Phase 3c.12 — Incremental clustering · skip-synth-if-unchanged · multi-chip rendering per cluster:**
+- The cluster-invalidation bug from 3c.11 motivated a real fix: new `cluster_window_incremental(start, end, week_id)` in `app/services/cluster.py` (~165 lines). Algorithm:
+  - Load existing clusters' L2-normalized centroids (already normalized from prior runs).
+  - Filter candidate items to those NOT in any existing cluster's `member_item_ids`.
+  - For each new item: cosine to each existing centroid. If max ≥ 0.85 (`CLUSTER_THRESHOLD`) → append to that cluster (update `member_item_ids`, `member_count`, `source_count`, `latest_published_at`, weighted-mean centroid, recomputed score). **Don't re-label** — existing cluster identity preserved.
+  - Items that didn't match: run connected-components among themselves (same threshold + min_size). New groups become new cluster rows, each gets one fresh Sonnet 4.6 label.
+- Pipeline router (`app/routers/pipeline.py`) rewritten to call `cluster_window_incremental` for both prev + curr weeks (with explicit `iso_week_bounds(week_id)` for `start`/`end`). Synthesis now **skipped** when curr week has zero changes (`items_appended_existing == 0 AND clusters_new_created == 0`) — saves the ~$0.35 Opus cost on no-op pipeline runs.
+- Verified the incremental fn by calling it directly (after pipeline already ran): it found **13 items** previously missed by the destructive connected-components pass (6 in W19 + 7 in W20 — singletons that didn't have a peer ≥ 0.85 in their own week's set, but DO have ≥ 0.85 similarity to an existing centroid; the broader "match against all existing centroids" search rescues them). Zero new Sonnet calls (no new clusters formed). Cluster IDs untouched. Cost: **$0.00**.
+- Section map → **list-of-sections per cluster** (Phase 3c.10/3c.11 stored only the highest-priority section; 3c.12 keeps every section the cluster appears in). Rendered as multiple chips per cluster, sorted by priority (Biggest first, Watch last). Example: a W20 cluster that's Biggest #3 + Community heated + Watch · TBA now renders all 3 chips visibly.
+- Why the change: the priority-first-wins approach was *technically* correct but **silently masked** that community sentiment was happening across many clusters that ALSO had a primary chip elsewhere. W20 community chip count went from 0 → 4 once multi-chip landed; W19 went from 1 → 3. Filter logic also flipped: `?section=community` now matches **any** cluster whose section list contains `community`, not just clusters whose primary section is community. Stories item filter (`items_in_section`) automatically inherits the inclusive matching since it iterates the same section_map.
+
+**Verified end-to-end on `:8001 --reload` (clean restart, no stale-worker gotcha):**
+- `/` → 200, 57k bytes (W20 default — pipeline-fresh data). Header shows `Last pull: 0 min ago` (right after pipeline) + `Last workflow: 0 min ago`, Run-pipeline button disabled (correctly, since pull was just now).
+- `/?week=2026-W17/18/19/20` all render correctly with W19 having repaired cluster refs.
+- `/stories` → 877k bytes, 827 items in the last 7 days. Dropdowns work: `?section=biggest` → 20 items / `?section=not_surfaced` → 143 items / `?week_id=2026-W17` → 90 items / combinations work.
+- `/clusters` → 247 cluster cards (W17:4 + W18:13 + W19:115 + W20:115). Multi-chip rendering verified: 5 clusters in W20 carry 2-3 chips each. Section filter inclusive; week filter works.
+- `/about` → 200, infographic intact.
+- Favicon present in `<head>` of both reports.html + shell_base.html.
+
+**Session cost:** ~**$2.34** Anthropic spend (W17/W18 backfill in 3c.8: $0.70 · pipeline ingest+enrich+labels+W20 synth: $1.29 · W19 re-synth: $0.35 · misc Haiku in modal degrade: ~$0.001). Cumulative project: ~**$9.90**.
+
+**Where we left off:**
+- All Phase 3c.9-3c.12 work shipped and verified on the user's `:8001 --reload`. Corpus is fresh (988 → ~1465 items, 4 weeks synthesized: W17 / W18 / W19 / W20). No mid-flight work.
+- YouTube ingest is broken **on YouTube's side**, not ours — see Open Questions. User opted to wait rather than disable or migrate to API.
+
+**Blocked / flagged:**
+- YouTube public RSS endpoint returning 404/500 broadly (verified across our 6 channels + 3 unrelated control channels: Computerphile, Veritasium, Vsauce). Worked May 7 16:20 (last successful pull, 5×15 items); broken by May 14. Diagnosis: probably a YouTube infrastructure change or deprecation. User chose to wait and revisit next week. See `docs/OPEN_QUESTIONS.md`.
+
+**Next session (Phase 4 still the actual finish line):**
+APScheduler daily ingest + Monday-morning synthesis cron, catch-up on startup, `/runs` UI for `run_log`, Source CRUD via web forms. Plus the deferred YouTube fix (retry RSS or migrate to YouTube Data API v3 with a free-tier API key). The incremental clustering work in 3c.12 was the right groundwork — APScheduler-driven daily pulls will hit incremental_cluster cheaply, and skip-synth will avoid burning Opus on no-op days.
+
+**Files touched / new:**
+- New: `app/services/sections.py`, `app/routers/pipeline.py`, `data/legacy_clusters_backup_20260514_023447.json`.
+- Edited: `app/services/chrome.py`, `app/services/cluster.py` (added incremental fn), `app/services/reports.py` (added `_format_ago`, `_parse_dt`, `_latest_ingest_dt`, `_latest_workflow_dt`), `app/routers/reports.py`, `app/routers/clusters.py`, `app/routers/dashboard.py`, `app/routers/sources.py`, `app/routers/about.py`, `app/main.py`, `app/templates/reports.html`, `app/templates/_sidebar.html`, `app/templates/dashboard.html`, `app/templates/clusters.html`, `app/templates/_clusters_list.html`, `app/templates/shell_base.html`, `app/static/app.css` (~280 new lines across phases).
+- DB: 63 legacy `week_id='all'` cluster rows deleted; `weekly_reports.synthesis_json` for W20 newly created (6705 chars), for W19 rewritten with new cluster IDs (7897 chars).
+
+---
+
+## 2026-05-13 (Phase 3c.8) — Card reorder, mention badges, scrollable releases, About page, W17/W18 synthesis backfill
+
+**Done:**
+- **Card reorder on `/`** — bottom-right group resequenced from `risks → esports → release → drama → watch` to `risks → controversy tracker → esports → release radar → watch next week`. Single template-block swap in `app/templates/reports.html` (no router or schema change — `_apply_synthesis` writes to flat dict keys; template iteration order is the only ordering constraint). Verified on W17/W18/W19: card-header substring indexes ascend in target order.
+- **Mention count badge on Biggest top-3.** `_apply_synthesis` now derives `mention_count` per biggest row from `clusters.member_item_ids` (inline `SELECT id, member_item_ids FROM clusters WHERE id IN (…)` with int-coerced IDs, JSON-parsed length). No synthesis schema change — count is rendered alongside the existing source pills inside the `gc-biggest-sources` flex row. New CSS class `gc-mention-badge` (small rounded chip, fg3 on surface-alt, 10px font). The `gc-biggest-sources` rule went from a plain block to a flex row so source pills + count badge coexist on one line.
+- **Release radar scrollable.** Per "show 6 at a time, scrollable within card." Added `gc-row-list--scrollable` class (`max-height: 320px; overflow-y: auto`) to the release radar's `.gc-row-list`. The release query still returns up to 10 per `upcoming_releases(..., limit=10)`; the height cap shows ~6 rows visible and scrolls for the rest. No slice in the template — height-constrained container does the work.
+- **About page (new `/about` route).** Per user direction "very simple, infographic, not scroll-death." New `app/routers/about.py`, new `app/templates/about.html` extending `shell_base.html`. Layout: 5-step horizontal pipeline (Ingest → Enrich → Cluster → Synthesize → Render) with a colored top-border per stage (blue/purple/green/accent/gray), 44×44 circular icon (Lucide: `download-cloud`, `sparkles`, `shapes`, `scroll-text`, `layout-dashboard`), step number, plain-language description (one sentence, beginner-friendly), and a dashed-border tech detail line. CSS `::after` chevron between cards (a rotated border square in `var(--gc-fg3)`). Below the pipeline: two side-by-side panels — "If you're new to the jargon" (6-term glossary in 2-col grid: RSS / LLM / Embedding / Clustering / Sentiment / Critic pass — each defined in non-technical language) and "Stack & numbers" (Python/FastAPI, SQLite, HTMX, Ollama, Anthropic, $0.35/week, single-process). Media query at 1080px stacks the pipeline 2-col + hides the chevrons; at 640px stacks everything single-column. The whole page fits on one screen at ≥1080px — no scroll-death.
+- **`chrome.py` nav extended.** Added 5th nav item `{"id": "about", "label": "About", "icon": "info", "href": "/about"}` to `NAV_ITEMS_BASE`. The `_sidebar.html` partial picks it up automatically since it iterates `nav_items`. `reports.html`'s hardcoded sidebar uses the same `nav_items` context, so it also gets the About item without further changes.
+- **Sidebar corpus-stats truncation fix.** Per user: bottom block was getting hidden on shorter viewports. Tightened sidebar padding (`16px 8px` → `12px 8px 8px`) and `.gc-sb-bottom` padding-top (12 → 8) and `.gc-sb-corpus` padding (`10px 12px` → `8px 12px 4px`) — net ~20px vertical savings. Added `overflow-y: auto` to `.gc-sidebar` and `flex-shrink: 0` to `.gc-sb-bottom` as belt-and-suspenders: if the viewport is genuinely too short, the sidebar scrolls internally rather than clipping the corpus stats, and the corpus block never shrinks below its natural height. Adding the 5th nav item (About) costs ~33px of vertical real estate, so the savings more than offset the new entry.
+- **`main.py`** — registered the new `about.router`.
+- **W17 + W18 synthesis backfill.** `python scripts/run_synthesis.py 2026-W17` (39.9s, 4592 chars JSON, 3 biggest / 2 MM / 2 risks / 0 esports / 0 drama / 5 watch / 813-char exec). `python scripts/run_synthesis.py 2026-W18` (53.0s, 6210 chars JSON, 3 biggest / 5 MM / 3 risks / 0 esports / 1 drama / 5 watch / 772-char exec). Both Opus 4.7 + critic. W17's `weekly_reports` row was auto-created on first call; W18's pre-existing empty row was populated. Historical raw-item backfill ruled out — `scrapers-lib` tier1 has no date-range parameters and RSS feeds only return recent items, so W17's 4 clusters and W18's 13 clusters are the corpus we have. Anthropic spend this session: ~$0.70 (lower than CLAUDE.md's $1.80 budget — that figure included cluster-relabel, which had already run in Phase 3c.4). Cumulative project spend ~$8.26.
+- **Verified end-to-end** on uvicorn `:8001` (which picked up the reload cleanly this session — no orphan WatchFiles gotcha): W17/W18/W19 all show the new card order with ascending header indexes, 3 mention badges per Biggest card, `gc-row-list--scrollable` class on the release radar list, About in sidebar nav, `/about` page 200 / 8003 bytes with the full pipeline + 6 glossary terms + stack panel.
+
+**Decided / verified:**
+- **Mention count derived at render-time, not stored in synthesis JSON.** Reason: deriving from cluster member-count is free (one extra SELECT per page render, three rows per result), and avoiding a synthesis schema change means W17/W18/W19 all get the badge without re-running Opus. The schema stays focused on editorial fields (title/dek/cluster_id); the count is a presentation concern computed from the underlying corpus.
+- **Release radar approach: height-cap + overflow, not Jinja slice.** Two interpretations of "show top 6 at a time" — (a) hard-cap at 6 via `[:6]`, or (b) constrain height so 6 are visible and scroll reveals the rest. Picked (b): if the query returns 10, the user can still reach all of them by scrolling within the card. Hard-capping would have hidden 4 future-release items entirely with no affordance.
+- **Sidebar truncation fix: padding-tighten + overflow-y fallback, not structural reflow.** Rejected: restructuring the sidebar into "scrollable middle + fixed bottom" (would require a new wrapping flex container around logo+weeks+nav and a separate bottom anchor). Reason: simpler fix is enough. Net ~20px of vertical reclaim from tightened padding more than offsets the new 5th nav item, and `overflow-y: auto` covers the long tail of very-short viewports.
+- **About page: visual flow + glossary, not narrative prose.** Per user "infographic and visual, not scrolling/text death." Five equal-width cards with iconography and a clear arrow chain gives the reader the whole pipeline in one glance; the glossary panel handles the jargon definitions that an outsider would need. Tech-stack detail is kept in a separate "Stack & numbers" panel so the main flow stays free of acronym-density.
+- **Card reorder rationale (user spec).** Industry risks → Controversy tracker → Esports & streaming → Release radar → Watch next week. Logical pairing: risk-themed cards (industry risks + controversy) cluster together, then the forward-looking content (release radar + watch next week) cluster together with esports as the bridge. Implemented as a template-block reorder only — no Python or schema change.
+
+**Where we left off:**
+All Phase 3c.8 work shipped and verified. Page renders correctly for W17/W18/W19 with the new layout. /about renders. Mention badges show 3 per Biggest card. Sidebar bottom no longer truncated. The actual product surface is now closer to "feels finished" — automation (Phase 4) is the remaining big gap.
+
+**Blocked / flagged:**
+Nothing blocking. Phase 4 still ready to start.
+
+**Next session (Phase 4 — same recommendation as 3c.7):**
+APScheduler daily ingest + Monday-morning synthesis cron, catch-up on startup, `/runs` UI for the run_log table, Source CRUD via web forms. This is the PRD's "Monday-morning briefing" finish line — without it, every Monday's synthesis is still a manual `python scripts/run_synthesis.py …` invocation.
+
+**Files touched:**
+- `app/services/chrome.py` — added About to `NAV_ITEMS_BASE`.
+- `app/routers/about.py` (new) — `/about` route renders `about.html` with corpus_stats + nav_items_for("about").
+- `app/routers/reports.py` — `_apply_synthesis` derives `mention_count` per biggest entry from cluster member_item_ids.
+- `app/templates/reports.html` — card reorder (drama block moved up), `gc-mention-badge` rendered in `gc-biggest-sources` flex row, `gc-row-list--scrollable` class on release radar's list.
+- `app/templates/about.html` (new) — visual pipeline + glossary + stack panel.
+- `app/static/app.css` — `.gc-sidebar` padding tightened + `overflow-y: auto`; `.gc-sb-bottom` padding + `flex-shrink: 0`; `.gc-sb-corpus` padding tightened; `.gc-biggest-sources` → flex row; new `.gc-mention-badge`; new `.gc-row-list--scrollable`; new `.gc-about-*` family (~110 lines, with two responsive media queries).
+- `app/main.py` — registered `about.router`.
+- `weekly_reports` DB rows for 2026-W17 (created) and 2026-W18 (filled).
+
+---
+
 ## 2026-05-13 (Phase 3c.7) — UI consistency: routing swap, shared shell, live search
 
 **Done:**

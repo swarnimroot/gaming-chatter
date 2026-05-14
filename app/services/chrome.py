@@ -8,9 +8,10 @@ from __future__ import annotations
 
 NAV_ITEMS_BASE = [
     {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "href": "/"},
-    {"id": "dashboard", "label": "Dashboard",       "icon": "gauge",     "href": "/dashboard"},
+    {"id": "stories",   "label": "Stories",         "icon": "list",      "href": "/stories"},
     {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "href": "/clusters"},
     {"id": "sources",   "label": "Sources",         "icon": "rss",       "href": "/sources"},
+    {"id": "about",     "label": "About",           "icon": "info",      "href": "/about"},
 ]
 
 

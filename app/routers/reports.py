@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
@@ -77,28 +77,47 @@ def _build_sources_meta(session: Session) -> dict[str, dict]:
     return meta
 
 
-def _latest_ingest_at(session: Session) -> str:
+def _parse_dt(val) -> datetime | None:
+    """Coerce a datetime or ISO-string from sqlite into an aware UTC datetime."""
+    if not val:
+        return None
+    try:
+        dt = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _format_ago(dt: datetime | None) -> str:
+    """Format a UTC datetime as 'N min/h/d ago' for header chrome."""
+    if dt is None:
+        return "—"
+    delta = datetime.now(timezone.utc) - dt
+    mins = int(delta.total_seconds() // 60)
+    if mins < 60:
+        return f"{mins} min ago"
+    hrs = mins // 60
+    if hrs < 48:
+        return f"{hrs} h ago"
+    return f"{hrs // 24} d ago"
+
+
+def _latest_ingest_dt(session: Session) -> datetime | None:
+    """Last successful ingest completion across all sources, or None."""
     row = session.exec(_sqltext(
         "SELECT MAX(completed_at) FROM run_log WHERE job_type='ingest' AND status='ok'"
     )).first()
-    val = row[0] if row else None
-    if not val:
-        return "—"
-    # Format as relative-ish to keep the header tight.
-    try:
-        dt = val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        delta = datetime.now(timezone.utc) - dt
-        mins = int(delta.total_seconds() // 60)
-        if mins < 60:
-            return f"{mins} min ago"
-        hrs = mins // 60
-        if hrs < 48:
-            return f"{hrs} h ago"
-        return f"{hrs // 24} d ago"
-    except Exception:  # noqa: BLE001
-        return str(val)[:16]
+    return _parse_dt(row[0] if row else None)
+
+
+def _latest_workflow_dt(session: Session) -> datetime | None:
+    """Last successful synthesis run = the user-visible 'workflow completion'."""
+    row = session.exec(_sqltext(
+        "SELECT MAX(synthesis_generated_at) FROM weekly_reports"
+    )).first()
+    return _parse_dt(row[0] if row else None)
 
 
 def _load_synthesis(session: Session, week_id: str) -> dict | None:
@@ -133,17 +152,28 @@ def _apply_synthesis(session: Session, cards: dict, synth: dict) -> None:
     """
     data = synth["data"]
 
-    # Biggest stories — plural top-3, each with source pills derived from
-    # cluster members so the template doesn't need a second query.
+    # Biggest stories — plural top-3, each with source pills + mention count
+    # derived from cluster members so the template doesn't need a second query.
     if data.get("biggest"):
         cluster_ids = [int(b["cluster_id"]) for b in data["biggest"]]
         pills = report_q.source_pills_for_clusters(session, cluster_ids)
+        ids_csv = ",".join(str(cid) for cid in cluster_ids)
+        member_rows = session.exec(_sqltext(
+            f"SELECT id, member_item_ids FROM clusters WHERE id IN ({ids_csv})"
+        )).all()
+        counts: dict[int, int] = {}
+        for cid, mids_json in member_rows:
+            try:
+                counts[int(cid)] = len(json.loads(mids_json)) if mids_json else 0
+            except (TypeError, ValueError):
+                counts[int(cid)] = 0
         cards["biggest"] = [
             {
                 "cluster_id": b["cluster_id"],
                 "title": b["title"],
                 "dek": b["dek"],
                 "sources": pills.get(int(b["cluster_id"]), []),
+                "mention_count": counts.get(int(b["cluster_id"]), 0),
             }
             for b in data["biggest"]
         ]
@@ -273,7 +303,6 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
 def reports_view(request: Request, week: str = ""):
     with Session(engine) as session:
         week_ids = report_q.available_weeks(session)
-        stats = report_q.corpus_stats(session)
 
         # Empty-corpus fallback — renders the chrome with one blank week.
         if not week_ids:
@@ -291,8 +320,10 @@ def reports_view(request: Request, week: str = ""):
             return templates.TemplateResponse(
                 request, "reports.html",
                 {"week": blank, "weeks_index": [], "active_week_key": "",
-                 "nav_items": nav_items_for("weekly"), "corpus_stats": stats,
-                 "refreshed_at": "—", "sources_meta": {}},
+                 "nav_items": nav_items_for("weekly"),
+                 "last_pull": "—", "last_workflow": "—",
+                 "can_run_pipeline": True,
+                 "sources_meta": {}},
             )
 
         active_key = week if week in week_ids else week_ids[0]
@@ -305,6 +336,14 @@ def reports_view(request: Request, week: str = ""):
         week_data = _build_week_payload(session, active_key)
         sources_meta = _build_sources_meta(session)
 
+        last_pull_dt = _latest_ingest_dt(session)
+        last_workflow_dt = _latest_workflow_dt(session)
+        # Pipeline button is enabled when last pull is missing OR > 6 days old.
+        if last_pull_dt is None:
+            can_run_pipeline = True
+        else:
+            can_run_pipeline = (datetime.now(timezone.utc) - last_pull_dt) > timedelta(days=6)
+
         return templates.TemplateResponse(
             request, "reports.html",
             {
@@ -312,8 +351,9 @@ def reports_view(request: Request, week: str = ""):
                 "weeks_index": weeks_index,
                 "active_week_key": active_key,
                 "nav_items": nav_items_for("weekly"),
-                "corpus_stats": stats,
-                "refreshed_at": _latest_ingest_at(session),
+                "last_pull": _format_ago(last_pull_dt),
+                "last_workflow": _format_ago(last_workflow_dt),
+                "can_run_pipeline": can_run_pipeline,
                 "sources_meta": sources_meta,
             },
         )

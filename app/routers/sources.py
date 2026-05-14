@@ -10,7 +10,6 @@ from app.db.session import get_session
 from app.services.chrome import nav_items_for
 from app.services.enrich import enrich_pending
 from app.services.ingest import ingest_all, ingest_source
-from app.services.reports import corpus_stats
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -65,7 +64,6 @@ def list_sources(
     all_rows = session.exec(select(Source)).all()
     ctx.update({
         "nav_items": nav_items_for("sources"),
-        "corpus_stats": corpus_stats(session),
         "total_count": len(all_rows),
         "enabled_count": sum(1 for s in all_rows if s.enabled),
     })

@@ -1,17 +1,36 @@
 {% extends "shell_base.html" %}
-{% block title %}Dashboard — Gaming Chatter{% endblock %}
-{% block eyebrow %}Raw data{% endblock %}
-{% block heading %}Dashboard{% endblock %}
+{% block title %}Stories — Gaming Chatter{% endblock %}
+{% block eyebrow %}{% if week_id %}Week {{ week_id }}{% else %}Last {{ window_days }} days{% endif %}{% endblock %}
+{% block heading %}Stories{% endblock %}
 {% block header_meta %}
-  {{ total_count }} items · {{ pending_count }} pending enrichment
+  {{ total_count }} item{{ 's' if total_count != 1 else '' }}{% if section %} · {{ section_label }}{% endif %}{% if q %} · matching "{{ q }}"{% endif %}
 {% endblock %}
 {% block header_actions %}
   <input type="search" name="q" value="{{ q or '' }}"
          class="gc-search-input" autocomplete="off"
          placeholder="Search title, TL;DR, source…"
-         hx-get="/dashboard" hx-trigger="keyup changed delay:300ms, search"
+         hx-get="/stories" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#dashboard-list" hx-swap="innerHTML"
+         hx-include="[name='week_id'],[name='section']"
          hx-push-url="true">
+  <select name="section" class="gc-filter-select"
+          hx-get="/stories" hx-trigger="change"
+          hx-target="#dashboard-list" hx-swap="innerHTML"
+          hx-include="[name='week_id'],[name='q']"
+          hx-push-url="true">
+    {% for val, label in section_options %}
+      <option value="{{ val }}"{% if section == val %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="week_id" class="gc-filter-select"
+          hx-get="/stories" hx-trigger="change"
+          hx-target="#dashboard-list" hx-swap="innerHTML"
+          hx-include="[name='section'],[name='q']"
+          hx-push-url="true">
+    {% for val, label in week_options %}
+      <option value="{{ val }}"{% if week_id == val %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
 {% endblock %}
 
 {% block main_content %}

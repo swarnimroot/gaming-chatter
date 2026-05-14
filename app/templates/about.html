@@ -1,0 +1,143 @@
+{% extends "shell_base.html" %}
+
+{% block title %}About — Gaming Chatter{% endblock %}
+{% block eyebrow %}Under the hood{% endblock %}
+{% block heading %}How Gaming Chatter works{% endblock %}
+{% block header_meta %}From scrape to weekly briefing, in five steps.{% endblock %}
+
+{% block main_content %}
+<div class="gc-about-wrap">
+
+  <p class="gc-about-intro">
+    Every Monday this app gives you a one-screen rundown of the past week in gaming.
+    Below is the pipeline that produces it — what each step does, and a glossary if you're
+    new to terms like RSS, embeddings, or LLMs.
+  </p>
+
+  {# ===== Pipeline flow — 5 stages ===== #}
+  <div class="gc-about-flow">
+
+    <div class="gc-about-step gc-about-step--ingest">
+      <div class="gc-about-step-num">Step 1</div>
+      <div class="gc-about-step-icon"><i data-lucide="download-cloud"></i></div>
+      <div class="gc-about-step-title">Ingest</div>
+      <div class="gc-about-step-desc">
+        Every day we fetch fresh gaming stories from news sites, Reddit threads,
+        and YouTube videos.
+      </div>
+      <div class="gc-about-step-tech">
+        15 news sites · 10 subreddits · 6 YouTube channels<br>
+        via RSS feeds + YouTube transcripts
+      </div>
+    </div>
+
+    <div class="gc-about-step gc-about-step--enrich">
+      <div class="gc-about-step-num">Step 2</div>
+      <div class="gc-about-step-icon"><i data-lucide="sparkles"></i></div>
+      <div class="gc-about-step-title">Enrich</div>
+      <div class="gc-about-step-desc">
+        An AI reads every story and tags it — which games it mentions, which
+        platforms, the tone, the people involved.
+      </div>
+      <div class="gc-about-step-tech">
+        Anthropic Haiku 4.5<br>
+        one fast LLM call per item
+      </div>
+    </div>
+
+    <div class="gc-about-step gc-about-step--cluster">
+      <div class="gc-about-step-num">Step 3</div>
+      <div class="gc-about-step-icon"><i data-lucide="shapes"></i></div>
+      <div class="gc-about-step-title">Cluster</div>
+      <div class="gc-about-step-desc">
+        Stories about the same thing get grouped. So 12 articles covering a GTA
+        trailer become one topic, not 12 separate items.
+      </div>
+      <div class="gc-about-step-tech">
+        Embeddings (nomic-embed-text) + cosine similarity<br>
+        topic labels by Anthropic Sonnet 4.6
+      </div>
+    </div>
+
+    <div class="gc-about-step gc-about-step--synth">
+      <div class="gc-about-step-num">Step 4</div>
+      <div class="gc-about-step-icon"><i data-lucide="scroll-text"></i></div>
+      <div class="gc-about-step-title">Synthesize</div>
+      <div class="gc-about-step-desc">
+        An AI reads the week's topics and writes the briefing: biggest stories,
+        market moves, risks, community vibes, what to watch next.
+      </div>
+      <div class="gc-about-step-tech">
+        Anthropic Opus 4.7 + a second "critic" pass<br>
+        that removes anything not in the source data
+      </div>
+    </div>
+
+    <div class="gc-about-step gc-about-step--render">
+      <div class="gc-about-step-num">Step 5</div>
+      <div class="gc-about-step-icon"><i data-lucide="layout-dashboard"></i></div>
+      <div class="gc-about-step-title">Render</div>
+      <div class="gc-about-step-desc">
+        The briefing renders on the home page. Click any row to see the source
+        articles. Export as HTML or print to PDF.
+      </div>
+      <div class="gc-about-step-tech">
+        FastAPI + Jinja + HTMX + SQLite<br>
+        runs entirely on your laptop
+      </div>
+    </div>
+
+  </div>
+
+  {# ===== Glossary + stack panels ===== #}
+  <div class="gc-about-bottom">
+
+    <div class="gc-about-panel">
+      <div class="gc-about-panel-title">If you're new to the jargon</div>
+      <div class="gc-about-glossary">
+        <div class="gc-about-term">
+          <strong>RSS</strong> — A simple feed format that news sites publish so apps can
+          poll for new articles. We pull these on a schedule.
+        </div>
+        <div class="gc-about-term">
+          <strong>LLM</strong> — Large Language Model. An AI that reads and writes text. We
+          use three: a small one (fast tagging), a mid one (topic labels), a large one
+          (the weekly briefing).
+        </div>
+        <div class="gc-about-term">
+          <strong>Embedding</strong> — A list of about 768 numbers that captures the
+          meaning of a piece of text. Two pieces with similar meanings produce similar
+          number patterns.
+        </div>
+        <div class="gc-about-term">
+          <strong>Clustering</strong> — Grouping items that mean the same thing. We compare
+          embeddings to decide which stories are about the same topic.
+        </div>
+        <div class="gc-about-term">
+          <strong>Sentiment</strong> — Whether the community sounds positive, negative, or
+          mixed about a topic. We derive it from per-item tags and Reddit comment patterns.
+        </div>
+        <div class="gc-about-term">
+          <strong>Critic pass</strong> — A second AI run that fact-checks the first one
+          against the actual source articles and strips out anything it can't ground.
+        </div>
+      </div>
+    </div>
+
+    <div class="gc-about-panel gc-about-panel--stack">
+      <div class="gc-about-panel-title">Stack &amp; numbers</div>
+      <ul class="gc-about-stack">
+        <li><strong>Language:</strong> Python (FastAPI)</li>
+        <li><strong>Storage:</strong> SQLite, single file</li>
+        <li><strong>Frontend:</strong> HTMX + Jinja (no JS build)</li>
+        <li><strong>Local AI:</strong> Ollama (embeddings)</li>
+        <li><strong>Cloud AI:</strong> Anthropic (Haiku/Sonnet/Opus)</li>
+        <li><strong>Cost:</strong> ~$0.35 / weekly briefing</li>
+        <li><strong>Mode:</strong> Single process, local-only, single user</li>
+      </ul>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
