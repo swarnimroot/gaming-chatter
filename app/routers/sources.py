@@ -63,7 +63,7 @@ def list_sources(
     # Full-table count (unfiltered) for the header meta line.
     all_rows = session.exec(select(Source)).all()
     ctx.update({
-        "nav_items": nav_items_for("sources"),
+        "nav_items": nav_items_for(request, "sources"),
         "total_count": len(all_rows),
         "enabled_count": sum(1 for s in all_rows if s.enabled),
     })
@@ -72,6 +72,7 @@ def list_sources(
 
 @router.post("/sources/{source_id}/ingest")
 def ingest_one(
+    request: Request,
     source_id: int,
     session: Session = Depends(get_session),
 ):
@@ -79,11 +80,11 @@ def ingest_one(
     if not source:
         raise HTTPException(status_code=404, detail="source not found")
     ingest_source(session, source)
-    return RedirectResponse("/sources", status_code=303)
+    return RedirectResponse(request.url_for("list_sources"), status_code=303)
 
 
 @router.post("/sources/ingest-all")
-def ingest_all_route(bg: BackgroundTasks):
+def ingest_all_route(request: Request, bg: BackgroundTasks):
     bg.add_task(ingest_all)
     bg.add_task(enrich_pending)
-    return RedirectResponse("/sources", status_code=303)
+    return RedirectResponse(request.url_for("list_sources"), status_code=303)

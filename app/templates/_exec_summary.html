@@ -36,9 +36,9 @@
         </summary>
         <div class="gc-onepager-export-panel">
           <a target="_blank" rel="noopener"
-             href="/reports/export?week={{ week_id }}&format=pdf">Save as PDF</a>
+             href="{{ request.url_for('reports_export') }}?week={{ week_id }}&format=pdf">Save as PDF</a>
           <a target="_blank" rel="noopener"
-             href="/reports/export?week={{ week_id }}&format=html">Download HTML</a>
+             href="{{ request.url_for('reports_export') }}?week={{ week_id }}&format=html">Download HTML</a>
         </div>
       </details>
     {% endif %}

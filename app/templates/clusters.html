@@ -9,12 +9,12 @@
   <input type="search" name="q" value="{{ q or '' }}"
          class="gc-search-input" autocomplete="off"
          placeholder="Search cluster label…"
-         hx-get="/clusters" hx-trigger="keyup changed delay:300ms, search"
+         hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#clusters-list" hx-swap="innerHTML"
          hx-include="[name='week_id'],[name='section']"
          hx-push-url="true">
   <select name="section" class="gc-filter-select"
-          hx-get="/clusters" hx-trigger="change"
+          hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="change"
           hx-target="#clusters-list" hx-swap="innerHTML"
           hx-include="[name='week_id'],[name='q']"
           hx-push-url="true">
@@ -23,7 +23,7 @@
     {% endfor %}
   </select>
   <select name="week_id" class="gc-filter-select"
-          hx-get="/clusters" hx-trigger="change"
+          hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="change"
           hx-target="#clusters-list" hx-swap="innerHTML"
           hx-include="[name='section'],[name='q']"
           hx-push-url="true">

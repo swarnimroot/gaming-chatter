@@ -5,7 +5,7 @@
    with the active week pre-filtered (no section filter) so the user can browse
    the full topic list and see which clusters landed in which editorial card. #}
 {%- macro seeall_footer(week_key) -%}
-<a class="gc-card-seeall" href="/clusters?week_id={{ week_key }}">See all stories this week →</a>
+<a class="gc-card-seeall" href="{{ request.url_for('clusters_view') }}?week_id={{ week_key }}">See all stories this week →</a>
 {%- endmacro -%}
 <!doctype html>
 <html lang="en">
@@ -13,8 +13,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gaming Chatter — Weekly Read-out</title>
-  <link rel="icon" type="image/svg+xml" href="/static/img/alienware-head-light.svg">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='img/alienware-head-light.svg') }}">
+  <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
 </head>
@@ -32,7 +32,7 @@
   {# ===== Sidebar ===== #}
   <aside class="gc-sidebar">
     <div class="gc-sb-logo">
-      <img src="/static/img/alienware-head-light.svg" alt="">
+      <img src="{{ request.url_for('static', path='img/alienware-head-light.svg') }}" alt="">
       <div class="gc-sb-logo-name">Gaming Chatter</div>
     </div>
     <div class="gc-sb-tagline">Personal news intelligence</div>
@@ -85,7 +85,7 @@
         <button class="gc-cta gc-cta--ghost{% if not can_run_pipeline %} is-disabled{% endif %}"
                 {% if can_run_pipeline %}
                 title="Run ingest → enrich → embed → cluster → synthesize. ~5 min, ~$0.50 cost."
-                hx-post="/pipeline/run-full" hx-swap="outerHTML"
+                hx-post="{{ request.url_for('pipeline_run') }}" hx-swap="outerHTML"
                 hx-confirm="Run the full pipeline? Fetches new items, enriches with Haiku, re-clusters, and re-synthesizes. ~5 min, ~$0.50 in Anthropic cost."
                 {% else %}
                 disabled
@@ -94,7 +94,7 @@
           <i data-lucide="refresh-cw"></i>Run pipeline
         </button>
         <label class="gc-cta" for="modal-open"
-               hx-get="/reports/exec-summary?week={{ active_week_key }}"
+               hx-get="{{ request.url_for('reports_exec_summary') }}?week={{ active_week_key }}"
                hx-target="#exec-summary-body" hx-swap="innerHTML">
           <i data-lucide="file-text"></i>Exec summary
         </label>
@@ -117,7 +117,7 @@
             <div class="gc-biggest-list">
               {% for b in biggest %}
               <label class="gc-biggest gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ b.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ b.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <span class="gc-rank-badge">#{{ loop.index }}</span>
                 <div class="gc-biggest-body">
@@ -145,7 +145,7 @@
         {%- macro hot_rows(rows) -%}
           {% for g in rows %}
           <label class="gc-row gc-row--hottest gc-row-trigger" for="drawer-open"
-                 hx-get="/reports/drawer?kind=game&value={{ g.name|urlencode }}&week={{ active_week_key }}"
+                 hx-get="{{ request.url_for('reports_drawer') }}?kind=game&value={{ g.name|urlencode }}&week={{ active_week_key }}"
                  hx-target="#source-drawer-body" hx-swap="innerHTML">
             <span class="gc-row-rank">{{ "%02d"|format(loop.index) }}</span>
             <div>
@@ -194,7 +194,7 @@
             <div class="gc-row-list">
               {% for m in mm %}
               <label class="gc-row gc-row--mm gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ m.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ m.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <span class="gc-mm-category gc-mm-category--{{ m.category }}">{{ m.category }}</span>
                 <div>
@@ -218,7 +218,7 @@
         {%- macro trend_rows(rows, kind) -%}
           {% for r in rows %}
           <label class="gc-row gc-row--trend gc-row-trigger" for="drawer-open"
-                 hx-get="/reports/drawer?kind={{ kind }}&value={{ r.name|urlencode }}&week={{ active_week_key }}"
+                 hx-get="{{ request.url_for('reports_drawer') }}?kind={{ kind }}&value={{ r.name|urlencode }}&week={{ active_week_key }}"
                  hx-target="#source-drawer-body" hx-swap="innerHTML">
             <span class="gc-trend-name" title="{{ r.count }} this week · {{ r.prev_count }} prior">{{ r.name }}</span>
             {{ delta(r.delta_display, r.tone) }}
@@ -277,7 +277,7 @@
               <div class="gc-row-list">
                 {% for c in co.heated_about %}
                 <label class="gc-row gc-row--cs gc-row--cs-heated gc-row-trigger" for="drawer-open"
-                       hx-get="/reports/drawer?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
+                       hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
                        hx-target="#source-drawer-body" hx-swap="innerHTML">
                   <span class="gc-cs-dot gc-cs-dot--neg"></span>
                   <div>
@@ -294,7 +294,7 @@
               <div class="gc-row-list">
                 {% for c in co.celebrating %}
                 <label class="gc-row gc-row--cs gc-row--cs-positive gc-row-trigger" for="drawer-open"
-                       hx-get="/reports/drawer?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
+                       hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
                        hx-target="#source-drawer-body" hx-swap="innerHTML">
                   <span class="gc-cs-dot gc-cs-dot--pos"></span>
                   <div>
@@ -321,7 +321,7 @@
             <div class="gc-risks">
               {% for r in risks %}
               <label class="gc-risk gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ r.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ r.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <div class="gc-risk-bar gc-risk-bar--{{ r.level }}"></div>
                 <div class="gc-risk-body">
@@ -353,7 +353,7 @@
             <div class="gc-drama-list">
               {% for d in drama %}
               <label class="gc-drama gc-drama--{{ d.severity }} gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ d.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ d.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <div class="gc-drama-head">
                   <span class="gc-drama-sev gc-drama-sev--{{ d.severity }}">● {{ d.severity }}</span>
@@ -381,7 +381,7 @@
             <div class="gc-row-list">
               {% for e in es %}
               <label class="gc-row gc-row--esports gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ e.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ e.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <div>
                   <div class="gc-row-title">{{ e.title }}</div>
@@ -411,7 +411,7 @@
             <div class="gc-row-list gc-row-list--scrollable">
               {% for r in releases %}
               <label class="gc-row gc-row--release gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=game&value={{ r.name|urlencode }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=game&value={{ r.name|urlencode }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <div class="gc-row-date">{{ r.display_date }}</div>
                 <div>
@@ -437,7 +437,7 @@
               {% for w in watch %}
               {% if w.cluster_id %}
               <label class="gc-row gc-row--watch gc-row-trigger" for="drawer-open"
-                     hx-get="/reports/drawer?kind=cluster&value={{ w.cluster_id }}&week={{ active_week_key }}"
+                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ w.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <span class="gc-row-day">{{ w.day }}</span>
                 <span class="gc-row-item">{{ w.item }}</span>

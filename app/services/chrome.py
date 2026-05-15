@@ -6,18 +6,30 @@ definition here keeps a single source of truth.
 """
 from __future__ import annotations
 
+from starlette.requests import Request
+
+# (id, label, icon, route_name) — `route_name` is the FastAPI route name used
+# with request.url_for(...) so links resolve correctly under a path prefix
+# (e.g. Tailscale Funnel mounted at /gaming-chatter).
 NAV_ITEMS_BASE = [
-    {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "href": "/"},
-    {"id": "stories",   "label": "Stories",         "icon": "list",      "href": "/stories"},
-    {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "href": "/clusters"},
-    {"id": "sources",   "label": "Sources",         "icon": "rss",       "href": "/sources"},
-    {"id": "about",     "label": "About",           "icon": "info",      "href": "/about"},
+    {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "route": "reports_view"},
+    {"id": "stories",   "label": "Stories",         "icon": "list",      "route": "dashboard"},
+    {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "route": "clusters_view"},
+    {"id": "sources",   "label": "Sources",         "icon": "rss",       "route": "list_sources"},
+    {"id": "about",     "label": "About",           "icon": "info",      "route": "about"},
 ]
 
 
-def nav_items_for(active_id: str) -> list[dict]:
-    """Return the nav list with is_active set on the matching item."""
+def nav_items_for(request: Request, active_id: str) -> list[dict]:
+    """Return the nav list with hrefs resolved via request.url_for and
+    is_active set on the matching item."""
     return [
-        {**n, "is_active": n["id"] == active_id}
+        {
+            "id": n["id"],
+            "label": n["label"],
+            "icon": n["icon"],
+            "href": str(request.url_for(n["route"])),
+            "is_active": n["id"] == active_id,
+        }
         for n in NAV_ITEMS_BASE
     ]

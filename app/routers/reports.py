@@ -320,7 +320,7 @@ def reports_view(request: Request, week: str = ""):
             return templates.TemplateResponse(
                 request, "reports.html",
                 {"week": blank, "weeks_index": [], "active_week_key": "",
-                 "nav_items": nav_items_for("weekly"),
+                 "nav_items": nav_items_for(request, "weekly"),
                  "last_pull": "—", "last_workflow": "—",
                  "can_run_pipeline": True,
                  "sources_meta": {}},
@@ -350,7 +350,7 @@ def reports_view(request: Request, week: str = ""):
                 "week": week_data,
                 "weeks_index": weeks_index,
                 "active_week_key": active_key,
-                "nav_items": nav_items_for("weekly"),
+                "nav_items": nav_items_for(request, "weekly"),
                 "last_pull": _format_ago(last_pull_dt),
                 "last_workflow": _format_ago(last_workflow_dt),
                 "can_run_pipeline": can_run_pipeline,

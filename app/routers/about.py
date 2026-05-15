@@ -18,5 +18,5 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 def about(request: Request):
     return templates.TemplateResponse(
         request, "about.html",
-        {"nav_items": nav_items_for("about")},
+        {"nav_items": nav_items_for(request, "about")},
     )

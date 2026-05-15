@@ -9,7 +9,7 @@
   <input type="search" name="q" value="{{ q or '' }}"
          class="gc-search-input" autocomplete="off"
          placeholder="Search name or URL…"
-         hx-get="/sources" hx-trigger="keyup changed delay:300ms, search"
+         hx-get="{{ request.url_for('list_sources') }}" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#sources-list" hx-swap="innerHTML"
          hx-push-url="true">
 {% endblock %}

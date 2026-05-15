@@ -147,7 +147,7 @@ def dashboard(
     week_options = [("", f"Last {_WINDOW_DAYS} days")] + [(w, w) for w in wk_ids]
 
     ctx.update({
-        "nav_items": nav_items_for("stories"),
+        "nav_items": nav_items_for(request, "stories"),
         "total_count": len(ctx["items"]),
         "window_days": _WINDOW_DAYS,
         "section_options": SECTION_OPTIONS,

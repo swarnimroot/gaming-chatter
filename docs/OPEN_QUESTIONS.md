@@ -6,7 +6,22 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 ## Open from 2026-05-14 (Phase 3c.12)
 
-- **YouTube public RSS endpoint broken across many channels.** Last successful pull: 2026-05-07 16:20 (all 6 sources × 15 items each). Today's pipeline run: all 6 returned 404 (IGN got 500). Verified via direct curl that 3 unrelated control channels (Computerphile, Veritasium, Vsauce) also return 404/500 — so the issue is broader than our channel set; YouTube appears to be deprecating or restricting `feeds/videos.xml?channel_id=…`. Workarounds tried + failed: `?playlist_id=UU…` (uploads-playlist mirror), browser User-Agent + consent cookies, alt formats. **User chose to wait, retry next week** before deciding whether to migrate to YouTube Data API v3 (free quota covers 6 channels easily — Phase 4 work if RSS doesn't return). The 6 sources remain `enabled=1` in the DB and will continue to fail until either RSS heals or we cut over to the API.
+- ~~**YouTube public RSS endpoint broken across many channels.**~~ **Resolved 2026-05-14 (afternoon)** — transient YouTube-side outage that self-healed, not a deprecation. Revisit-day pull confirmed all 6 channels return 200 OK with fresh XML (~17–42 KB, 15 entries each); URL pattern `feeds/videos.xml?channel_id=UC…` unchanged. YouTube-only ingest brought in 41 new items / 0 errors; per-source `error_count` + `last_error` cleared on the successful pull. The original 404/500 pattern across our 6 channels AND 3 unrelated control channels (Computerphile / Veritasium / Vsauce) was a global YouTube-side hiccup, confirmed in retrospect. See SESSION_LOG 2026-05-14 (afternoon).
+
+- **YouTube per-video transcript fetch IP-blocked — scrapers-lib has the audio-transcribe fix; integration is Phase 3c.14 (next session).** `youtube-transcript-api` (wrapped by `scrapers-lib/tier1/youtube.py:fetch_youtube_transcript`) returns `IpBlocked` / `RequestBlocked` for most per-video calls under our current IP fingerprint. 2026-05-15 pipeline confirmed: ~19 of ~35 attempted transcripts raised `BlockedError("bot-gate on <video_id> (IpBlocked)")`; `app/services/enrich.py` correctly fell back to title/body enrichment. Net effect: title-only enrichment for most YT items, contributing to ~10% Haiku taxonomy slippage (`category 'guide'/'preview'/'interview' not in allowed set`).
+
+  **Status 2026-05-15 (afternoon):** user implemented the new yt-dlp + faster-whisper audio-transcribe path **in scrapers-lib**. Audio stream is on a different YouTube endpoint family from the caption-API and isn't subject to the same bot-gate. Output flows into our existing `RawMention` → enrich → embed → cluster → synth path with no downstream changes. See scrapers-lib CHANGELOG for the exact new API surface.
+
+  **Integration tasks for next session (Phase 3c.14):**
+  (a) bump `scrapers-lib` version in `pyproject.toml`;
+  (b) swap the YT transcript call in `app/services/ollama.py` (legacy filename, post-Haiku migration) from the bot-gated transcript-API to the new audio path — prefer `audio_fallback` mode if exposed (try caption-API first, fall back to audio on `BlockedError`); fall back to title/body only when both fail;
+  (c) spike-test on 2-3 of 2026-05-15's `IpBlocked` video IDs to confirm the audio path works under our current IP;
+  (d) re-enrich the 2026-05-15 title-only YT items so they get full transcripts retroactively;
+  (e) run full pipeline + force re-synth W20; compare cluster outcomes + taxonomy-slippage rate vs. today's title-only baseline;
+  (f) document outcome in `docs/DECISIONS.md` (model used — `small.en` recommended per the handoff brief for the speed/quality balance, runtime hit, quality delta);
+  (g) close this OPEN_QUESTIONS entry on resolution.
+
+  **Honest framing from today's analysis:** the marginal cluster value is uncertain. Even when transcripts worked pre-2026-05-07, YT content rarely clustered with news articles at the 0.85 threshold due to vocab gap (video-essay phrasing vs. news headlines). Build this for completeness / honest-data reasons, not because the weekly brief is currently broken without it. Expected pipeline-time hit: +1.5–3 h for 90 videos × ~60–120 s/video — acceptable for overnight APScheduler runs (Phase 4), visibly slow for the interactive Run-pipeline button.
 
 ## Pending external delivery
 

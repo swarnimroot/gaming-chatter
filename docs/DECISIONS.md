@@ -4,6 +4,34 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-15 — Path-prefix support via FastAPI `root_path`; static files served as a Route (not a Mount); orphan `base.html` deleted; nav fail-fast validator
+
+**Scope:** App needed to be reachable via Tailscale Funnel at `https://laptop-aknevrti.taile7462c.ts.net/gaming-chatter`. Tailscale strips the `/gaming-chatter` prefix before forwarding to localhost. Three coupled changes: (a) all template URLs switched from hardcoded `/path` strings to `request.url_for(...)` driven by FastAPI's `root_path` (env var `GC_ROOT_PATH`, default empty for local dev); (b) `app.mount("/static", StaticFiles(...))` replaced with a regular `@app.get("/static/{path:path}")` route because Mount + root_path interact badly; (c) the orphaned legacy `app/templates/base.html` deleted, and a fail-fast nav validator added to the lifespan hook.
+
+**Locked decisions:**
+
+- **URL prefix is controlled by `GC_ROOT_PATH` env var**, read via `os.getenv` in `app/main.py` and passed to `FastAPI(root_path=...)`. Empty default = no prefix = local dev at `localhost:8001/`. `.env` sets it to `/gaming-chatter` for the Tailscale Funnel deployment. Rejected: hardcoding `/gaming-chatter` in templates (the prior state) — same brittleness the refactor was meant to escape. Rejected: uvicorn's `--root-path` CLI flag instead of FastAPI's constructor arg — empirically identical behavior in TestClient, and the FastAPI constructor approach keeps configuration with the code rather than scattered across launch commands.
+
+- **All app URLs go through `request.url_for(...)`.** 15 files modified (templates, routers, `app/services/chrome.py`). Nav rendering moved from static `href` strings in `NAV_ITEMS_BASE` to runtime resolution via `nav_items_for(request, active_id)` — signature change updates 5 call sites. Internal `RedirectResponse(url="/...")` calls (5 of them across `clusters.py`, `sources.py`, `enrich.py`) now construct their target via `request.url_for(...)`. Rejected: leaving redirects hardcoded — same bug class on a different rendering path.
+
+- **Static files served as a FastAPI route, NOT via `app.mount(...)`.** When `root_path` is set, Starlette's `Mount.matches()` builds the child scope's `root_path` as `outer_root_path + mount_path` (e.g., `/gaming-chatter/static`). `StaticFiles.get_path()` then tries to strip that prefix from the request path — but for proxy-stripped requests (`/static/app.css`), the path doesn't start with `/gaming-chatter/static`, so the strip becomes a no-op and StaticFiles resolves `STATIC_DIR/static/app.css` (one directory too deep → 404) instead of `STATIC_DIR/app.css`. A regular `@app.get("/static/{path:path}", name="static")` route doesn't hit this interaction — Route matching is `root_path`-aware in the standard way, and `request.url_for('static', path=...)` still works from templates unchanged. Cost: marginally slower than StaticFiles' optimized Mount (FastAPI pipeline per request) and a hand-rolled path-traversal guard, but for a single-user local app with ~5 static files this is invisible. Rejected: configuring Tailscale Funnel to preserve the prefix — `tailscale funnel --set-path` strips by default and there's no documented preserve mode. Rejected: keeping the Mount and accepting the 404 — defeats the purpose of the refactor.
+
+- **Forward rule: do not add `app.mount(...)` calls while `root_path` is set.** Any future feature wanting a sub-app, plugin UI, second static directory, or admin mount must use FastAPI routes instead. A blocking comment in `app/main.py` near the static route documents the trap; this DECISIONS entry is the long-form rationale. Reason: the Mount/root_path interaction is silent — it'll work fine in local dev (where `GC_ROOT_PATH` is empty) and break only at deploy time, exactly the way the static bug did.
+
+- **`app/templates/base.html` deleted.** Pre-Phase-3c.7 legacy nav shell, not extended by any live template (`shell_base.html` superseded it). Still had hardcoded `/static/app.css` and `/clusters` paths and would have re-introduced the prefix bug if anyone resurrected it (e.g., as a starting template for a new page). Confirmed `grep -rn "extends.*base\.html"` shows only `shell_base.html` is extended; safe to delete. Rejected: keeping it as "documentation of the old approach" — `shell_base.html` and DECISIONS.md cover that.
+
+- **Startup-time nav validator in the lifespan hook.** Every `route` name referenced in `NAV_ITEMS_BASE` is resolved via `app.url_path_for(...)` at boot; if any fails, the app refuses to start with a clear `RuntimeError`. Converts a silent post-deploy 500 (rename a router function, forget to update NAV_ITEMS_BASE) into a loud boot-time crash. Rejected: leaving validation to runtime — first user-visible failure would be a 500 on a nav-rendered page, only after deploy. Rejected: a full route-name check across all `request.url_for(...)` callers in templates — would need template static-analysis tooling we don't have; the nav validator catches the most common refactor case (renaming a top-nav function) without that complexity.
+
+**Verification:**
+- Local smoke test (root mount, `GC_ROOT_PATH` unset): all routes return 200; generated URLs are bare (`/static/app.css`).
+- Local smoke test (with `GC_ROOT_PATH=/gaming-chatter`): all routes 200; bare paths `/static/app.css` and `/static/img/alienware-head-light.svg` also serve 200 via the new route (proxy-stripped path scenario); generated URLs are prefixed (`/gaming-chatter/static/app.css`); path-traversal probe `/static/../config.py` 404s as expected.
+- Public URL `https://laptop-aknevrti.taile7462c.ts.net/gaming-chatter` renders with full styling (CSS + favicon load; nav + HTMX endpoints work).
+- Nav validator: app boots clean with the 5 current NAV_ITEMS_BASE entries (`reports_view`, `dashboard`, `clusters_view`, `list_sources`, `about`); raises `RuntimeError` with the offending name if any nav entry references a missing route.
+
+**Spend this session:** zero LLM cost (refactor + docs only).
+
+---
+
 ## 2026-05-14 (Phase 3c.9 → 3c.12 shipped) — Stories rename · /stories URL · header tags · Run-pipeline button · cluster toggle · section overlay (multi-chip) · dropdowns · incremental clustering · legacy clusters dropped
 
 **Scope:** UX cleanups (corpus sidebar removed, Dashboard renamed to Stories), home-page header chrome (last pull / last workflow chips + Run pipeline button), `/clusters` cluster-cards/list toggle + section chips + section + week dropdowns, "See all stories this week →" footer links on the 7 editorial home cards, same dropdowns on Stories, first end-to-end pipeline run (~$1.29) + W19 re-synth, incremental cluster_window + skip-synth-when-unchanged, multi-chip rendering per cluster (every section a cluster appears in, not just primary), 63 legacy `week_id='all'` clusters dropped, favicon link.

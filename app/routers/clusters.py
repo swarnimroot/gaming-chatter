@@ -135,6 +135,7 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
 
 @router.post("/clusters/run")
 def clusters_run(
+    request: Request,
     bg: BackgroundTasks,
     week_id: str = "all",
     sync: bool = False,
@@ -142,7 +143,10 @@ def clusters_run(
     if sync:
         return JSONResponse(cluster_window(week_id=week_id))
     bg.add_task(cluster_window, week_id=week_id)
-    return RedirectResponse(f"/clusters?week_id={week_id}", status_code=303)
+    return RedirectResponse(
+        f"{request.url_for('clusters_view')}?week_id={week_id}",
+        status_code=303,
+    )
 
 
 @router.get("/clusters")
@@ -160,7 +164,7 @@ def clusters_view(
         return templates.TemplateResponse(request, "_clusters_list.html", ctx)
 
     ctx.update({
-        "nav_items": nav_items_for("clusters"),
+        "nav_items": nav_items_for(request, "clusters"),
         "total_count": len(ctx["clusters"]),
     })
     return templates.TemplateResponse(request, "clusters.html", ctx)

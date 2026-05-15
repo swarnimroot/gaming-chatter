@@ -9,12 +9,12 @@
   <input type="search" name="q" value="{{ q or '' }}"
          class="gc-search-input" autocomplete="off"
          placeholder="Search title, TL;DR, source…"
-         hx-get="/stories" hx-trigger="keyup changed delay:300ms, search"
+         hx-get="{{ request.url_for('dashboard') }}" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#dashboard-list" hx-swap="innerHTML"
          hx-include="[name='week_id'],[name='section']"
          hx-push-url="true">
   <select name="section" class="gc-filter-select"
-          hx-get="/stories" hx-trigger="change"
+          hx-get="{{ request.url_for('dashboard') }}" hx-trigger="change"
           hx-target="#dashboard-list" hx-swap="innerHTML"
           hx-include="[name='week_id'],[name='q']"
           hx-push-url="true">
@@ -23,7 +23,7 @@
     {% endfor %}
   </select>
   <select name="week_id" class="gc-filter-select"
-          hx-get="/stories" hx-trigger="change"
+          hx-get="{{ request.url_for('dashboard') }}" hx-trigger="change"
           hx-target="#dashboard-list" hx-swap="innerHTML"
           hx-include="[name='section'],[name='q']"
           hx-push-url="true">

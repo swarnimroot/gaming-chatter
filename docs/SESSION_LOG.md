@@ -4,6 +4,70 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-15 (Phase 3c.13 + one-off YouTube ingest) — YouTube RSS recovered · ad-hoc YT-only ingest + W20 force re-synth · Tailscale Funnel deploy revealed root_path coupling · 15-file URL refactor → request.url_for(...) · static Mount→Route fix · base.html killed · nav fail-fast validator · DECISIONS 2026-05-15
+
+**Two threads this session:**
+
+1. **YouTube triage + ad-hoc ingest** (morning): User asked to recheck the May 14 YouTube outage. Live curl against all 6 channel feeds returned 200 OK with fresh XML (~17–42 KB each) — the outage was transient and self-healed; not a deprecation. The URL pattern `feeds/videos.xml?channel_id=UC…` is unchanged. Ran a scoped YouTube-only ingest (`ingest_source` × 6 enabled YT sources) → 90 fetched / 41 new / 49 dedup-skipped / **0 errors**; `error_count` and `last_error` cleared on every source. Chained the rest: `python scripts/run_enrich_batch.py` (4 min — 41 attempted / 35 ok / 4 failed on Haiku taxonomy slippage `'guide' / 'preview' / 'interview'` / 2 skipped; 35/35 embedded), inline `cluster_window_incremental(W19, W20)` (4 items appended to existing clusters across both weeks, 0 new clusters, 0 Sonnet labels), then `python scripts/run_synthesis.py 2026-W20 --force` (62 s, 6090 chars JSON, Opus + critic). Cost: **~$0.38** (~$0.02 enrich + ~$0.36 synth). Cumulative: **~$10.28**.
+
+   Per-video YT transcript-API path remained bot-gated through this run: ~19 of 35 attempted transcripts raised `BlockedError("bot-gate on <id> (IpBlocked)")`; `enrich.py` correctly fell back to title/body. That's likely what feeds the 10% taxonomy-failure rate on YT items (short titles → Haiku picks a category outside the 12-category lock). Wrote a scrapers-lib handoff brief for the deferred audio-transcribe path; user took that to scrapers-lib, returned later with confirmation that the fix is implemented there.
+
+2. **Tailscale Funnel deploy → root_path refactor** (afternoon): User exposed `:8001` at `https://laptop-aknevrti.taile7462c.ts.net/gaming-chatter`. First load was completely unstyled (serif text, blue underlined links, no grid). Diagnosis from the rendered HTML: templates emit hardcoded root-absolute URLs (`/static/app.css`, `/clusters`, `hx-get="/clusters"`, …) but the browser resolves those against the public root, not the prefix subtree. Tailscale Funnel only forwards `/gaming-chatter/*` paths and strips that prefix before reaching the app. Two options: (1) drop `--set-path` in Tailscale, serve at device root; (2) make the app prefix-aware via FastAPI's `root_path` + Starlette's `request.url_for(...)`. User chose (2) for deployment portability (future cloud / custom domain / multi-app hosting should "just work").
+
+**Phase 3c.13 — root_path + url_for refactor (15 files modified + 1 deleted):**
+
+- **`app/main.py`** — `FastAPI(root_path=os.getenv("GC_ROOT_PATH", ""))`. Default empty = local dev at `localhost:8001/`. `.env` adds `GC_ROOT_PATH=/gaming-chatter` for Tailscale Funnel. Same `.env` loading via `app.config:load_dotenv` already imports before `os.getenv` runs (line 8 imports `app.config` which triggers dotenv → line 21 reads the populated env). No code-flow regression for the no-env case.
+- **`app/services/chrome.py`** — `NAV_ITEMS_BASE` refactored from static `href` strings to **route names** (`reports_view` / `dashboard` / `clusters_view` / `list_sources` / `about`). `nav_items_for(request, active_id)` resolves via `request.url_for(...)` at request time. 5 call sites updated to pass `request`.
+- **6 router files** (`about`, `clusters`, `dashboard`, `enrich`, `reports`, `sources`) — gained `request: Request` param in 7 routes; 5 internal `RedirectResponse(url="/...")` calls now use `request.url_for(...)` so redirect chains also respect the prefix.
+- **7 template files** (`reports`, `shell_base`, `_sidebar`, `_exec_summary`, `clusters`, `dashboard`, `sources`) — every hardcoded `/static/...`, `/clusters`, `/stories`, `/sources`, `/about`, `/pipeline/run-full`, `hx-get="/..."`, `hx-post="/..."` replaced with `{{ request.url_for(...) }}`. Query strings preserved as Jinja suffix pattern (`{{ url_for('x') }}?week_id={{ key }}`) — Starlette's `url_for` doesn't take query params; the suffix approach is the documented workaround.
+- **Static files: `app.mount("/static", StaticFiles(...))` → `@app.get("/static/{path:path}", name="static")` route** that uses `FileResponse` + a hand-rolled path-traversal guard. Reason: Starlette's Mount + `root_path` interaction silently breaks for proxy-stripped requests. Traced via debug ASGI middleware + monkey-patched `Mount.matches()` → confirmed `child_scope["root_path"] = outer_root_path + mount_path = "/gaming-chatter/static"`. Then `StaticFiles.get_path()` tries to strip that from request path, but bare `/static/app.css` (Tailscale-stripped) doesn't start with `/gaming-chatter/static`, so the strip is a no-op and StaticFiles resolves `STATIC_DIR/static/app.css` (404, wrong directory) instead of `STATIC_DIR/app.css`. A FastAPI route doesn't have this interaction — Route matching is `root_path`-aware in the standard way, and `name="static"` keeps `request.url_for('static', path=…)` working from templates unchanged. Cost: marginally slower than StaticFiles' optimized Mount + hand-rolled traversal guard, but invisible for a single-user local app.
+- **`app/templates/base.html` deleted** — legacy pre-3c.7 nav shell, not extended by any live template (only `shell_base.html` is extended now). Still had hardcoded paths; would have re-introduced the prefix bug if anyone resurrected it.
+- **Nav fail-fast validator** added to the lifespan hook: `app.url_path_for(name)` resolves every `NAV_ITEMS_BASE.route`; missing names raise `RuntimeError` at boot rather than 500-ing at first nav render. Verified the failure path by injecting a bogus route name into `NAV_ITEMS_BASE` — `RuntimeError: Nav routes not registered: ['this_route_does_not_exist']`.
+
+**Process notes:**
+
+- The refactor was delegated to a general-purpose subagent with an explicit phased brief (discovery → main.py edit → template edits → smoke test → report). It expanded scope cleanly into `chrome.py` (required for correctness — nav was the most coupled URL source) and the 5 internal `RedirectResponse` paths (also required). Verified by independent `git diff --stat` + my own smoke test before declaring done.
+- The static 404 took a second diagnostic pass after the initial refactor — when I first tested with `GC_ROOT_PATH` set, the bare `/static/app.css` still 404'd. Routes returned 200 either way (bare or prefixed) but static only worked with prefix. Traced the asymmetry to `Mount.matches()` setting `child_scope.root_path = outer + matched` — the load-bearing line behind the bug.
+- Honest forward-blocker evaluation at the end: 12 candidate concerns identified, filtered to 3 worth fixing now (Mount-trap signpost via DECISIONS + comment, `base.html` delete, nav validator). The other 9 are quick-fix-when-they-bite at the same cost as fix-now, so deferred. Real residual concerns: (a) the Mount-trap is signposted but not eliminated — future `app.mount(...)` calls re-trigger it; (b) URL generation outside request context (cron / email) needs a `gc_url()` helper when push delivery lands; (c) nav validator catches `NAV_ITEMS_BASE` route-rename breakage but not template-level `url_for('foo')` typos for non-nav routes. All bounded, none silent-data-loss.
+
+**Verified end-to-end on the user's `:8001 --reload`:**
+
+- Local (no env var): all 5 routes 200; generated URLs bare.
+- With `GC_ROOT_PATH=/gaming-chatter`: all routes 200 at both bare and prefixed paths; generated URLs carry the prefix; path-traversal probe blocked.
+- Public URL via Tailscale Funnel `https://laptop-aknevrti.taile7462c.ts.net/gaming-chatter`: CSS + favicon + nav + HTMX search-as-you-type all working.
+- Nav validator: clean boot with 5 NAV_ITEMS_BASE entries; raises on injected missing route name.
+
+**Spend this session:** ~$0.38 LLM (one-off YT ingest + W20 force re-synth). Cumulative project: ~$10.28.
+
+**Where we left off:**
+
+- Tailscale Funnel deploy live and fully styled. Local dev still works at `localhost:8001/` with the env var unset.
+- 17 files modified + 1 deleted, **committed** as Phase 3c.13.
+- YouTube RSS healed; per-source error counters cleared.
+- W20 force-resynth fresh (Opus 4.7, 6090 chars JSON, regenerated 2026-05-14 14:23 UTC).
+
+**Next session (locked priority — YouTube audio-transcribe integration):**
+
+scrapers-lib has shipped the new yt-dlp + faster-whisper audio path (per user, end of this session). gaming-chatter integration tasks:
+
+1. Bump `scrapers-lib` version in `pyproject.toml` (check scrapers-lib CHANGELOG for the new version + the exact API — sibling fn `fetch_youtube_audio_transcript` vs. mode arg on the existing `fetch_youtube_transcript`).
+2. Swap the transcript call in `app/services/ollama.py` (legacy filename kept post-Haiku migration) from the bot-gated transcript-API path to the new audio path. Prefer `audio_fallback` mode if exposed — try caption-API first, fall back to audio on `BlockedError`. Fall back to title/body only when both paths fail.
+3. Sanity check: `python -c` test against 2-3 of yesterday's IpBlocked video IDs to confirm audio path works on a fresh IP. Then run `python scripts/run_enrich_batch.py` to re-enrich the title-only items from this session (they'll now have full transcripts).
+4. Run full pipeline (button or manual chain) + force re-synth W20. Compare cluster outcomes vs. today's title-only baseline (do any YT items now cluster with news? does taxonomy slippage drop below 10%?).
+5. Document outcome in DECISIONS.md 2026-05-XX: model used (`small.en` recommended for the speed/quality balance per the handoff brief), per-week pipeline runtime hit, taxonomy-slippage delta.
+6. Close out the OPEN_QUESTIONS.md transcript-deferred entry.
+
+Expected: ~$1-2 LLM + ~90-180 min wall-clock for the whisper pass depending on model. After that: Phase 4 (APScheduler + `/runs` UI + Source CRUD via web forms).
+
+**Files touched / new this session:**
+
+- New: (none)
+- Edited: `app/main.py`, `app/services/chrome.py`, `app/routers/{about,clusters,dashboard,enrich,reports,sources}.py`, `app/templates/{_exec_summary,_sidebar,clusters,dashboard,reports,shell_base,sources}.html`, `docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md`, `docs/SESSION_LOG.md`, `docs/TASKS.md`, `CLAUDE.md`, `.env` (added `GC_ROOT_PATH`).
+- Deleted: `app/templates/base.html`.
+- DB: 41 new YouTube items (W19/W20 windows), 35 enriched + embedded, 4 cluster appends (W19:1 + W20:3), W20 force-re-synthesized.
+
+---
+
 ## 2026-05-14 (Phase 3c.9 → 3c.12) — Corpus sidebar drop · Dashboard→Stories · /stories URL · header pull/workflow tags · Run-pipeline button · cluster toggle view · section overlay · multi-chip per cluster · dropdowns on /clusters + /stories · See-all card footers · 63 legacy clusters dropped · first end-to-end pipeline run (~$1.29) · W19 re-synth · incremental clustering · skip-synth · favicon · YouTube RSS broken (deferred)
 
 This session compounded across four loose phases. Grouped here for readability — every change is on disk; the cumulative ChangeSet covers ~12 files + 1 new module + 2 new templates + ~280 lines of CSS.

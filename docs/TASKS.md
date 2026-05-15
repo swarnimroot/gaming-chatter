@@ -133,6 +133,14 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [x] Live HTMX search on Dashboard / Clusters / Sources. — **Done 2026-05-13.** `<input class="gc-search-input" hx-get hx-trigger="keyup changed delay:300ms" hx-push-url="true">` in each header. Servers branch on `HX-Request` header → return list-only partial. URL stays in sync with the search term. Filters: dashboard = title/TLDR/source name (ILIKE), clusters = label, sources = name/URL.
 - [x] Drawer `<a>`-nesting bug fix. — **Done 2026-05-13.** Each drawer item was rendering with two empty bordered rectangles per card because `source_pill` macro emits `<a href="#">` and we wrapped each item in `<a href="article-url">` — invalid HTML, browser auto-closes the outer `<a>` early. Fix: drawer renders the source pill inline as `<span class="gc-pill">` instead of calling the macro.
 
+### Phase 3c.13 — Path-prefix support (Tailscale Funnel) + url_for refactor — **Done 2026-05-15**
+
+- [x] `FastAPI(root_path=os.getenv("GC_ROOT_PATH", ""))` with `.env` setting `/gaming-chatter` for deploy; empty default for local dev. — **Done 2026-05-15.**
+- [x] 15-file refactor: hardcoded URL strings → `request.url_for(...)` across templates, nav (`chrome.py`), HTMX endpoints, and internal `RedirectResponse` calls. — **Done 2026-05-15.**
+- [x] Static files: `app.mount("/static", StaticFiles)` → `@app.get("/static/{path:path}", name="static")` route. Reason: Starlette Mount + `root_path` interaction breaks proxy-stripped paths. Forward rule documented in `DECISIONS.md` 2026-05-15. — **Done 2026-05-15.**
+- [x] Orphan `app/templates/base.html` deleted. — **Done 2026-05-15.**
+- [x] Boot-time nav fail-fast validator in lifespan hook. — **Done 2026-05-15.**
+
 ### Phase 3d — Archive (optional, deferred)
 
 - [ ] Markdown rendering from synthesis_json → `weekly_reports.markdown_content`
@@ -140,6 +148,18 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 - [ ] Reports archive view — sibling of `/reports/{id}`
 
 - [ ] **End of Phase 3 = working product.**
+
+## Phase 3c.14 (next session) — YouTube audio-transcribe integration
+
+scrapers-lib has shipped the yt-dlp + faster-whisper audio path (per user, end of 2026-05-15). Integration tasks for gaming-chatter:
+
+- [ ] Bump `scrapers-lib` version in `pyproject.toml` (check scrapers-lib CHANGELOG for the new API surface — sibling `fetch_youtube_audio_transcript` vs. mode arg on existing function)
+- [ ] Swap transcript call in `app/services/ollama.py` (legacy filename, post-Haiku migration) from bot-gated transcript-API path to new audio path. Prefer `audio_fallback` mode if exposed.
+- [ ] Sanity-test on 2-3 of yesterday's `IpBlocked` video IDs to confirm audio path works
+- [ ] Re-enrich title-only YT items from 2026-05-15 (so they get full transcripts retroactively)
+- [ ] Run full pipeline + force re-synth W20; compare cluster outcomes + taxonomy-slippage rate vs. today's title-only baseline
+- [ ] Document outcome in `docs/DECISIONS.md` (model used — `small.en` recommended per scrapers-lib brief, runtime hit, quality delta)
+- [ ] Close out the `docs/OPEN_QUESTIONS.md` transcript-deferred entry
 
 ## Phase 4 — Automation
 
