@@ -149,17 +149,17 @@ Inserted 2026-05-12 after the qwen2.5:7b quality ceiling forced an override of t
 
 - [ ] **End of Phase 3 = working product.**
 
-## Phase 3c.14 (next session) — YouTube audio-transcribe integration
+## Phase 3c.14 (shipped 2026-05-15) — YouTube audio-transcribe integration
 
-scrapers-lib has shipped the yt-dlp + faster-whisper audio path (per user, end of 2026-05-15). Integration tasks for gaming-chatter:
+scrapers-lib v1.7.0 shipped the yt-dlp + faster-whisper audio fallback; gaming-chatter wired it in. 3-line app change + 35-item backfill of 2026-05-14's YT enrichments + W20 force-resynth. Per-item enrichment quality improved (0 taxonomy slippage on the backfill set); cross-source cluster effect ~zero (vocab gap unchanged at 0.85 cosine). See DECISIONS.md 2026-05-15 (later) + SESSION_LOG.md 2026-05-15 (Phase 3c.14).
 
-- [ ] Bump `scrapers-lib` version in `pyproject.toml` (check scrapers-lib CHANGELOG for the new API surface — sibling `fetch_youtube_audio_transcript` vs. mode arg on existing function)
-- [ ] Swap transcript call in `app/services/ollama.py` (legacy filename, post-Haiku migration) from bot-gated transcript-API path to new audio path. Prefer `audio_fallback` mode if exposed.
-- [ ] Sanity-test on 2-3 of yesterday's `IpBlocked` video IDs to confirm audio path works
-- [ ] Re-enrich title-only YT items from 2026-05-15 (so they get full transcripts retroactively)
-- [ ] Run full pipeline + force re-synth W20; compare cluster outcomes + taxonomy-slippage rate vs. today's title-only baseline
-- [ ] Document outcome in `docs/DECISIONS.md` (model used — `small.en` recommended per scrapers-lib brief, runtime hit, quality delta)
-- [ ] Close out the `docs/OPEN_QUESTIONS.md` transcript-deferred entry
+- [x] Bump `scrapers-lib` version in `pyproject.toml` — `"scrapers-lib>=1.7.0"`; `[youtube-audio]` extra installed imperatively (see DECISIONS rationale). — **Done 2026-05-15.**
+- [x] Swap transcript call in `app/services/ollama.py:185` — added `audio_fallback=True` kwarg; wrapper return shape unchanged. — **Done 2026-05-15.**
+- [x] Sanity-test on 3 yesterday's `IpBlocked` video IDs via `scripts/_spike_yt_audio.py` — 1 audio rescue + 2 caption successes; ~88 s first call (cold start + model download), ~1.3 s warm. — **Done 2026-05-15.**
+- [x] Re-enrich title-only YT items from 2026-05-14 — 34/35 ok, 1 skipped (audio also empty); 6 audio-fallback firings; ~71 min wall-clock dominated by cold-start. — **Done 2026-05-15.**
+- [x] Run full pipeline + force re-synth W20 — `cluster_window_incremental` returned 0 appended / 0 new / 330 orphaned (vocab gap holds); synth regenerated fresh, 6246 chars JSON. — **Done 2026-05-15.**
+- [x] Document outcome in `docs/DECISIONS.md` (model = `small.en`, runtime profile, quality delta, honest caveats on attribution). — **Done 2026-05-15.**
+- [x] Close out the `docs/OPEN_QUESTIONS.md` transcript-deferred entry — resolved; 3 new flag-only entries added (audio-fallback length cap, transcript quality floor, rerun_enrichment cp1252 print bug). — **Done 2026-05-15.**
 
 ## Phase 4 — Automation
 

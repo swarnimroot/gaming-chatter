@@ -182,7 +182,7 @@ def fetch_youtube_transcript(url_or_id: str) -> str:
         log.warning("scrapers_lib.tier1.youtube not importable; skipping transcript")
         return ""
     try:
-        chunks = _yt(url_or_id)
+        chunks = _yt(url_or_id, audio_fallback=True)
     except Exception as e:  # noqa: BLE001
         log.warning("youtube transcript fetch failed for %s: %s", url_or_id, e)
         return ""

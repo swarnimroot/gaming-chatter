@@ -4,6 +4,35 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-15 (Phase 3c.14) — YouTube audio-transcribe path wired up · 35-item backfill · W20 force-resynth · cluster effect = ~0, per-item enrichment quality ↑
+
+**What was done:**
+
+1. **scrapers-lib v1.7.0 installed with `[youtube-audio]` extra** (yt-dlp 2026.3.17 + faster-whisper 1.2.1 + PyAV 17.0.1 + ctranslate2 4.7.1 + onnxruntime 1.26.0). One imperative `pip install -e "..\scrapers-lib[youtube-audio]"` against system Python 3.12.9 — project has no `.venv` and no `uv` on this machine, so `[tool.uv.sources]` in pyproject.toml is inert here. PyAV bundles its own audio decoding libs; **no system ffmpeg needed**.
+
+2. **3-line app change:**
+   - `pyproject.toml`: `"scrapers-lib"` → `"scrapers-lib>=1.7.0"` (extra deliberately NOT in pyproject — see DECISIONS).
+   - `app/services/ollama.py:185`: `_yt(url_or_id)` → `_yt(url_or_id, audio_fallback=True)`. Wrapper still returns `str` (joined `raw_text` from chunks); `enrich.py:_body_for_enrichment` behavior preserved end-to-end.
+
+3. **Spike-test on 3 yesterday-IpBlocked video IDs** via one-off `scripts/_spike_yt_audio.py`: first call 88.9 s (40 s model download/load + 49 s `small.en` on a 59.5 s horror-trailer clip; transcript = vocal-sting noise but Haiku-tagable). Other two videos hit working captions today, ~1.3 s each.
+
+4. **35-item backfill** of yesterday's YT enrichment set via `scripts/rerun_enrichment.py --ids "..."`. Totals `ok=34 / skipped=1` (1567 — `1-yCgaoQ3BI` audio path empty too; existing `ok` preserved). 6 audio-fallback firings out of 35; 28 used captions. ~71 min wall-clock dominated by the cold-start first audio rescue. **Hit a Windows cp1252 crash on the post-run diff print** — `👀` emoji in a video title couldn't encode to console. DB writes are commit-per-item, all changes durable; crash purely cosmetic. Logged in OPEN_QUESTIONS as a small follow-up.
+
+5. **Post-processing driver** (`scripts/_backfill_yt_audio_postprocess.py`, one-off): null embeddings on backfill set → `embed_pending()` re-embedded 35 via Ollama `nomic-embed-text` → `cluster_window_incremental('2026-W20')` → `synthesize_week('2026-W20', force=True)`. 3.5 min total. Result: `items_appended_existing=0 / clusters_new_created=0 / items_orphaned=330` — confirms the YT-vs-news vocab-gap framing from yesterday's OPEN_QUESTIONS; audio transcripts improve per-item enrichment but don't shift cluster membership at the current 0.85 cosine threshold. W20 synth regenerated fresh (Opus 4.7 + critic, 6246 chars JSON).
+
+**Where we left off:**
+
+- Phase 3c.14 fully shipped. Audio fallback engaged on every YT enrichment from this point forward.
+- 2 one-off scripts (`_spike_yt_audio.py`, `_backfill_yt_audio_postprocess.py`) deleted at session close per their docstrings; behavior captured in this entry + DECISIONS.
+- OPEN_QUESTIONS transcript-deferred entry resolved. 2 flag-only entries remain (audio-fallback length cap for future long-form sources, transcript quality floor for future hardening). A 3rd entry — rerun_enrichment.py cp1252 emoji-print crash — was flagged AND fixed same-session via `if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at `scripts/rerun_enrichment.py:21-22`.
+- 35 backfilled items currently all sit in the 8-category locked taxonomy — 0 `'guide'/'preview'/'interview'` slippage on the set. Direction is correct; honest caveat that we can't fully separate audio-path effect from today's stabler caption endpoint (overwrote yesterday's enrichments in place).
+
+**Spend this session:** ~$0.38 LLM (~$0.03 Haiku × 35 re-enrich + ~$0.35 Opus synth + critic). $0 audio path (local CPU). Cumulative project: ~$10.66.
+
+**Next session — Phase 4 (Automation):** APScheduler daily ingest + Monday-morning synthesis cron + catch-up-on-startup + `/runs` UI + Source CRUD via web forms. See TASKS.md Phase 4.
+
+---
+
 ## 2026-05-15 (Phase 3c.13 + one-off YouTube ingest) — YouTube RSS recovered · ad-hoc YT-only ingest + W20 force re-synth · Tailscale Funnel deploy revealed root_path coupling · 15-file URL refactor → request.url_for(...) · static Mount→Route fix · base.html killed · nav fail-fast validator · DECISIONS 2026-05-15
 
 **Two threads this session:**

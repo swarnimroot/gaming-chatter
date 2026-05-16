@@ -4,19 +4,19 @@ Personal weekly gaming-news aggregator. Daily ingest from a curated list of news
 
 ## Status
 
-**Phase 3c.0.5 shipped (2026-05-12).** 988 items ingested · 887 Haiku-enriched + 13 preserved-qwen + 88 skipped · 900 re-embedded (768-dim) · 189 games tagged · 55 per-ISO-week clusters (W17/W18/W19). Per-item enrichment + game tagging now on **Anthropic Haiku 4.5**; embeddings stay on local Ollama; cluster labels + synthesis still pending (Phase 3c.4). See [`docs/TASKS.md`](docs/TASKS.md) for the phased plan and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest handoff.
+**Phase 3c.14 shipped (2026-05-15).** 1597 items · 1412 Haiku-enriched + embedded (768-dim `nomic-embed-text`) · 184 games tagged · 247 per-ISO-week clusters with Sonnet-4.6 labels · 4 `weekly_reports` rows (W17–W20, all Opus-4.7-synthesized + critic-passed). Weekly read-out live at `/` with exec-summary 1-pager + HTML/PDF export; `/clusters`, `/stories`, `/sources` reskinned with HTMX live search and per-cluster section overlays; YouTube transcripts on the new audio-fallback path (scrapers-lib v1.7.0 `yt-dlp` + `faster-whisper` `small.en` — local CPU, no API). See [`CLAUDE.md`](CLAUDE.md) for per-phase history and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest handoff.
 
 ## Stack
 
-Python · FastAPI · APScheduler · SQLite · HTMX + Jinja · Ollama (embeddings + legacy `label_cluster`) · Anthropic API (per-item enrichment via Haiku 4.5; synthesis via Opus 4.7 pending Phase 3c.4) · [scrapers-lib](../scrapers-lib) (ingest)
+Python · FastAPI (single process, `root_path`-aware for Tailscale Funnel) · APScheduler (pending Phase 4) · SQLite · HTMX + Jinja · Ollama (embeddings via `nomic-embed-text`) · Anthropic API (Haiku 4.5 per-item enrichment, Sonnet 4.6 cluster labels, Opus 4.7 synthesis + critic) · [scrapers-lib](../scrapers-lib) v1.7.0+ (ingest + YouTube audio-fallback transcripts)
 
 ## Run
 
-Prereqs: Python 3.11+, Ollama running locally with `nomic-embed-text` pulled (and `qwen2.5:7b` retained for `label_cluster()` pending the Phase 3c.4 Sonnet migration). Anthropic API key in a local `.env` at the repo root: `ANTHROPIC_API_KEY=sk-ant-...` — required for per-item enrichment as of Phase 3c.0.5.
+Prereqs: Python 3.11+, Ollama running locally with `nomic-embed-text` pulled. Anthropic API key in `.env` at repo root: `ANTHROPIC_API_KEY=sk-ant-...`. For YouTube audio-fallback transcripts: install scrapers-lib with the optional extra — `pip install -e "../scrapers-lib[youtube-audio]"` — which pulls `yt-dlp` + `faster-whisper` + `PyAV` (no system `ffmpeg` needed). Optional: `GC_ROOT_PATH=/gaming-chatter` in `.env` for Tailscale Funnel sub-path deploy (leave unset for local dev).
 
 ```bash
-# FastAPI app (dashboard, sources admin, /clusters view, /reports)
-python -m uvicorn app.main:app --port 8765
+# FastAPI app (weekly read-out at /, dashboard at /stories, /clusters, /sources)
+python -m uvicorn app.main:app --port 8001 --reload
 
 # One-shot batch jobs (run alongside or instead of the app)
 python scripts/run_enrich_batch.py             # enrich + embed pending items (uses Haiku)

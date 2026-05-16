@@ -14,7 +14,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "numpy>=1.26",
     "pyyaml>=6.0",
-    "scrapers-lib",
+    "scrapers-lib>=1.7.0",
 ]
 
 [tool.uv.sources]

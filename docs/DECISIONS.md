@@ -4,6 +4,29 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-15 (later) — YouTube audio-transcribe path integrated (scrapers-lib 1.7.0 + `[youtube-audio]` extra); per-item enrichment quality improved, cross-source clustering unchanged
+
+**Scope:** Wired up scrapers-lib v1.7.0's new yt-dlp + faster-whisper audio fallback. 3-line app change + one imperative install of the optional extra; spike-tested on 3 yesterday-`IpBlocked` IDs; backfilled the 35 YT items enriched on 2026-05-14 (when ~19 caption fetches hit `BlockedError(IpBlocked)`); re-embedded, re-clustered W20, force-resynthesized W20.
+
+**Locked decisions:**
+
+- **`audio_fallback=True` always.** `app/services/ollama.py:fetch_youtube_transcript` passes it on every call; upstream short-circuits when captions succeed, so no extra cost when they work. Rejected: a feature flag — single-user local app, never going to toggle.
+- **Model: `small.en`** (upstream brief's default). Adequate on the noisy spike-test sample (horror-trailer vocal stings → `"...don'taaaaaaaa!!!"`, Haiku still tagged correctly). Rejected: `medium.en` for a quality bump — 2–3× CPU cost, no observable gain on our title-heavy corpus.
+- **`pyproject.toml` pin: `"scrapers-lib>=1.7.0"`**, with the `[youtube-audio]` extra installed imperatively (`pip install -e "..\scrapers-lib[youtube-audio]"`). Rejected: declaring the extra in pyproject — extra pulls 5 heavy runtime deps (ctranslate2, faster-whisper, PyAV, onnxruntime, hf-xet) that aren't needed for the app to run if YT ingest is off. Accepted fragility: clean re-install of the project's deps needs the imperative command re-run separately.
+- **No length cap, no quality floor.** Audio fallback will burn `audio_minutes × ~30–50 s` of CPU on a multi-hour video (acceptable for current channel mix; flagged in OPEN_QUESTIONS for the day we add long-form sources). A short gibberish transcript can still pass `if transcript:` to Haiku — not observed as a failure mode this session, flagged in OPEN_QUESTIONS for future hardening.
+
+**Verification (35-item backfill on the 2026-05-14 YT enrichment set):**
+- **Re-enrich totals:** `ok=34 / skipped=1` (item 1567 — audio path returned empty too; existing `ok` row preserved by the targeted-id path's preserve-on-no-progress logic).
+- **Audio-fallback firings:** 6 of 35 (caption endpoint was less bot-gated today than yesterday's 19/35; the audio path covered the 6 that still blocked). Caption-success rate today: 28/34 vs. yesterday's ~16/35.
+- **Wall-clock:** ~71 min for re-enrich (first audio rescue ~89 s including ~40 s of model download + load; subsequent rescues ~30–60 s/video at steady state per upstream brief). 3.5 min for post-processing.
+- **Cluster effect:** ~zero cross-source pollination. 33 of 35 backfilled items remain singletons (`items_appended_existing=0 / clusters_new_created=0 / items_orphaned=330`). Audio transcripts didn't bridge the YT-vs-news vocab gap at the 0.85 cosine threshold — matches OPEN_QUESTIONS 2026-05-14's honest-framing prediction.
+- **Per-item enrichment quality:** measurably improved. All 35 backfilled items sit in the 8-category locked taxonomy (`community 14 / industry 9 / review 6 / opinion 2 / news 2 / launch 2`); 0 out-of-taxonomy `'guide'/'preview'/'interview'` slippage on the set. Honest caveat: we overwrote yesterday's enrichments in place, so we can't fully attribute the gain to the audio path vs. today's stabler caption endpoint. Direction is correct.
+- **W20 synth:** force-resynthesized fresh (Opus 4.7 + critic, 6246 chars JSON). Bucket counts: `biggest=3 / hottest_reasons=5 / market_momentum=5 / community_sentiment=1 / risks=0 / esports=0 / drama=0 / release_notes=3 / watch=5`. Yesterday's counts weren't retained (in-place UPDATE), so a direct delta isn't possible; the zero risks/esports/drama buckets reflect this week's actual signal.
+
+**Spend this session:** ~$0.38 LLM (~$0.03 Haiku re-enrich × 35 + ~$0.35 Opus synth + critic). $0 audio path (local CPU). Cumulative project: ~$10.66.
+
+---
+
 ## 2026-05-15 — Path-prefix support via FastAPI `root_path`; static files served as a Route (not a Mount); orphan `base.html` deleted; nav fail-fast validator
 
 **Scope:** App needed to be reachable via Tailscale Funnel at `https://laptop-aknevrti.taile7462c.ts.net/gaming-chatter`. Tailscale strips the `/gaming-chatter` prefix before forwarding to localhost. Three coupled changes: (a) all template URLs switched from hardcoded `/path` strings to `request.url_for(...)` driven by FastAPI's `root_path` (env var `GC_ROOT_PATH`, default empty for local dev); (b) `app.mount("/static", StaticFiles(...))` replaced with a regular `@app.get("/static/{path:path}")` route because Mount + root_path interact badly; (c) the orphaned legacy `app/templates/base.html` deleted, and a fail-fast nav validator added to the lifespan hook.

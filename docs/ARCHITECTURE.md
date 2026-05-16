@@ -94,7 +94,7 @@ UI template is being built externally in **claude.ai/design** and will be ported
 
 ## External dependencies
 
-- **scrapers-lib** at `..\scrapers-lib` (Python lib). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (incl. transcripts), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
+- **scrapers-lib** at `..\scrapers-lib` (Python lib, v1.7.0+). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (caption-API path with **audio-fallback via yt-dlp + faster-whisper `small.en`** as of scrapers-lib v1.7.0 / gaming-chatter Phase 3c.14 — opt in via `audio_fallback=True` kwarg, requires the `[youtube-audio]` optional install extra), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
 - **Ollama** at `http://localhost:11434`. Models resident: `nomic-embed-text` for 768-dim embeddings (primary local model post-2026-05-12). `qwen2.5:7b` was retained for `label_cluster()` pre-Phase-3c.4; it can be unloaded now since label generation migrated to Sonnet 4.6 (2026-05-13). `OLLAMA_KEEP_ALIVE=24h` for the embed model.
 - **Anthropic API** via SDK + env var (loaded from local `.env` via python-dotenv). Used for per-item enrichment (Haiku 4.5), game tagging (Haiku 4.5), cluster labels (Sonnet 4.6 — shipped 2026-05-13), exec-summary modal TLDR (Haiku 4.5; Opus 4.7 once synthesis has run for the week), and weekly synthesis + critic (Opus 4.7 — shipped 2026-05-13). API key never committed — `.env` is gitignored.
 
