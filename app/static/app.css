@@ -1512,3 +1512,67 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-trend-bar-fill--neg { right: 50%; background: var(--gc-danger); }
 .gc-trend-bar--neutral .gc-trend-bar-fill { background: var(--gc-fg3); }
 .gc-trend-bar--down-bad .gc-trend-bar-fill { background: var(--gc-danger); }
+
+/* =============================================================
+   Phase 3c.21 — Sentiment view (/sentiment)
+   ============================================================= */
+.gc-sentiment-view { display: flex; flex-direction: column; gap: 16px; }
+.gc-sentiment-form { display: contents; }
+
+.gc-sentiment-list { display: flex; flex-direction: column; }
+
+.gc-sentiment-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 64px 80px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--gc-border);
+}
+.gc-sentiment-row:first-child { border-top: none; }
+
+.gc-sentiment-cat {
+  font-size: 13px; font-weight: 600; color: var(--gc-fg);
+  text-transform: capitalize;
+}
+
+.gc-sentiment-bar { width: 100%; }
+.gc-sentiment-bar-track {
+  position: relative;
+  height: 10px;
+  background: var(--gc-surface-alt);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.gc-sentiment-bar-center {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--gc-border-strong);
+  opacity: 0.5;
+}
+.gc-sentiment-bar-fill {
+  position: absolute;
+  top: 0; bottom: 0;
+  border-radius: 2px;
+  transition: width var(--gc-dur-2), left var(--gc-dur-2);
+}
+.gc-sentiment-bar-fill--positive { background: var(--gc-success); }
+.gc-sentiment-bar-fill--negative { background: var(--gc-danger); }
+.gc-sentiment-bar-fill--neutral  { background: var(--gc-fg3); }
+
+.gc-sentiment-score {
+  font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.gc-sentiment-score--positive { color: var(--gc-success); }
+.gc-sentiment-score--negative { color: var(--gc-danger); }
+.gc-sentiment-score--neutral  { color: var(--gc-fg3); }
+
+.gc-sentiment-count {
+  font-size: 11px; color: var(--gc-fg3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

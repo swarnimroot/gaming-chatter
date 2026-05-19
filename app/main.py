@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.config import STATIC_DIR
 from app.db.init import init_db
-from app.routers import about, clusters, dashboard, enrich, pipeline, reports, sources
+from app.routers import about, clusters, dashboard, enrich, pipeline, reports, sentiment, sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -66,3 +66,4 @@ app.include_router(clusters.router)
 app.include_router(reports.router)
 app.include_router(about.router)
 app.include_router(pipeline.router)
+app.include_router(sentiment.router)

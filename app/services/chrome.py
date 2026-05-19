@@ -19,6 +19,7 @@ NAV_ITEMS_BASE = [
     {"id": "weekly",    "label": "Weekly read-out", "icon": "newspaper", "route": "reports_view"},
     {"id": "stories",   "label": "Stories",         "icon": "list",      "route": "dashboard"},
     {"id": "clusters",  "label": "Clusters",        "icon": "shapes",    "route": "clusters_view"},
+    {"id": "sentiment", "label": "Sentiment",       "icon": "activity",  "route": "sentiment_view"},
     {"id": "sources",   "label": "Sources",         "icon": "rss",       "route": "list_sources"},
     {"id": "about",     "label": "About",           "icon": "info",      "route": "about"},
 ]

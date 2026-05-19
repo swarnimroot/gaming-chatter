@@ -1,0 +1,87 @@
+{% extends "shell_base.html" %}
+{% block title %}Sentiment — Gaming Chatter{% endblock %}
+{% block eyebrow %}{{ date_range.from_display }} → {{ date_range.to_display }}{% endblock %}
+{% block heading %}Sentiment{% endblock %}
+{% block header_meta %}
+  {{ category_count }} categor{{ 'ies' if category_count != 1 else 'y' }} · {{ total_items }} scored item{{ 's' if total_items != 1 else '' }}{% if overall_avg is not none %} · corpus avg {{ '%+.2f' | format(overall_avg) }}{% endif %}
+{% endblock %}
+{% block header_actions %}
+  {# Phase 3c.17 date-range picker, same wiring as /stories + /clusters.
+     No HTMX fragment swap — sentiment is a single-card page, so the picker
+     triggers a full-page navigation via a GET form submission (the hidden
+     inputs are inside a <form>). #}
+  <form method="get" action="{{ request.url_for('sentiment_view') }}" class="gc-sentiment-form">
+    <div class="gc-date-range-group">
+      <input type="text" id="date-range-display" class="gc-date-range-input"
+             value="{{ date_range.from_display }} to {{ date_range.to_display }}"
+             placeholder="Pick date range…" readonly autocomplete="off">
+      <input type="hidden" id="date-from" name="from" value="{{ date_range.from_display }}">
+      <input type="hidden" id="date-to" name="to" value="{{ date_range.to_display }}">
+      {% for p in presets %}
+        <button type="button" class="gc-preset"
+                data-from="{{ p.from }}" data-to="{{ p.to }}">{{ p.label }}</button>
+      {% endfor %}
+    </div>
+  </form>
+{% endblock %}
+
+{% block main_content %}
+<div class="gc-sentiment-view">
+  <div class="gc-card">
+    <div class="gc-card-header">
+      <div class="gc-card-header-left">
+        <div class="gc-eyebrow">Per-category</div>
+        <h2 class="gc-card-title">Average sentiment score</h2>
+      </div>
+      <div class="gc-card-action">Range: −1.00 (negative) → +1.00 (positive)</div>
+    </div>
+
+    {% if rows %}
+    <div class="gc-sentiment-list">
+      {% for r in rows %}
+      <div class="gc-sentiment-row gc-sentiment-row--{{ r.tone }}">
+        <div class="gc-sentiment-cat">{{ r.category }}</div>
+        <div class="gc-sentiment-bar">
+          <div class="gc-sentiment-bar-track">
+            <div class="gc-sentiment-bar-center"></div>
+            {% if r.avg_score >= 0 %}
+              <div class="gc-sentiment-bar-fill gc-sentiment-bar-fill--{{ r.tone }}"
+                   style="left: 50%; width: {{ '%.2f' | format(r.bar_pct - 50.0) }}%;"></div>
+            {% else %}
+              <div class="gc-sentiment-bar-fill gc-sentiment-bar-fill--{{ r.tone }}"
+                   style="left: {{ '%.2f' | format(r.bar_pct) }}%; width: {{ '%.2f' | format(50.0 - r.bar_pct) }}%;"></div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="gc-sentiment-score gc-sentiment-score--{{ r.tone }}">{{ '%+.2f' | format(r.avg_score) }}</div>
+        <div class="gc-sentiment-count">{{ r.item_count }} item{{ 's' if r.item_count != 1 else '' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="gc-row-empty">
+      No scored items in this window. Try widening the date range, or run the enrichment pipeline.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block end_scripts %}
+{{ super() }}
+<script>
+  // Sentiment is a single-card page with no HTMX fragment to swap. The shared
+  // flatpickr init in shell_base already wires the picker + preset buttons to
+  // populate the hidden from/to inputs and fire 'gc:daterange-picked'; we
+  // listen for that event and submit the surrounding form for a full-page nav.
+  (function () {
+    const display = document.getElementById('date-range-display');
+    if (!display) return;
+    const form = display.closest('form');
+    if (!form) return;
+    display.addEventListener('gc:daterange-picked', function () {
+      form.submit();
+    });
+  })();
+</script>
+{% endblock %}
