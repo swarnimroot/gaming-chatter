@@ -1493,3 +1493,22 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-alert-banner-link:hover { text-decoration: underline; }
 .gc-alert-banner-icon { font-size: 14px; line-height: 1; }
 .gc-alert-banner-text { letter-spacing: 0.005em; }
+
+/* ---------- Phase 3c.20 — Trends mini-bar (WoW delta) ----------
+   Zero-line centered bar: positive deltas grow right of the midline,
+   negative grow left. Width proportional to |delta_pp|, clamped at
+   12pp = 100% of the half-width by the Jinja macro. Color follows
+   the existing row `tone` so it reads with the delta text. */
+.gc-trend-bar {
+  position: relative; flex: 0 0 96px; height: 8px; margin: 0 10px 0 auto;
+  background: var(--gc-surface-alt, var(--gc-border)); border-radius: 1px;
+}
+.gc-trend-bar-axis {
+  position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px;
+  background: var(--gc-border-strong); transform: translateX(-0.5px); opacity: 0.7;
+}
+.gc-trend-bar-fill { position: absolute; top: 0; bottom: 0; border-radius: 1px; }
+.gc-trend-bar-fill--pos { left: 50%; background: var(--gc-success); }
+.gc-trend-bar-fill--neg { right: 50%; background: var(--gc-danger); }
+.gc-trend-bar--neutral .gc-trend-bar-fill { background: var(--gc-fg3); }
+.gc-trend-bar--down-bad .gc-trend-bar-fill { background: var(--gc-danger); }

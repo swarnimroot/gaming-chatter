@@ -254,12 +254,31 @@
 
         {# 5. Trends — Phase 3c.2: 5-tab WoW mention-rate delta (CSS-only radios) #}
         {% set tr = week.cards.trends %}
+        {# Phase 3c.20 — inline mini-bar for WoW delta. Bar is anchored to a
+           zero line at the midpoint of the bar track: positive deltas grow
+           right, negative grow left. Magnitude clamped to 12pp = 100% of
+           half-width so a runaway outlier doesn't blow out the layout. #}
+        {%- macro trend_bar(delta_pp, tone) -%}
+        {%- set max_pp = 12.0 -%}
+        {%- set mag = delta_pp if delta_pp >= 0 else -delta_pp -%}
+        {%- set pct = (mag / max_pp * 100) -%}
+        {%- if pct > 100 -%}{%- set pct = 100 -%}{%- endif -%}
+        <span class="gc-trend-bar gc-trend-bar--{{ tone }}" aria-hidden="true">
+          <span class="gc-trend-bar-axis"></span>
+          {%- if delta_pp >= 0 -%}
+          <span class="gc-trend-bar-fill gc-trend-bar-fill--pos" style="width: {{ (pct / 2)|round(2) }}%"></span>
+          {%- else -%}
+          <span class="gc-trend-bar-fill gc-trend-bar-fill--neg" style="width: {{ (pct / 2)|round(2) }}%"></span>
+          {%- endif -%}
+        </span>
+        {%- endmacro -%}
         {%- macro trend_rows(rows, kind) -%}
           {% for r in rows %}
           <label class="gc-row gc-row--trend gc-row-trigger" for="drawer-open"
                  hx-get="{{ request.url_for('reports_drawer') }}?kind={{ kind }}&value={{ r.name|urlencode }}&week={{ active_week_key }}"
                  hx-target="#source-drawer-body" hx-swap="innerHTML">
             <span class="gc-trend-name" title="{{ r.count }} this week · {{ r.prev_count }} prior">{{ r.name }}</span>
+            {{ trend_bar(r.delta_pp, r.tone) }}
             {{ delta(r.delta_display, r.tone) }}
           </label>
           {% endfor %}
