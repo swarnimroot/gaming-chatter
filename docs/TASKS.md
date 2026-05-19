@@ -188,6 +188,15 @@ Same 4-tab strip (Global / Americas / Europe / Asia) on `/`. Cluster-keyed cards
 - [x] CSS for `.gc-card-note`, `.gc-chip--muted`, `.gc-meta-tag--note` in `app/static/app.css`. — **Done 2026-05-19.**
 - [x] Smoke-tested all 4 tabs return 200 on `/`; active-class set correctly; exec-summary CTA toggles (Global=1 file-text icon, regional=0); 3 "Not region-tagged" chips on each regional tab; card empty-state counts increase on regional tabs (Global: 5, Americas: 6, Asia: 7, Europe: 9). — **Done 2026-05-19.**
 
+### Phase 3c.16 follow-ups (same session)
+
+Real-world tab-clicking surfaced three bugs in the 3c.15/3c.16 ship + one UX gap. All fixed same session. See SESSION_LOG.md 2026-05-19 (Phase 3c.16 fixes) + commit `cb74157`.
+
+- [x] **Cluster cards / List view toggle moved to right** via new `.gc-clusters-toolbar` flex row (`justify-content: space-between`) inside `#clusters-list`. Radios stay outside `#clusters-list` so HTMX swap preserves user's view choice; view-labels move inside the toolbar so HTMX swap re-renders their active-class. — **Done 2026-05-19.**
+- [x] **Region tab active-class now updates after HTMX swap on `/stories` + `/clusters`.** Tabs were OUTSIDE the swap target; moved `_region_tabs.html` include INTO the swap target (top of `_dashboard_list.html` for stories; inside `.gc-clusters-toolbar` in `_clusters_list.html` for clusters). HTMX responses now re-render the tab strip with the correct active class. — **Done 2026-05-19.**
+- [x] **Blank-screen fix on `/?region=…`** — `hx-target="body" hx-select="body" hx-swap="innerHTML"` was rendering empty in practice. Replaced with element-scoped swap: added `id="readout-main"` to `<div class="gc-main">` in `reports.html`; tab buttons changed to `hx-target="#readout-main" hx-select="#readout-main" hx-swap="outerHTML"`. Still re-renders header + grid, properly scoped. — **Done 2026-05-19.**
+- [x] **Spinner indicator on readout region tabs** — small 14px rotating border-spinner (`.gc-region-spinner` + `.htmx-indicator`) appended to `<nav class="gc-region-tabs">`; each tab declares `hx-indicator=".gc-region-spinner"`. Standard HTMX indicator CSS rules + `@keyframes gc-spin` added to `app/static/app.css`. Rationale: 2–3 s server-side delay on the readout swap (`synthesis_json` parse + `cluster_regions()` + `sources_meta`) was making tab clicks feel unresponsive; `/stories` + `/clusters` swaps are fast and don't need it. Commit `cb74157`. — **Done 2026-05-19.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis

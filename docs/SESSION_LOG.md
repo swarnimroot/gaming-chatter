@@ -23,6 +23,8 @@ User-reported issues after the 3c.15 + 3c.16 ship; all three fixed in this same 
 - `/clusters?region=europe` (HX-Request) returns fragment with `gc-clusters-toolbar` + `gc-view-labels` present and active-class on Europe tab.
 - `/?region=americas` returns 50517 bytes, `/?region=asia` returns 49994 bytes (vs. 61993 for Global), `#readout-main` wraps the content, 1 active tab, exec-summary note present on regional tabs. Full readout not blank.
 
+**(4) Spinner indicator on readout region tabs** (commit `cb74157`). Server-side filter on `/?region=…` is 2–3 s (synthesis_json parse + `cluster_regions()` + `sources_meta`); tab clicks felt unresponsive even after the swap-target fix. Added a small 14px rotating border-spinner at the end of `<nav class="gc-region-tabs">` in `reports.html` with `gc-region-spinner` + `htmx-indicator` classes; each tab button declares `hx-indicator=".gc-region-spinner"`. Standard HTMX indicator CSS rules added to `app/static/app.css` (`.htmx-indicator { opacity: 0; }` + `.htmx-request .htmx-indicator { opacity: 1; }` + `.htmx-request.htmx-indicator { opacity: 1; }`) plus `@keyframes gc-spin` rotation + `.gc-region-spinner` border/animation block. Scoped to the readout only — `/stories` and `/clusters` swaps are fast (small fragment endpoints) and don't need it.
+
 ---
 
 ## 2026-05-19 (Phase 3c.16, later) — Region tabs on weekly read-out (filter-existing synthesis, no per-region Opus pass)

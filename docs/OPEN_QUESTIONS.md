@@ -28,6 +28,10 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 - **Asia tab will be near-empty at launch — honest signal, not a bug.** Corpus is currently English/US/UK-heavy by source-mix design (15 news sites are all Anglophone; subreddits + YouTube channels likewise). Feature ships anyway because a thin tab honestly surfaces the coverage gap (vs. hiding it). Action item is on the source-list side: when adding new sources in Phase 4's `/sources` CRUD work, weight toward Asian-content sources (Famitsu RSS / Automaton / r/JRPG / r/Genshin_Impact / etc.) to give the Asia tab real signal.
 
+## Open from 2026-05-19 (Phase 3c.16 follow-ups)
+
+- **Readout region-tab swap is 2–3 s server-side.** `/?region=…` re-runs `synthesis_json` parse + `cluster_regions()` over every cluster_id referenced by the synthesis (typically 20–40) + `sources_meta` lookup on each swap. Phase 3c.16-followups added an HTMX spinner indicator so the delay is honest UX (the user clearly sees the click was registered) rather than a frozen-feeling click, but the underlying cost is real. If/when it becomes visibly annoying, mitigations in increasing order of effort: (a) cache `cluster_regions()` per (week_id, cluster_id_set) for the lifetime of a render — currently recomputed on each tab click; (b) precompute and persist a `clusters.region_tags` denormalized column at cluster-creation time (Phase 3c.15 deliberately avoided this — see DECISIONS 2026-05-19 "computed on-the-fly" rationale: incremental clustering would invalidate the cache); (c) move filter to client-side JS over a hidden full-render of all 4 tabs. (a) is the cheapest and probably enough. Flagged for revisit only if the latency becomes visibly annoying.
+
 ## Pending external delivery
 
 - ~~**UI template**~~ — **delivered + ported 2026-05-11.** claude.ai/design bundle for the weekly read-out ported to `/reports` with the locked variants (grid + comfortable + light + orange `#D9682B`). All 13 cards render with placeholder data. Section trim + production-data wiring is the next session's walkthrough work. See SESSION_LOG 2026-05-11.
