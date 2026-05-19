@@ -33,6 +33,10 @@
 
   <div class="gc-main">
 
+    {# Phase 3c.19 — source-failure alert banner. Renders only when
+       `failing_sources_count > 0`; otherwise the partial is silent. #}
+    {% include "_alert_banner.html" %}
+
     <header class="gc-header">
       <div>
         <div class="gc-header-eyebrow">{% block eyebrow %}{% endblock %}</div>

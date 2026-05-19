@@ -62,6 +62,10 @@
   {# ===== Main column ===== #}
   <div class="gc-main" id="readout-main">
 
+    {# Phase 3c.19 — source-failure alert banner. Renders only when
+       `failing_sources_count > 0`; otherwise the partial is silent. #}
+    {% include "_alert_banner.html" %}
+
     {# ----- Header ----- #}
     <header class="gc-header">
       <div>

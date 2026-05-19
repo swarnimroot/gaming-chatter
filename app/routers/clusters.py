@@ -23,7 +23,7 @@ from sqlmodel import Session, col, select
 from app.config import TEMPLATES_DIR
 from app.db.models import Cluster, Item, Source
 from app.db.session import get_session
-from app.services.chrome import nav_items_for
+from app.services.chrome import failing_sources_count, nav_items_for
 from app.services.cluster import cluster_window
 from app.services.reports import parse_date_range
 from app.services.sections import (
@@ -224,5 +224,6 @@ def clusters_view(
         "nav_items": nav_items_for(request, "clusters"),
         "total_count": len(ctx["clusters"]),
         "presets": _preset_links(),
+        "failing_sources_count": failing_sources_count(session),
     })
     return templates.TemplateResponse(request, "clusters.html", ctx)

@@ -6,7 +6,11 @@ definition here keeps a single source of truth.
 """
 from __future__ import annotations
 
+from sqlalchemy import func
+from sqlmodel import Session, select
 from starlette.requests import Request
+
+from app.db.models import Source
 
 # (id, label, icon, route_name) — `route_name` is the FastAPI route name used
 # with request.url_for(...) so links resolve correctly under a path prefix
@@ -18,6 +22,28 @@ NAV_ITEMS_BASE = [
     {"id": "sources",   "label": "Sources",         "icon": "rss",       "route": "list_sources"},
     {"id": "about",     "label": "About",           "icon": "info",      "route": "about"},
 ]
+
+# Phase 3c.19 — source-failure UI banner threshold. A source is considered
+# "erroring" once `Source.error_count > 3`; the alert banner at the top of
+# every full-page render counts these and links to /sources.
+FAILING_SOURCE_ERROR_THRESHOLD = 3
+
+
+def failing_sources_count(session: Session) -> int:
+    """Return the number of sources with error_count above the threshold.
+
+    Used by the alert banner partial (`_alert_banner.html`) included in
+    `shell_base.html` and `reports.html`. Returns 0 when the table is empty
+    or all sources are healthy — the partial renders nothing in that case.
+    """
+    stmt = select(func.count(Source.id)).where(
+        Source.error_count > FAILING_SOURCE_ERROR_THRESHOLD
+    )
+    result = session.exec(stmt).first()
+    if result is None:
+        return 0
+    # SQLModel's exec on a select(func.count(...)) returns a scalar int directly.
+    return int(result or 0)
 
 
 def nav_items_for(request: Request, active_id: str) -> list[dict]:

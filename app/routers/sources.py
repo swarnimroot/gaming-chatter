@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from app.config import TEMPLATES_DIR
 from app.db.models import Source
 from app.db.session import get_session
-from app.services.chrome import nav_items_for
+from app.services.chrome import failing_sources_count, nav_items_for
 from app.services.enrich import enrich_pending
 from app.services.ingest import ingest_all, ingest_source
 
@@ -66,6 +66,7 @@ def list_sources(
         "nav_items": nav_items_for(request, "sources"),
         "total_count": len(all_rows),
         "enabled_count": sum(1 for s in all_rows if s.enabled),
+        "failing_sources_count": failing_sources_count(session),
     })
     return templates.TemplateResponse(request, "sources.html", ctx)
 

@@ -21,7 +21,7 @@ from sqlmodel import Session, col, select
 from app.config import TEMPLATES_DIR
 from app.db.models import Enrichment, Item, Source
 from app.db.session import get_session
-from app.services.chrome import nav_items_for
+from app.services.chrome import failing_sources_count, nav_items_for
 from app.services.reports import available_weeks, parse_date_range
 from app.services.sections import (
     SECTION_OPTIONS,
@@ -179,5 +179,6 @@ def dashboard(
         "section_options": SECTION_OPTIONS,
         "section_label": section_label_for(section),
         "presets": _preset_links(),
+        "failing_sources_count": failing_sources_count(session),
     })
     return templates.TemplateResponse(request, "dashboard.html", ctx)

@@ -1475,3 +1475,21 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   background: var(--gc-accent-soft); border-color: var(--gc-accent-soft);
   box-shadow: -5px 0 0 var(--gc-accent-soft), 5px 0 0 var(--gc-accent-soft);
 }
+
+/* ---------- Phase 3c.19 — source-failure alert banner ------------------
+   Sits inside .gc-main, above .gc-header. Width = main column. Dismiss-by-
+   reload (no JS); the partial renders nothing when all sources are healthy. */
+.gc-alert-banner {
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--gc-border);
+  font-size: 12px;
+  background: var(--gc-warning-soft);
+  color: var(--gc-warning);
+}
+.gc-alert-banner-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: inherit; text-decoration: none; font-weight: 600;
+}
+.gc-alert-banner-link:hover { text-decoration: underline; }
+.gc-alert-banner-icon { font-size: 14px; line-height: 1; }
+.gc-alert-banner-text { letter-spacing: 0.005em; }

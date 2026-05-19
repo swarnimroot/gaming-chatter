@@ -32,7 +32,7 @@ from app.db.session import engine
 from app.services import exec_summary as exec_summary_svc
 from app.services import export as export_svc
 from app.services import reports as report_q
-from app.services.chrome import nav_items_for
+from app.services.chrome import failing_sources_count, nav_items_for
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -426,7 +426,8 @@ def reports_view(request: Request, week: str = "", region: str = ""):
                  "can_run_pipeline": True,
                  "sources_meta": {},
                  "region": region_norm, "region_active": region_active,
-                 "exec_summary_hidden_for_region": region_active},
+                 "exec_summary_hidden_for_region": region_active,
+                 "failing_sources_count": failing_sources_count(session)},
             )
 
         active_key = week if week in week_ids else week_ids[0]
@@ -461,6 +462,7 @@ def reports_view(request: Request, week: str = "", region: str = ""):
                 "region": region_norm,
                 "region_active": region_active,
                 "exec_summary_hidden_for_region": region_active,
+                "failing_sources_count": failing_sources_count(session),
             },
         )
 

@@ -1,0 +1,22 @@
+{# Phase 3c.19 — source-failure alert banner.
+
+Included from `shell_base.html` (above .gc-header) and `reports.html` (above
+the .gc-shell flex row). Renders ONLY when `failing_sources_count > 0`; when
+all sources are healthy, the partial emits no markup.
+
+Context vars (set by the router that renders the parent template):
+  - failing_sources_count (int) : sources with `error_count > 3`.
+
+Style: small dismissable-by-page-reload chip-row (no JS dismissal — kept
+simple per CLAUDE.md "no JS build" rule). Links to /sources for inspection.
+#}
+{% if (failing_sources_count or 0) > 0 %}
+<div class="gc-alert-banner gc-alert-banner--warn" role="status" aria-live="polite">
+  <a class="gc-alert-banner-link" href="{{ request.url_for('list_sources') }}">
+    <span class="gc-alert-banner-icon" aria-hidden="true">&#9888;</span>
+    <span class="gc-alert-banner-text">
+      {{ failing_sources_count }} source{{ 's' if failing_sources_count != 1 else '' }} {{ 'are' if failing_sources_count != 1 else 'is' }} erroring — click to inspect.
+    </span>
+  </a>
+</div>
+{% endif %}
