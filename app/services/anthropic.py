@@ -248,6 +248,110 @@ class RegionTagData(BaseModel):
         return seen
 
 
+PCGAMER_RELEASES_SYSTEM_PROMPT = """You extract upcoming PC game release dates from a PC Gamer "upcoming games" calendar article.
+
+Return ONLY valid JSON with one field:
+- releases: array of objects with {name, release_date}.
+
+Rules for `name`:
+- Use the canonical game name as it appears in the article (preserve casing, drop subtitle if redundant).
+- Skip non-game entries: hardware, DLC unless standalone, expansions referenced only in passing, retrospectives.
+- Skip games mentioned in narrative ONLY when no date or date-range is present for them.
+- One row per distinct game. De-dup if the article lists the same game in multiple sections.
+
+Rules for `release_date` — output exactly one of these formats:
+- "YYYY-MM-DD"  (specific day, e.g. "2026-07-15")
+- "YYYY-MM"     (month known but no day, e.g. "2026-08")
+- "Qn-YYYY"     (quarter only, e.g. "Q3-2026" — n in [1,2,3,4])
+- "YYYY"        (year only, e.g. "2026")
+- "TBA"         (article explicitly says TBD/TBA/unknown/no date)
+
+If the article gives a window like "Spring 2026" or "Holiday 2026", normalize:
+- Spring → Q2 / Summer → Q3 / Fall|Autumn → Q4 / Winter|Holiday → Q4 (or Q1 of next year if explicit).
+- "Early 2026" → Q1-2026; "mid 2026" → Q2-2026 or Q3-2026 (pick Q3); "late 2026" → Q4-2026.
+- Ambiguous "2026" with no further hint → "2026".
+
+Worked examples (input phrase → output):
+- "Resident Evil Requiem launches February 27, 2026" → {name: "Resident Evil Requiem", release_date: "2026-02-27"}
+- "Hollow Knight: Silksong — Coming Spring 2026" → {name: "Hollow Knight: Silksong", release_date: "Q2-2026"}
+- "Half-Life 3 (TBA)" → {name: "Half-Life 3", release_date: "TBA"}
+- "GTA 6 — 2026" (no further detail) → {name: "GTA 6", release_date: "2026"}
+
+Output JSON only. No prose, no code fences. Aim for completeness — capture every game with a date in the article."""
+
+
+class PCGamerRelease(BaseModel):
+    name: str = Field(..., description="Canonical game name")
+    release_date: str = Field(..., description="One of: YYYY-MM-DD / YYYY-MM / Qn-YYYY / YYYY / TBA")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("release_date", mode="before")
+    @classmethod
+    def _normalize_date(cls, v):
+        """Light client-side normalization — Haiku should already be in shape,
+        but uppercase Q-prefix and trim whitespace so case drift doesn't sneak in.
+        Strict validation (must match one of the 5 formats) lives in the script."""
+        if not isinstance(v, str):
+            return v
+        s = v.strip()
+        if s.upper() == "TBA":
+            return "TBA"
+        # Q3-2026 / q3 2026 / Q3 2026 → Q3-2026
+        if len(s) >= 6 and s[0] in ("Q", "q") and s[1] in "1234":
+            year_part = s[2:].lstrip(" -").strip()
+            if year_part.isdigit() and len(year_part) == 4:
+                return f"Q{s[1]}-{year_part}"
+        return s
+
+
+class PCGamerReleaseList(BaseModel):
+    releases: list[PCGamerRelease] = Field(default_factory=list)
+
+
+def tag_pcgamer_releases(body_text: str) -> list[PCGamerRelease]:
+    """Call Anthropic Haiku 4.5 to extract (game, release_date) pairs from a
+    PC Gamer upcoming-games article body. Single call per refresh; idempotent
+    upstream (the script diffs against the game_releases table). Phase 3c.18.
+
+    Raises ValueError on transport / schema failure.
+    """
+    user_prompt = f"Article body:\n\n{body_text}"
+    try:
+        message = _get_client().messages.parse(
+            model=ANTHROPIC_ENRICH_MODEL,
+            max_tokens=8192,  # full pcgamer 2026 calendar has ~100 entries → ~6K output tokens
+            system=[
+                {
+                    "type": "text",
+                    "text": PCGAMER_RELEASES_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=PCGamerReleaseList,
+        )
+    except anthropic.APIError as e:
+        raise ValueError(f"anthropic tag_pcgamer_releases API error: {e}") from e
+    except ValidationError as e:
+        raise ValueError(f"anthropic tag_pcgamer_releases response failed schema: {e}") from e
+
+    data = getattr(message, "parsed_output", None)
+    if data is None:
+        stop = getattr(message, "stop_reason", "unknown")
+        raise ValueError(f"anthropic tag_pcgamer_releases returned no parsed output (stop_reason={stop})")
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        log.warning(
+            "tag_pcgamer_releases hit max_tokens — output may be truncated (got %d releases)",
+            len(data.releases or []),
+        )
+    return list(data.releases or [])
+
+
 def tag_region(tldr: str) -> list[str]:
     """Call Anthropic Haiku 4.5 to extract region_focus from a tldr.
 

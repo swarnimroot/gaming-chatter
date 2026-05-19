@@ -50,8 +50,20 @@ raw_items  ──▶  items (normalized + exact-match dedup)
 | `clusters` | week_id, label, centroid (BLOB), member_item_ids, member_count, source_count, latest_published_at, score (Phase 3b) |
 | `weekly_reports` | week_start, week_end, markdown_content, html_content, generated_at, status |
 | `run_log` | job_type, source_id, started_at, completed_at, status, items_processed, error |
+| `game_releases` (Phase 3c.18) | game_name_lc, source (`'pcgamer' \| 'ign'`), release_date (`YYYY-MM-DD / YYYY-MM / Qn-YYYY / YYYY / TBA / NULL`), raw_label (debug-only, currently NULL — dropped from Pydantic schema to fit Haiku's 8192 max_tokens), updated_at. Composite PK `(game_name_lc, source)`. Source-of-truth for game release dates; `games.release_date` + `games.lifecycle` are a synced cache derived from this table via `sync_games_dim(...)` |
 
 Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **semantic** (embedding cosine) at clustering time.
+
+### Release-date resolver (Phase 3c.18)
+
+`game_releases` is the canonical source. Resolution lives in `app/services/release_dates.py`:
+
+- `SOURCE_PRIORITY = ['pcgamer', 'ign']` — first-with-row wins on conflict.
+- `release_date_for(session, name)` — case-insensitive lookup, source-priority resolved.
+- `derive_lifecycle(release_date, today)` — pure function: None/TBA → None; future/current → 'upcoming'; past → 'existing'. Reuses existing `is_future_or_unknown` for boundary semantics.
+- `sync_games_dim(session, game_name_lc)` — writes resolved release_date + derived lifecycle into matching `games` row(s); idempotent (only writes when values actually changed).
+
+The `games.release_date` and `games.lifecycle` columns are now a **synced cache**, not source-of-truth — refreshed by `scripts/refresh_pcgamer_releases.py` (Haiku one-shot parse on `https://www.pcgamer.com/games/new-pc-games-2026/`, ~$0.04/run, diff-driven row writes). Existing consumers (Release Radar card, `top_games_for_week`, lifecycle chips on Hottest games) read the cached columns directly and didn't need a refactor. The cleanup pass to JOIN through the resolver is a future Phase 4 nicety. **Key insight driving the reframe:** lifecycle ('existing' vs. 'upcoming') is a function of `release_date < today`, NOT a Haiku name-only guess — fixes prior corpus noise where *BioShock* (2007) and *Aliens: Fireteam Elite* (2021) were tagged 'upcoming' from name alone.
 
 ## LLM pipeline
 
@@ -59,7 +71,8 @@ Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **sema
 |---|---|---|---|
 | Per-item enrichment (TL;DR, entities, category, sentiment, genres, platforms, event, region_focus) | Anthropic Haiku 4.5 | ~$100–200/yr | After each daily ingest |
 | Per-item embedding (768-dim) | Ollama `nomic-embed-text` local | $0 | After each daily ingest |
-| Game tagging (lifecycle + live_service per unique game) | Anthropic Haiku 4.5 | ~$1 per backfill | After enrichment |
+| Game tagging (lifecycle + live_service per unique game — **superseded by `game_releases` resolver for release_date + lifecycle as of Phase 3c.18; still used for live_service**) | Anthropic Haiku 4.5 | ~$1 per backfill | After enrichment |
+| Release-date ingestion (pcgamer list page → `game_releases` table) | Anthropic Haiku 4.5 on full article body, `tag_pcgamer_releases()` — **shipped 2026-05-19 Phase 3c.18** | ~$0.04/run (weekly cadence ≈ ~$2/yr) | `scripts/refresh_pcgamer_releases.py` (manual today; Phase 4 APScheduler) |
 | Weekly clustering (cosine connected-components @ 0.85) | numpy in-process | $0 | Monday before report |
 | Cluster labels | Anthropic Sonnet 4.6 (migrated 2026-05-13 from Ollama qwen2.5:7b) | ~$0.002/call (~$0.10 to relabel all 55 existing; ~$10/yr ongoing) | Same pass as clustering |
 | Cluster ranking (Phase 3b) | numpy in-process: `source_count × member_count / (1 + days_since_latest)` | $0 | Same pass as clustering |
@@ -85,8 +98,8 @@ HTMX + Jinja, server-rendered. No JS build step.
 | Route | Purpose |
 |---|---|
 | `/` | Weekly read-out (Monday exec summary; 9-card layout; ISO-week selector). Phase 3c.7 swapped from `/reports`. |
-| `/stories` | Live stories table — items in last 7 days by default; HTMX search + section / week / region filters (Phase 3c.7 + 3c.9 + 3c.11 + 3c.15) |
-| `/clusters` | Per-ISO-week cluster cards with editorial-section overlay chips, region tabs, view toggle (cluster cards / flat list) (Phase 3c.7 + 3c.10–3c.12 + 3c.15) |
+| `/stories` | Live stories table — items in last 7 days by default; HTMX search + section / region tabs + date-range picker (`?from=YYYY-MM-DD&to=YYYY-MM-DD`; back-compat `?week_id=` shim) (Phase 3c.7 + 3c.9 + 3c.11 + 3c.15 + 3c.17) |
+| `/clusters` | Cluster cards by date range (default last 30d; `?from=…&to=…` or back-compat `?week_id=`; any-member-in-range semantic) with editorial-section overlay chips, region tabs, view toggle (cluster cards / flat list) (Phase 3c.7 + 3c.10–3c.12 + 3c.15 + 3c.17) |
 | `/sources` | Source list — name / type / status / last fetch / errors; HTMX live search; force-pull buttons. (CRUD via web forms pending Phase 4.) |
 | `/about` | 5-stage visual pipeline infographic + glossary + stack panel (Phase 3c.8) |
 | `/reports/drawer` | HTMX fragment — source drawer body, params: `kind={game\|genre\|platform\|event\|cluster}&value=&week=` (3c.3 + 3c.4) |

@@ -68,6 +68,26 @@ class Game(SQLModel, table=True):
     release_date: Optional[str] = None      # ISO date 'YYYY-MM-DD', 'YYYY-MM', 'YYYY', or NULL when unknown / TBA
 
 
+class GameRelease(SQLModel, table=True):
+    """Authoritative game release dates from external sources (Phase 3c.18).
+
+    Multi-source from day one — current sources: 'pcgamer'. IGN deferred.
+    Composite PK (game_name_lc, source) so both sources can hold rows for the
+    same game; resolver picks pcgamer over ign on conflict.
+
+    `games.release_date` and `games.lifecycle` remain as a synced cache —
+    sync_games_dim writes derived values here after each refresh so existing
+    consumers (Release Radar, top_games_for_week, etc.) keep working unchanged.
+    """
+    __tablename__ = "game_releases"
+    game_name_lc: str = Field(primary_key=True)             # lookup key (lowercased)
+    source: str = Field(primary_key=True)                   # 'pcgamer' | 'ign'
+    game_name: str                                          # display casing
+    release_date: Optional[str] = None                      # locked formats from reports.is_future_or_unknown
+    raw_label: Optional[str] = None                         # original phrasing from source (e.g. "Q3 2026")
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Cluster(SQLModel, table=True):
     __tablename__ = "clusters"
     id: Optional[int] = Field(default=None, primary_key=True)

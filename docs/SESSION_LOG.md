@@ -4,6 +4,96 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.18, very-later, same session as 3c.17) — Authoritative game release-date table (pcgamer-sourced) + derived lifecycle
+
+**What shipped.** A proper source-of-truth table for game release dates, replacing the prior Haiku-name-only `games.lifecycle` guesses. The original carry-over from this morning's planning conversation was a one-shot "Haiku parse pcgamer list page → upsert `games.release_date`" — the user reframed it mid-session into a multi-source `game_releases` table with a derived-lifecycle resolver. **Key insight driving the reframe:** lifecycle ('existing' vs. 'upcoming') is a function of `release_date < today`, NOT a Haiku name-only guess. This fixes the prior corpus noise where games like *BioShock* (2007) and *Aliens: Fireteam Elite* (2021) were tagged 'upcoming' by Haiku from the name alone — the model's training-cutoff staleness plus the name-only ambiguity.
+
+**Data layer.**
+- New SQL table `game_releases` — `app/db/models.py:71-88`. Composite PK `(game_name_lc, source)`. Multi-source schema from day one: the `source` column expects `'pcgamer' | 'ign'`. `release_date` follows the existing locked formats (`YYYY-MM-DD / YYYY-MM / Qn-YYYY / YYYY / TBA / NULL`). `raw_label` is debug-only (currently always NULL — see below for why it was dropped from the schema). `updated_at` tracks last refresh. Auto-created via the existing `SQLModel.metadata.create_all(engine)` in `app/db/init.py`; no migration script.
+- New `app/services/release_dates.py` (~160 lines, new file):
+  - `SOURCE_PRIORITY = ['pcgamer', 'ign']` — first-with-row wins on conflict resolution.
+  - `is_valid_release_date(s)` — strict format gate, used by the script before writing.
+  - `release_date_for(session, name)` — case-insensitive lookup, source-priority resolved.
+  - `derive_lifecycle(release_date, today)` — pure function: None/TBA → None; future/current → 'upcoming'; past → 'existing'. Reuses the existing `is_future_or_unknown` for boundary semantics.
+  - `sync_games_dim(session, game_name_lc)` — writes resolved release_date + derived lifecycle back to matching `games` row(s). Idempotent — only writes when values actually changed. `games.release_date` + `games.lifecycle` are now a **synced cache**, not source-of-truth; existing readers (Release Radar card, top_games_for_week, etc.) keep working unchanged.
+
+**LLM layer.**
+- New `tag_pcgamer_releases(body_text)` in `app/services/anthropic.py` — Haiku 4.5 with the now-standard cached system prompt + `PCGamerReleaseList` Pydantic schema. `max_tokens=8192` (initial 4096 truncated mid-JSON for the 286-entry article; bumping helped but we **also dropped `raw_label` from the Pydantic schema to fit** — the column stays in the DB for future use, e.g. an "extended output" or chunked-ingest mode). Stop-reason logging warns if Haiku ever truncates again.
+
+**Refresh script.**
+- `scripts/refresh_pcgamer_releases.py` (~170 lines), diff-driven:
+  - Fetches via `scrapers_lib.tier1.article.fetch_article` (trafilatura + Chrome TLS impersonation). Much more reliable than the WebFetch tool, which couldn't get past pcgamer's nav chrome.
+  - One Haiku call.
+  - INSERT new rows / UPDATE only when `release_date` actually changed / no-op otherwise.
+  - For every changed row, calls `sync_games_dim(...)` so the games dim mirrors the truth.
+  - Args: `--dry-run`, `--url`, `--limit`. Default URL = `https://www.pcgamer.com/games/new-pc-games-2026/`.
+
+**Smoke run results (live, real writes).**
+- **Body fetched:** 28,701 chars; title *"Upcoming 2026 games: All the new PC games you won't want to miss, from big hits to hidden gems"*.
+- **Haiku parse:** 286 valid entries / 0 invalid format / ~44 s wall. Distribution: 197 YYYY-MM-DD / 88 YYYY / 1 TBA / 0 YYYY-MM / 0 Qn-YYYY.
+- **Inserts:** 286 new rows on first run (table empty).
+- **Idempotency proof — run #2 immediately after first:** 0 new / 1 updated / 285 unchanged. The 1 update is Haiku run-to-run drift on a single entry (LLM non-determinism), not a bug.
+- **Important caveat:** re-running with an unchanged article state DOES re-call Haiku (and pays ~$0.04/run); the diff-skip is at the row-write level only. A "skip Haiku call when article ETag/Last-Modified is unchanged" optimization is a future Phase 4 nicety — flagged in OPEN_QUESTIONS.
+- **games dim sync:** 23 of our 184 games matched pcgamer (case-insensitive name match); 18 of those 23 had values that actually needed updating (5 already correct = no-op). Sample correct lifecycle flips: *Mixtape* (2026-05-07) → existing; *Subnautica 2* (2026-05-14) → existing; *Forza Horizon 6* (2026-05-19, today) → upcoming; *007 First Light* (2026-05-27, future) → upcoming.
+
+**Locked decisions (in DECISIONS.md 2026-05-19 Phase 3c.18 — six items):**
+1. Authoritative source-of-truth table, not Haiku-tagged column — `game_releases` is the canonical source; `games.release_date` + `games.lifecycle` are the synced cache.
+2. Lifecycle is derived, not stored — `derive_lifecycle(release_date, today)` from `today`'s clock; stored in `games.lifecycle` only as a refreshable cache.
+3. Multi-source schema from day one, pcgamer ingestion only this round — IGN deferred.
+4. pcgamer > ign on conflict — codified as `SOURCE_PRIORITY = ['pcgamer', 'ign']`.
+5. Drop `raw_label` from the Pydantic schema for output-budget fit — column kept in DB for future extended-output mode.
+6. Diff-driven row writes, but Haiku is still called on every run — ETag/Last-Modified short-circuit deferred to Phase 4.
+
+**Honest caveats / known gaps (added to OPEN_QUESTIONS.md):**
+- Annual URL update — `new-pc-games-2026` is year-stamped; the 2027 page will have a different slug. Plan an annual reminder.
+- Haiku run-to-run drift — 1/286 entries jittered between identical runs. Tolerable for now; watch over time.
+- IGN ingestion not yet built — stub-ready via the multi-source schema (~50 LOC, same shape).
+- No ETag/Last-Modified skip — Haiku is called on every refresh even when pcgamer hasn't changed.
+- Drop `games.release_date` + `games.lifecycle` columns + refactor consumers — currently kept as synced cache; future cleanup pass.
+
+**Spend.** $0.04 dry-run + 2 × $0.04 real runs ≈ ~$0.12 this session. **Cumulative project:** ~$11.08 (was $10.96 after 3c.17).
+
+**Where we left off.** Phase 3c.18 fully shipped + smoke-tested + docs current. No blockers. Pcgamer carry-over from the morning planning conversation now resolved; date-picker carry-over resolved earlier in Phase 3c.17; IGN.cn regional source remains the next-session carry-over (plus the new IGN release-date ingestion as a second `game_releases` source).
+
+---
+
+## 2026-05-19 (Phase 3c.17, later) — Date-range picker (flatpickr, vendored) replaces ISO-week dropdown on /stories + /clusters
+
+**What shipped.** Airline-style date-range picker on `/stories` and `/clusters` driven by **flatpickr 4.6.13** vendored into `app/static/vendor/flatpickr/` (~50KB JS + ~16KB CSS, MIT). Replaces the previous `<select name="week_id">` ISO-week dropdown on both pages. Back-compat `?week_id=` shim retained so the 7 `seeall_footer` callsites on the weekly read-out (`?week_id={{ active_week_key }}`) keep working unchanged. Defaults: `/stories` = last 7d (matches prior 3c.9 behavior, no regression), `/clusters` = last 30d (~4 weeks, approximates the prior per-ISO-week multi-week list density without being unbounded).
+
+**Library choice locked: flatpickr (vendored), not vanilla `<input type="date">` × 2.** Three options considered: (a) two native `type="date"` inputs — no range UX, browser-variant rendering, weak presets; (b) custom HTMX/Jinja picker — ~200 lines for competent range UX; (c) flatpickr range plugin — ~21 KB gz, one-liner JS init. Picked (c). Per CLAUDE.md "no JS build step" rule, the min files are vendored under `app/static/vendor/flatpickr/` and loaded via `<link>` + `<script>` in `shell_base.html` (lines 22 + 25) — zero npm / zero toolchain. User explicitly approved the new vendored dep per the global rule on architectural changes / new deps.
+
+**Backend.**
+- `app/services/reports.py` — new `parse_date_range(from_str, to_str, week_id, default_days, now)` helper next to `iso_week_bounds`. Returns `{start, end, from_display, to_display}` dict. Precedence: `week_id` (back-compat shim) > `from`+`to` strings > default last-N-days. `end` is **exclusive** (user-picked day + 1) so SQL `published_at < end` covers the picked day inclusively.
+- `app/services/sections.py` — new `clusters_with_items_in_range(session, start, end) -> set[int]`. Uses SQLite `json_each` over each cluster's `member_item_ids` JSON-array string (no `Item.cluster_id` FK exists), returning the set of cluster_ids with ≥1 member item published in `[start, end)`. Locked semantic: **"any member in range"** — cross-week clusters surface in both adjacent ranges (correct "what was happening in this window" mental model). Rejected: all-members-in-range (too strict, hides cross-week clusters); majority-in-range (hard to explain, boundary flicker).
+- `app/routers/dashboard.py` rewritten to accept `?from`/`?to` (via `Query(alias="from")` for the Python-keyword workaround) + back-compat `?week_id=` shim. `_DEFAULT_WINDOW_DAYS = 7`. Filters JOIN `Item.published_at IN [start, end)` (uses `<` upper bound since `end` is exclusive).
+- `app/routers/clusters.py` rewritten same shape. `_DEFAULT_WINDOW_DAYS = 30`. Cluster set = `clusters_with_items_in_range(start, end)` intersected with q/section/region filters.
+- Both routers gained a new `_preset_links()` returning 4 server-rendered presets (Last 7d / Last 30d / This week / All time, where All time = 2020-01-01 → today). Presets server-side (not JS-computed) to avoid tz/DST drift between server and client.
+
+**Templates.**
+- `dashboard.html` + `clusters.html` — dropped `<select name="week_id">`; added `.gc-date-range-group` block containing a visible `#date-range-display` text input, two hidden `name="from"` + `name="to"` inputs (carry values into HTMX via `hx-include`), and 4 `<button class="gc-preset" data-from data-to>` preset buttons.
+- `_region_tabs.html` — `hx-include` flipped from `[name='q'],[name='section'],[name='week_id']` → `[name='q'],[name='section'],[name='from'],[name='to']`.
+- `_clusters_list.html` — empty-state copy now references the date range; "latest" / week_id chips always shown (was gated on `not week_id`).
+- Eyebrow on both pages now shows `{{ date_range.from_display }} → {{ date_range.to_display }}`.
+
+**Init JS** (~30 lines inline in `shell_base.html`'s `end_scripts` block). Activates flatpickr on `#date-range-display` in `range` mode with `defaultDate=[fromInput.value, toInput.value]`. On `onClose` with 2 dates: writes back to the hidden inputs + fires custom `gc:daterange-picked` event; the hidden `#date-from` input listens via `hx-trigger="gc:daterange-picked from:#date-range-display"`. Same event fires from preset buttons. Page-safe: bails if `#date-range-display` or `flatpickr` is missing (so `/`, `/about`, `/sources` are unaffected).
+
+**CSS** (~50 lines appended to `app/static/app.css`): `.gc-date-range-group`, `.gc-date-range-input`, `.gc-preset` + flatpickr accent-color overrides so the calendar matches `--gc-accent` and `--gc-accent-soft` rather than flatpickr's stock blue.
+
+**Smoke-tested live on `:8002`.** All combinations 200:
+- `/stories` (default last-7d) and `/stories?from=2026-05-12&to=2026-05-19`.
+- `/clusters` (default last-30d), `/clusters?from=2026-05-04&to=2026-05-10`, `/clusters?week_id=2026-W19` (back-compat shim → eyebrow renders "2026-05-04 → 2026-05-10", 122 clusters via any-member-in-range).
+- `/clusters?region=americas&from=…&to=…` (region tab still works with date filter — chain via `hx-include`).
+- HTMX fragment branch (`HX-Request: true`) returns the correct partial.
+- `/static/vendor/flatpickr/flatpickr.min.{js,css}` serve 200.
+- `/`, `/about`, `/sources` still 200 — JS init is page-safe.
+
+**Spend.** $0 — no LLM calls. **Cumulative project:** ~$10.96 (unchanged from 3c.16).
+
+**Where we left off.** Phase 3c.17 fully shipped + smoke-tested + docs current. No blockers.
+
+---
+
 ## 2026-05-19 (Phase 3c.16 fixes, end of session) — Three bug fixes from real-world tab-clicking
 
 User-reported issues after the 3c.15 + 3c.16 ship; all three fixed in this same session.
