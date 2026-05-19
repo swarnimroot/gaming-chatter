@@ -4,6 +4,38 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21 in parallel, late-session) — Source-failure banner + Trends mini-bar + Sentiment view, all built by parallel worktree agents
+
+**What shipped.** Three narrow polish items from the Phase 5 "Polish" backlog, all built simultaneously by three Claude Code worktree agents branched off the `9f4deb7` (Phase 3c.18) master HEAD, then cherry-picked sequentially onto master:
+
+- **`52218eb` Phase 3c.19 — source-failure UI banner.** Small warning banner inside `.gc-main`, above `.gc-header`, on every full-page route. Quiet when all sources are healthy; appears with "N source(s) are erroring — click to inspect." + a link to `/sources` when ≥1 `sources.error_count > 3`. Files: NEW `app/templates/_alert_banner.html`; modified `app/templates/shell_base.html` + `app/templates/reports.html` (same include because `reports.html` doesn't extend `shell_base`); `app/services/chrome.py` got a new `FAILING_SOURCE_ERROR_THRESHOLD = 3` constant + `failing_sources_count(session) -> int` helper; all 5 full-page routers (`reports.py` / `dashboard.py` / `clusters.py` / `sources.py` / `about.py`) pass the count into context — `about.py` newly gained a `Session` dependency; `app/static/app.css` appended `.gc-alert-banner*` block reusing existing `--gc-warning` / `--gc-warning-soft` / `--gc-border` tokens (no new design tokens). Singular/plural grammar handled in the partial. Verified live: hidden when healthy, appears with correct count when `error_count` forced to 99 + 7 via SQL, disappears after restore; all routes 200.
+
+- **`8974be9` Phase 3c.20 — Trends mini-bar visualization.** Inline CSS-only mini-bar next to each WoW delta number on the Trends card (`/`). Zero-line-centered (positive grows right of midline = green; negative grows left = red; neutral = gray). Width proportional to `abs(delta_pp)` clamped at 12pp = 100% of half-width by the Jinja macro. No JS, no chart lib. Files: `app/templates/reports.html` (new `trend_bar(delta_pp, tone)` macro invoked inside the existing `trend_rows` loop between name and delta) + `app/static/app.css` (appended `.gc-trend-bar*` block at EOF using existing `--gc-success` / `--gc-danger` / `--gc-fg3` / `--gc-border-strong` tokens — no new design tokens). Verified live: 54 `.gc-trend-bar` class refs on `/` (5 tabs × ~10–12 rows).
+
+- **`ad0541f` Phase 3c.21 — sentiment view.** New `/sentiment` page surfacing **per-category average `sentiment_score`** across enriched items in a chosen window. SQL: `AVG(sentiment_score) + COUNT(*) GROUP BY enrichments.category` joined to `items` for the date filter, sorted by avg DESC. Tone bucketed at ±0.05. Default window = last 30 days. Date-range picker **reuses the Phase 3c.17 pattern** (`parse_date_range` + flatpickr UI inherited via `shell_base.html`) — no new picker variant. Back-compat `?week_id=` shim works through the same helper; garbage params graceful-fallback to default 30d. Files: NEW `app/routers/sentiment.py` (138 LOC; single `GET /sentiment` route, name `sentiment_view`), NEW `app/templates/sentiment.html` (extends `shell_base.html`; uses `<form>` + `gc:daterange-picked` listener for full-page nav rather than fragment swap since it's a single-card page); modified `app/main.py` (registered router), `app/services/chrome.py` (added nav entry between Clusters and Sources, icon `activity`, route name `sentiment_view`), `app/static/app.css` (appended `.gc-sentiment-*` block at EOF). Verified live: 200 on default + explicit from/to + back-compat `?week_id=` + garbage params; 67 `.gc-sentiment` class refs on the page; sentiment nav link present on `/stories` shell (2 refs — icon + label); `/sentiment` appears in `/openapi.json`.
+
+**Merge mechanics.** Cherry-picked in phase order. `app/static/app.css` had 3-way append-at-EOF conflicts — resolved by concatenating the three CSS blocks in phase order (3c.19 → 3c.20 → 3c.21). `app/services/chrome.py` auto-merged cleanly (3c.19 added the failing-sources helper + 3c.21 added a nav entry; the two edits landed in disjoint regions of the file).
+
+**Honest caveat on the parallel approach.** 2 of 3 agents mistakenly wrote to the main repo working tree before self-reverting and re-doing their work inside their assigned worktree — caught and rolled back before the cherry-picks ran. The parallel-worktree workflow saved real wall-clock time on these three narrow-scoped items, but each agent's diff needs explicit review before merging; the meta-decision is in DECISIONS.md (this date).
+
+**Locked decisions (six items, in DECISIONS.md 2026-05-19 Phase 3c.19 / 3c.20 / 3c.21):**
+1. Source-failure banner threshold = strict `> 3` (not `>= 3`) — 1–2 transient errors are noise; >3 indicates a persistent issue worth surfacing.
+2. Banner placement inside `.gc-main`, not above `.gc-shell` — width = main column, doesn't overlap sidebar; sidebar stays a separate visual zone.
+3. Trend mini-bar is zero-line-centered, not left-anchored magnitude — directionality of WoW change reads at a glance; left-anchored loses sign info.
+4. Mini-bar clamp at 12pp = 100% of half-width — real-corpus deltas rarely exceed 8pp; clamping at 12 prevents one outlier from compressing the others to invisibility.
+5. Sentiment view = per-category aggregate, not per-item — item-level sentiment is already in `/stories`; the aggregate is the new value-add.
+6. Sentiment date-range pattern reused, not re-invented — Phase 3c.17's `parse_date_range` + flatpickr UI imported as-is; no new picker variant.
+
+**Plus the meta-decision:** parallel worktree agents are usable for narrow-scoped polish items; review of each agent's output before merging is required (2 of 3 mistakenly wrote to the main repo before self-reverting).
+
+**Worktree leftovers.** 3 worktrees + 3 branches at `.claude/worktrees/agent-*` are still on disk — locked by the Claude Code harness and likely cleaned at session end. Not blocking master.
+
+**Spend.** $0 for all three phases — pure UI / SQL / template work, no LLM calls. **Cumulative project:** ~$11.08 (unchanged from 3c.18).
+
+**Where we left off.** Phases 3c.19 / 3c.20 / 3c.21 fully shipped + smoke-tested + docs current. Phase 5 "Polish" items remaining: watch-list synthesis + eval harness (the source-failure banner, trend mini-charts, and sentiment view items just shipped). Phase 4 (Automation) is deferred at user request. Carry-over options for next session: IGN.cn regional source + IGN release-date ingestion as a second `game_releases` source.
+
+---
+
 ## 2026-05-19 (Phase 3c.18, very-later, same session as 3c.17) — Authoritative game release-date table (pcgamer-sourced) + derived lifecycle
 
 **What shipped.** A proper source-of-truth table for game release dates, replacing the prior Haiku-name-only `games.lifecycle` guesses. The original carry-over from this morning's planning conversation was a one-shot "Haiku parse pcgamer list page → upsert `games.release_date`" — the user reframed it mid-session into a multi-source `game_releases` table with a derived-lifecycle resolver. **Key insight driving the reframe:** lifecycle ('existing' vs. 'upcoming') is a function of `release_date < today`, NOT a Haiku name-only guess. This fixes the prior corpus noise where games like *BioShock* (2007) and *Aliens: Fireteam Elite* (2021) were tagged 'upcoming' by Haiku from the name alone — the model's training-cutoff staleness plus the name-only ambiguity.

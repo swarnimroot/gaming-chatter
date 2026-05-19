@@ -100,6 +100,7 @@ HTMX + Jinja, server-rendered. No JS build step.
 | `/` | Weekly read-out (Monday exec summary; 9-card layout; ISO-week selector). Phase 3c.7 swapped from `/reports`. |
 | `/stories` | Live stories table — items in last 7 days by default; HTMX search + section / region tabs + date-range picker (`?from=YYYY-MM-DD&to=YYYY-MM-DD`; back-compat `?week_id=` shim) (Phase 3c.7 + 3c.9 + 3c.11 + 3c.15 + 3c.17) |
 | `/clusters` | Cluster cards by date range (default last 30d; `?from=…&to=…` or back-compat `?week_id=`; any-member-in-range semantic) with editorial-section overlay chips, region tabs, view toggle (cluster cards / flat list) (Phase 3c.7 + 3c.10–3c.12 + 3c.15 + 3c.17) |
+| `/sentiment` | Per-category average sentiment view — `AVG(sentiment_score) + COUNT(*) GROUP BY enrichments.category` over a date-range window; default last 30d; tone bucketed at ±0.05; date-range picker reuses the Phase 3c.17 `parse_date_range` + flatpickr UI (Phase 3c.21) |
 | `/sources` | Source list — name / type / status / last fetch / errors; HTMX live search; force-pull buttons. (CRUD via web forms pending Phase 4.) |
 | `/about` | 5-stage visual pipeline infographic + glossary + stack panel (Phase 3c.8) |
 | `/reports/drawer` | HTMX fragment — source drawer body, params: `kind={game\|genre\|platform\|event\|cluster}&value=&week=` (3c.3 + 3c.4) |
@@ -108,7 +109,7 @@ HTMX + Jinja, server-rendered. No JS build step.
 | `/static/{path:path}` | Static file serve — FastAPI route, NOT `app.mount(StaticFiles(...))` (Phase 3c.13 — Mount + `root_path` interaction breaks proxy-stripped paths) |
 | `/runs` | **Deferred — Phase 4.** Will surface recent ingest / enrich / cluster / synthesis runs from the `run_log` table. |
 
-UI shell ported from claude.ai/design 2026-05-11 (one-time delivery), maintained in-repo via `shell_base.html` + `_sidebar.html` + `chrome.py`.
+UI shell ported from claude.ai/design 2026-05-11 (one-time delivery), maintained in-repo via `shell_base.html` + `_sidebar.html` + `chrome.py`. **`app/templates/_alert_banner.html`** (Phase 3c.19) is included inside `.gc-main` above `.gc-header` in both `shell_base.html` and `reports.html` (which doesn't extend `shell_base`); emits nothing when no sources have `error_count > 3` (threshold + count from `app/services/chrome.py:FAILING_SOURCE_ERROR_THRESHOLD` / `failing_sources_count(session)`). **`trend_bar(delta_pp, tone)` Jinja macro** in `reports.html` (Phase 3c.20) renders an inline zero-line-centered CSS-only mini-bar next to each WoW delta on the Trends card; width is `abs(delta_pp)` clamped at 12pp = 100% of half-width.
 
 ## External dependencies
 

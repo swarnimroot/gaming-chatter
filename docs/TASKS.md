@@ -225,6 +225,36 @@ Reframe of the morning's pcgamer carry-over into a multi-source source-of-truth 
 - [x] New `scripts/refresh_pcgamer_releases.py` (~170 lines), diff-driven. Fetches via `scrapers_lib.tier1.article.fetch_article` (trafilatura + Chrome TLS impersonation — WebFetch couldn't get past pcgamer's nav chrome). One Haiku call → INSERT new / UPDATE on release_date change / no-op otherwise. Calls `sync_games_dim` for every changed row. Args: `--dry-run`, `--url`, `--limit`; default URL `https://www.pcgamer.com/games/new-pc-games-2026/`. — **Done 2026-05-19.**
 - [x] Smoke-run verification — Body 28,701 chars; Haiku 286 valid entries / 0 invalid / ~44 s wall (distribution 197 YYYY-MM-DD / 88 YYYY / 1 TBA). Run #1: 286 inserts on empty table. Run #2 immediately after: 0 new / 1 updated / 285 unchanged (Haiku run-to-run drift, not a bug). games dim sync: 23 of 184 games matched pcgamer (case-insensitive name); 18 needed updates. Sample correct lifecycle flips: *Mixtape* (2026-05-07) → existing; *Subnautica 2* (2026-05-14) → existing; *Forza Horizon 6* (2026-05-19, today) → upcoming; *007 First Light* (2026-05-27, future) → upcoming. — **Done 2026-05-19.**
 
+### Phase 3c.19 — source-failure UI banner (shipped 2026-05-19)
+
+Small warning banner inside `.gc-main`, above `.gc-header`, on every full-page route. Appears when ≥1 `sources.error_count > 3` (strict greater-than); quiet when all healthy. Built in a parallel-worktree agent run + cherry-picked onto master as `52218eb`. See DECISIONS.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21) + SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21).
+
+- [x] NEW `app/templates/_alert_banner.html` — singular/plural grammar handled in-partial; emits nothing when count is 0. — **Done 2026-05-19.**
+- [x] `app/services/chrome.py` — new `FAILING_SOURCE_ERROR_THRESHOLD = 3` constant + `failing_sources_count(session) -> int` helper. — **Done 2026-05-19.**
+- [x] All 5 full-page routers (`reports.py` / `dashboard.py` / `clusters.py` / `sources.py` / `about.py`) pass the count into context; `about.py` newly gained a `Session` dependency. — **Done 2026-05-19.**
+- [x] `app/templates/shell_base.html` + `app/templates/reports.html` include the banner partial (same include in both because `reports.html` doesn't extend `shell_base`). — **Done 2026-05-19.**
+- [x] `app/static/app.css` appended `.gc-alert-banner*` block reusing existing `--gc-warning` / `--gc-warning-soft` / `--gc-border` tokens (no new design tokens). — **Done 2026-05-19.**
+- [x] Smoke-tested live — banner hidden when all sources healthy; appears with correct count + link when `error_count` forced to 99 + 7 via SQL on two rows; disappears after restore; all routes (`/`, `/stories`, `/clusters`, `/sources`, `/about`) 200. — **Done 2026-05-19.**
+
+### Phase 3c.20 — Trends mini-bar visualization (shipped 2026-05-19)
+
+Inline CSS-only mini-bar next to each WoW delta number on the Trends card (`/`). Zero-line-centered; positive grows right (green), negative grows left (red), neutral (gray). Width clamped at 12pp = 100% of half-width. No JS, no chart lib. Built in a parallel-worktree agent run + cherry-picked onto master as `8974be9`. See DECISIONS.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21) + SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21).
+
+- [x] `app/templates/reports.html` — new `trend_bar(delta_pp, tone)` macro invoked inside the existing `trend_rows` loop between name and delta. — **Done 2026-05-19.**
+- [x] `app/static/app.css` — appended `.gc-trend-bar*` block at EOF using existing `--gc-success` / `--gc-danger` / `--gc-fg3` / `--gc-border-strong` tokens (no new design tokens). — **Done 2026-05-19.**
+- [x] Smoke-tested live — 54 `.gc-trend-bar` class refs on `/` (Trends card 5 tabs × ~10–12 rows each); no Python errors. — **Done 2026-05-19.**
+
+### Phase 3c.21 — sentiment view (shipped 2026-05-19)
+
+New `/sentiment` page surfacing per-category average `sentiment_score` across enriched items in a chosen window. SQL: `AVG(sentiment_score) + COUNT(*) GROUP BY enrichments.category` joined to `items` for the date filter, sorted by avg DESC; tone bucketed at ±0.05. Default window = last 30 days. Date-range picker reuses the Phase 3c.17 pattern (`parse_date_range` + flatpickr UI inherited via `shell_base.html`). Built in a parallel-worktree agent run + cherry-picked onto master as `ad0541f`. See DECISIONS.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21) + SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21).
+
+- [x] NEW `app/routers/sentiment.py` (138 LOC) — single `GET /sentiment` route, name `sentiment_view`. — **Done 2026-05-19.**
+- [x] NEW `app/templates/sentiment.html` — extends `shell_base.html`; uses `<form>` + `gc:daterange-picked` listener for full-page nav (single-card page, no list to swap). — **Done 2026-05-19.**
+- [x] `app/main.py` — registered router. — **Done 2026-05-19.**
+- [x] `app/services/chrome.py` — added nav entry between Clusters and Sources; icon `activity`, route name `sentiment_view`. — **Done 2026-05-19.**
+- [x] `app/static/app.css` — appended `.gc-sentiment-*` block at EOF. — **Done 2026-05-19.**
+- [x] Smoke-tested live — `/sentiment` 200 on default + explicit `?from`/`?to` + back-compat `?week_id=` + garbage params (graceful fallback to default 30d); 67 `.gc-sentiment` class refs on the page; sentiment nav link present on `/stories` shell (2 refs — icon + label); `/sentiment` appears in `/openapi.json`. — **Done 2026-05-19.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis
@@ -235,10 +265,10 @@ Reframe of the morning's pcgamer carry-over into a multi-source source-of-truth 
 
 ## Phase 5 — Polish
 
-- [ ] Trend mini-charts on dashboard (WoW/MoM)
+- [x] Trend mini-charts on dashboard (WoW/MoM) — **shipped 2026-05-19 (Phase 3c.20).** Inline CSS-only zero-line-centered mini-bars on Trends card; 12pp clamp.
 - [ ] Watch-list section in synthesis
-- [ ] Sentiment view (per-category aggregate)
-- [ ] Source-failure alert (UI banner when error_count > N)
+- [x] Sentiment view (per-category aggregate) — **shipped 2026-05-19 (Phase 3c.21).** `/sentiment` page with date-range filter; per-category `AVG(sentiment_score) + COUNT(*)`.
+- [x] Source-failure alert (UI banner when error_count > N) — **shipped 2026-05-19 (Phase 3c.19).** Banner inside `.gc-main` when ≥1 `sources.error_count > 3`.
 - [ ] Eval harness for synthesis quality (sample → manual rate → tune prompts)
 
 ## Later (deferred)

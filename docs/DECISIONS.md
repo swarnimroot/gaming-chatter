@@ -4,6 +4,38 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21, late-session, parallel worktree agents) — Source-failure UI banner + Trends mini-bar + Sentiment view + parallel-worktree workflow meta-decision
+
+**Scope:** Three narrow polish items off the Phase 5 backlog, built simultaneously by three Claude Code worktree agents branched off the `9f4deb7` (Phase 3c.18) master HEAD, then cherry-picked back onto master in phase order (`52218eb` → `8974be9` → `ad0541f`). All three are UI / SQL / template work — no LLM calls, no schema change. See SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21) for the per-phase file lists + verification.
+
+**Locked decisions:**
+
+- **Source-failure banner threshold = strict `> 3`, not `>= 3`.** Empirically 1–2 transient errors per source are noise (a YouTube 503 on a single fetch can leave `error_count = 1` until the next successful pull); >3 indicates a persistent issue worth surfacing. The constant lives at `app/services/chrome.py:FAILING_SOURCE_ERROR_THRESHOLD = 3` and is referenced by `failing_sources_count(session)`. Rejected: `>= 3` (would have surfaced every 3-error transient blip); a user-configurable threshold (overkill for single-user local app).
+
+- **Banner placement inside `.gc-main`, not above `.gc-shell`.** Banner width = main column width, not full viewport. The sidebar stays a separate visual zone; a top-of-shell banner would have visually overlapped the sidebar header in the small-window case. Rationale also matches the existing component model (header / cards / footer all live inside `.gc-main`). Rejected: full-shell banner above sidebar (visual overlap risk); fixed-position toast (would have required dismiss-state persistence we don't want to engineer for single-user).
+
+- **Trend mini-bar is zero-line-centered, not left-anchored magnitude.** Each bar has a midline; positive deltas grow right of midline (green), negative grow left (red), neutral hugs the midline (gray). Reading the bar gives both direction and magnitude at a glance. Rejected: left-anchored magnitude (`width = abs(delta)`, color = sign) — loses sign info at a quick glance; user would have to read the colored number alongside, defeating the purpose of an inline visualization.
+
+- **Mini-bar clamp at 12pp = 100% of half-width.** Real-corpus deltas rarely exceed 8pp (a single big-event week peaks at ~10pp in the existing trends table); clamping at 12 gives a small visual headroom above the natural max and prevents one outlier from compressing all the other bars to invisibility. The clamp lives in the Jinja `trend_bar(delta_pp, tone)` macro. Rejected: dynamic max-per-tab (would mean a 5-point delta looks "big" on a sparse week and "small" on a busy week — inconsistent reading across tabs); unclamped (one 20pp delta would render every other bar as a 2px sliver).
+
+- **Sentiment view = per-category aggregate, not per-item.** Item-level sentiment is already visible on `/stories` (each row carries a sentiment_score chip). The aggregate (`AVG(sentiment_score) + COUNT(*) GROUP BY enrichments.category`, sorted by avg DESC) is the new value-add — surfaces which categories are running positive/negative across a window. Tone bucketed at ±0.05 (anything in `[-0.05, 0.05]` reads as neutral). Rejected: per-item duplication of `/stories` content (no new value); time-series chart of sentiment over weeks (deferred — would need a separate window-stepping data path).
+
+- **Sentiment date-range pattern reused, not re-invented.** Phase 3c.17's `parse_date_range(from_str, to_str, week_id, default_days, now)` + flatpickr UI inherited via `shell_base.html` are imported as-is. `sentiment.html` uses a `<form>` + `gc:daterange-picked` listener for full-page nav rather than a fragment swap, because the page is a single card — no list to swap. Default window = last 30 days (matches `/clusters`). Back-compat `?week_id=` shim works through the same helper; garbage params fall back to default 30d. Rejected: a new picker variant tuned for a single-card page (would have duplicated the 3c.17 logic for negligible UX benefit).
+
+- **Meta-decision: parallel worktree agents are usable for narrow-scoped polish items; review of each agent's output before merging is required.** The three phases here were independent (different files, no shared logic) and individually small (≤10 files each, no architectural change), which made the parallel approach a good fit — saved real wall-clock time over a sequential build. **Honest caveat:** 2 of 3 agents mistakenly wrote to the main repo working tree before self-reverting and re-doing their work inside their assigned worktree — caught before the cherry-picks ran but illustrates the risk. **Forward rule:** explicit review of each agent's diff before merging — don't rubber-stamp; cross-check that the agent stayed in its assigned worktree.
+
+**Implementation notes (for future readers):**
+- Banner singular/plural grammar lives inside `_alert_banner.html` (`1 source is erroring` / `N sources are erroring`); no helper needed.
+- `about.py` newly gained a `Session` dependency it didn't previously have — `failing_sources_count(session)` needs DB access. Pattern mirrors the other 4 routers.
+- `app/static/app.css` got three append-at-EOF blocks (one per phase); the cherry-pick conflicts were resolved by concatenating in phase order. No new design tokens introduced by any of the three phases — all three reuse existing `--gc-warning` / `--gc-success` / `--gc-danger` / `--gc-fg3` / `--gc-border` etc.
+- `chrome.py` auto-merged: 3c.19 added the helper + constant; 3c.21 added a nav entry between Clusters and Sources (icon `activity`, route name `sentiment_view`). Disjoint regions of the file.
+
+**Verification:** Per-phase smoke tests in SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21). Quick summary: banner hidden when healthy / appears with correct count + link when forced; 54 `.gc-trend-bar` refs on `/` (5 Trends tabs × ~10–12 rows); `/sentiment` 200 on default + explicit `?from`/`?to` + back-compat `?week_id=` + garbage; 67 `.gc-sentiment` refs on the page; sentiment nav link in `/stories` shell; `/sentiment` in `/openapi.json`.
+
+**Spend this session:** $0 — no LLM calls across all three phases. Cumulative project: ~$11.08 (unchanged from 3c.18).
+
+---
+
 ## 2026-05-19 (Phase 3c.18, very-later) — Authoritative `game_releases` table (pcgamer-sourced) + derived lifecycle; `games.release_date`/`lifecycle` demoted to synced cache
 
 **Scope:** The morning's pcgamer carry-over ("one-shot Haiku parse on the static list page → upsert `games.release_date`") was reframed into a properly-architected source-of-truth table. The driving insight: lifecycle ('existing' vs. 'upcoming') is a function of `release_date < today`, NOT a Haiku name-only guess — which fixes the prior corpus noise where *BioShock* (2007) and *Aliens: Fireteam Elite* (2021) were tagged 'upcoming' from the name alone (Haiku training-cutoff staleness + name-only ambiguity). New table `game_releases` + new service `app/services/release_dates.py` + new script `scripts/refresh_pcgamer_releases.py` + new `tag_pcgamer_releases()` helper on `app/services/anthropic.py`. No UI change.
