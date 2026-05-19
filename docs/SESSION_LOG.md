@@ -4,6 +4,28 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.16, later) — Region tabs on weekly read-out (filter-existing synthesis, no per-region Opus pass)
+
+**What shipped.** Same 4-tab strip (Global / Americas / Europe / Asia) now appears on `/` (the weekly read-out). Cluster-keyed cards (Biggest / Risks / Drama / Market Momentum / Community / Esports / Watch) are filtered on the fly via `cluster_regions()` — same helper shipped in 3c.15. Non-cluster cards (Hottest games / Trends / Release Radar) carry a small **"Not region-tagged"** chip on regional tabs because they aggregate by game-name or entity-name, not cluster_id. Exec-summary CTA is hidden on regional tabs and replaced with an inline note ("Exec summary covers the whole-corpus week. Switch to Global to read it.") — the synthesis prose was generated globally; showing it as if it were region-specific would mislead.
+
+**Locked design choice — Option (D), not (B).** Filter the existing `synthesis_json` by region. Did NOT run a per-region Opus synthesis. Rationale: corpus is still too thin per-region for 3× weekly Opus calls to produce 3 strong reports; would just produce 3 weaker ones. When source mix diversifies (≥30–40 items/week per regional tab), revisit. Same rationale as the locked Phase 3c.15 "Per-region synthesis deferred" decision. Honest about being a filter, not a separate read-out.
+
+**Implementation.**
+- `app/routers/reports.py` — added `_REGION_ALLOWED` constant + `_filter_cards_by_region()` helper (collects every cluster_id referenced by synthesis_json in one pass, calls `cluster_regions()` once, walks each card list in place). `_build_week_payload(region="")` signature extended. Route handler gains `?region=` param, normalizes garbage to Global, passes `region` / `region_active` / `exec_summary_hidden_for_region` to template.
+- `app/templates/reports.html` — inlined the region-tabs `<nav>` strip (NOT the shared `_region_tabs.html` partial — the readout has different hx-include needs + needs `hx-select="body"` to extract the rendered body from a full-page response, since `/` has no fragment branch); wrapped grid in `#readout-body`; added "Not region-tagged" chips to Hottest / Trends / Release Radar card headers; replaced exec-summary CTA with conditional note on regional tabs.
+- `app/static/app.css` — `.gc-card-note`, `.gc-chip--muted`, `.gc-meta-tag--note` styles added for the new affordances (~15 lines).
+- Watch[] entries without `cluster_id` (corpus-wide editorial) dropped on regional tabs. Community narrative (whole-corpus prose) cleared on regional tabs.
+
+**Smoke-tested live on `:8001`.** All 5 routes return 200 (`/`, 3 regional tabs, garbage param normalizes to Global). Tab strip renders on all; active-class lands on correct tab. Exec-summary CTA hidden on regional tabs (1 file-text icon on Global, 0 on Asia). Card empty-state count increases on regional tabs (Global: 5, Americas: 6, Asia: 7, Europe: 9 — Europe is thinnest because only 15 clusters carry the europe tag). 3 "Not region-tagged" chips render on each regional tab as designed.
+
+**HTMX behavior.** Tabs do a `hx-target="body" hx-select="body"` full-body swap because the header exec-summary CTA needs to update with region state. Heavier than the per-list swap on /stories + /clusters but `/` is a single-template render anyway — no perceptible cost. `hx-push-url="true"` for shareable URLs.
+
+**Honest caveats.** Watch-card empty-state copy on regional tabs is the same generic "Awaiting synthesis…" string, which misleads slightly (synthesis ran, just nothing in the region). Header stats ("383 stories this week") still report whole-corpus counts on regional tabs — intentional; the data window is the whole week, the tab just filters which clusters are eligible for display.
+
+**Spend.** $0 — no LLM calls. **Cumulative project:** ~$10.96 (unchanged from 3c.15).
+
+---
+
 ## 2026-05-19 (Phase 3c.15) — Region tagging shipped · 4-tab filter on /stories + /clusters · 1405-item Haiku backfill ($0.30) · 89/66/59/1220 distribution
 
 **What shipped.** Content-inferred `region_focus` per item (Haiku) → 4-tab filter (Global / Americas / Europe / Asia) on `/stories` and `/clusters`. Cluster region computed on-the-fly as union of member tags, mirroring the Phase 3c.12 section-overlay pattern (no `clusters` schema change). Strict tag matching — Global is the unfiltered default, regional tabs use `LIKE '%region%'`; `?region=garbage` normalizes to Global. Empty-state copy on sparse regional tabs: "No region-tagged items yet — coverage depends on your source mix."

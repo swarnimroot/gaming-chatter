@@ -4,6 +4,26 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-19 (Phase 3c.16, later) — Region tabs on `/` weekly read-out: filter-existing `synthesis_json`, no per-region Opus pass
+
+**Scope:** Add the same 4-tab region filter (Global / Americas / Europe / Asia) to the weekly read-out at `/`. Re-use the per-cluster region overlay (`cluster_regions()`) shipped earlier today in 3c.15. No new LLM call — cards filter in-place against the cluster_ids referenced by `synthesis_json`.
+
+**Locked decisions:**
+
+- **Filter-existing, not per-region synthesis.** Same call as the 3c.15 deferred-item: corpus is too thin per region for per-region Opus calls (3× weekly cost for 3 weaker reports). When a regional tab reliably has ≥30–40 items/week, revisit. Today's read-out cards just go sparse on regional tabs — honest signal of coverage shape, not synthetic regional content.
+- **Inlined `<nav>` tab strip in `reports.html`, NOT the shared `_region_tabs.html` partial.** The shared partial uses `hx-include="[name='q'],[name='section'],[name='week_id']"` (selectors that don't exist on `/`) and assumes a fragment response. `/` has no `HX-Request` branch — it always returns the full template — so the tab must use `hx-select="body"` to extract just the rendered body from a full-page response. Adding both behaviors to the shared partial would overload it for the stories/clusters case; inlining keeps each page's tab logic local and obvious. Mild duplication accepted.
+- **Full-body swap (`hx-target="body" hx-select="body"`).** The header exec-summary CTA flips visibility with region; a sub-tree swap of `#readout-body` would leave the header CTA stale. Full-body is the smallest swap that keeps the page coherent. The route is a single template render — no observable perf cost.
+- **Hide exec-summary CTA on regional tabs; show inline note in its place.** The summary prose was generated against the whole corpus; showing the CTA as if it were region-specific would mislead. Note copy: *"Exec summary covers the whole-corpus week. Switch to Global to read it."*
+- **"Not region-tagged" chip on Hottest games / Trends / Release Radar card headers when `region_active`.** These cards aggregate by game-name or entity-name, not cluster_id — they cannot be filtered by region tag without extending the games dim with a region column (deferred). Showing the cards unchanged with the chip is the honest middle ground: it tells the user "this dimension isn't region-aware yet" rather than silently hiding the cards or pretending they're filtered. Rejected: hiding the cards (worse UX); silently filtering (would zero everything because games dim has no region).
+- **Watch[] without `cluster_id` dropped on regional tabs.** Some watch entries are corpus-wide editorial ("this week we're watching the Steam summer sale…") without an anchoring cluster. On regional tabs they don't carry the region semantics, so they're dropped rather than rendered as ambiguous.
+- **Community narrative cleared on regional tabs.** Whole-corpus prose; the heated-about / celebrating lists remain (filtered by region).
+
+**Verification:** Smoke-tested live on `:8001`. All 4 tabs return 200; active-class on correct tab; exec-summary CTA hidden on regional tabs (file-text icon count: 1 Global / 0 Asia); 3 "Not region-tagged" chips per regional tab; card empty-state count increases on regional tabs (5 / 6 / 7 / 9 for Global / Americas / Asia / Europe).
+
+**Spend this session:** $0 — no LLM calls. Cumulative project: ~$10.96 (unchanged from 3c.15).
+
+---
+
 ## 2026-05-19 (Phase 3c.15) — Region tagging: content-inferred per-item `region_focus` (Haiku) + 4-tab filter on `/stories` and `/clusters`; cluster region = union of member tags
 
 **Scope:** Add a `region_focus` field to per-item enrichment (Haiku call already in flight — incremental prompt + schema change, no new API call), backfill the 1412 already-enriched items via a one-shot Haiku pass on existing `tldr` text, and surface a 4-tab filter (Global / Americas / Europe / Asia) on `/stories` and `/clusters`. Cluster region is computed on-the-fly as the union of member-item tags (no new column on `clusters`), mirroring the Phase 3c.12 section-overlay pattern.

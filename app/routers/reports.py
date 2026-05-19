@@ -38,6 +38,9 @@ router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 log = logging.getLogger(__name__)
 
+# Phase 3c.16 — region filter (mirrors clusters.py / dashboard.py constants).
+_REGION_ALLOWED = {"americas", "europe", "asia"}
+
 
 # ---------- Static chrome (sidebar nav) -------------------------------------
 # Phase 3c.7: nav moved into `app/services/chrome.py` so Dashboard / Clusters /
@@ -266,8 +269,102 @@ def _apply_synthesis(session: Session, cards: dict, synth: dict) -> None:
     }
 
 
-def _build_week_payload(session: Session, week_id: str) -> dict:
-    """Assemble the full per-week card payload."""
+def _filter_cards_by_region(session: Session, cards: dict, region: str) -> None:
+    """Drop entries from every cluster-keyed card list whose cluster doesn't
+    carry the requested region tag. Phase 3c.16.
+
+    Collects every cluster_id referenced by synthesis_json in one pass, calls
+    `cluster_regions()` once, then walks each card list in place. Cards
+    without cluster_id linkage (hottest / releases / trends) are untouched —
+    the template signals 'Not region-tagged' via the `region_active` flag.
+
+    Special-cased entries:
+      - community.narrative: whole-corpus prose; cleared on regional tabs.
+      - watch[] without `cluster_id`: corpus-wide editorial; dropped.
+    """
+    from app.services.sections import cluster_regions
+
+    cluster_ids: set[int] = set()
+    for b in cards.get("biggest", []) or []:
+        try:
+            cluster_ids.add(int(b["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for m in cards.get("market_momentum", []) or []:
+        try:
+            cluster_ids.add(int(m["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for r in cards.get("risks", []) or []:
+        try:
+            cluster_ids.add(int(r["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for d in cards.get("drama", []) or []:
+        try:
+            cluster_ids.add(int(d["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for e in cards.get("esports", []) or []:
+        try:
+            cluster_ids.add(int(e["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    co = cards.get("community") or {}
+    for c in co.get("heated_about", []) or []:
+        try:
+            cluster_ids.add(int(c["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for c in co.get("celebrating", []) or []:
+        try:
+            cluster_ids.add(int(c["cluster_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    for w in cards.get("watch", []) or []:
+        if w.get("cluster_id") is not None:
+            try:
+                cluster_ids.add(int(w["cluster_id"]))
+            except (TypeError, ValueError):
+                pass
+
+    region_map = cluster_regions(session, list(cluster_ids)) if cluster_ids else {}
+
+    def keep(cid) -> bool:
+        try:
+            return region in region_map.get(int(cid), set())
+        except (TypeError, ValueError):
+            return False
+
+    cards["biggest"] = [b for b in cards.get("biggest", []) if keep(b.get("cluster_id"))]
+    cards["market_momentum"] = [m for m in cards.get("market_momentum", []) if keep(m.get("cluster_id"))]
+    cards["risks"] = [r for r in cards.get("risks", []) if keep(r.get("cluster_id"))]
+    cards["drama"] = [d for d in cards.get("drama", []) if keep(d.get("cluster_id"))]
+    cards["esports"] = [e for e in cards.get("esports", []) if keep(e.get("cluster_id"))]
+
+    cards["community"] = {
+        "narrative": None,  # whole-corpus prose — drop on regional tabs
+        "heated_about": [c for c in co.get("heated_about", []) if keep(c.get("cluster_id"))],
+        "celebrating": [c for c in co.get("celebrating", []) if keep(c.get("cluster_id"))],
+    }
+
+    # watch[] — drop entries without cluster_id (corpus-wide narrative),
+    # filter the rest by region.
+    cards["watch"] = [
+        w for w in cards.get("watch", [])
+        if w.get("cluster_id") is not None and keep(w.get("cluster_id"))
+    ]
+
+
+def _build_week_payload(session: Session, week_id: str, region: str = "") -> dict:
+    """Assemble the full per-week card payload.
+
+    Phase 3c.16: when `region` is one of {'americas','europe','asia'}, every
+    cluster-keyed card list is filtered against `cluster_regions(...)` for the
+    cluster_ids referenced by synthesis_json. Non-cluster cards (Hottest /
+    Releases / Trends) are passed through unchanged — the template shows a
+    'Not region-tagged' chip in their headers when `region_active` is true.
+    """
     label, rng = report_q.week_label_and_range(week_id)
     stats = report_q.week_stats(session, week_id)
     hottest_all = report_q.top_games_for_week(session, week_id, limit=5)
@@ -288,6 +385,8 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
     synth = _load_synthesis(session, week_id)
     if synth is not None:
         _apply_synthesis(session, cards, synth)
+        if region in _REGION_ALLOWED:
+            _filter_cards_by_region(session, cards, region)
 
     return {
         "label": label,
@@ -300,7 +399,9 @@ def _build_week_payload(session: Session, week_id: str) -> dict:
 # ---------- Route -----------------------------------------------------------
 
 @router.get("/")
-def reports_view(request: Request, week: str = ""):
+def reports_view(request: Request, week: str = "", region: str = ""):
+    region_norm = region if region in _REGION_ALLOWED else ""
+    region_active = bool(region_norm)
     with Session(engine) as session:
         week_ids = report_q.available_weeks(session)
 
@@ -323,7 +424,9 @@ def reports_view(request: Request, week: str = ""):
                  "nav_items": nav_items_for(request, "weekly"),
                  "last_pull": "—", "last_workflow": "—",
                  "can_run_pipeline": True,
-                 "sources_meta": {}},
+                 "sources_meta": {},
+                 "region": region_norm, "region_active": region_active,
+                 "exec_summary_hidden_for_region": region_active},
             )
 
         active_key = week if week in week_ids else week_ids[0]
@@ -333,7 +436,7 @@ def reports_view(request: Request, week: str = ""):
             label, rng = report_q.week_label_and_range(k)
             weeks_index.append({"key": k, "label": label, "range": rng, "is_active": k == active_key})
 
-        week_data = _build_week_payload(session, active_key)
+        week_data = _build_week_payload(session, active_key, region=region_norm)
         sources_meta = _build_sources_meta(session)
 
         last_pull_dt = _latest_ingest_dt(session)
@@ -355,6 +458,9 @@ def reports_view(request: Request, week: str = ""):
                 "last_workflow": _format_ago(last_workflow_dt),
                 "can_run_pipeline": can_run_pipeline,
                 "sources_meta": sources_meta,
+                "region": region_norm,
+                "region_active": region_active,
+                "exec_summary_hidden_for_region": region_active,
             },
         )
 

@@ -176,6 +176,18 @@ Content-inferred `region_focus` added to per-item enrichment + 4-tab filter (Glo
 - [x] Empty-state copy `"No region-tagged items yet — coverage depends on your source mix"` wired into `_dashboard_list.html` and `_clusters_list.html`; shows only when `region` is set and list is empty (not on Global). — **Done 2026-05-19.**
 - [x] Smoke-tested end-to-end on `:8001`: all 4 tabs return 200 on both `/stories` and `/clusters`; invalid `?region=` normalizes to Global; HTMX fragment swap returns correct partial; active-class set on correct tab; bare + `/gaming-chatter`-prefixed paths both work. Stories counts: 383 Global / 18 Americas / 6 Europe / 14 Asia (last-7-day window). Clusters: 247 Global / 33 Americas / 15 Europe / 10 Asia. — **Done 2026-05-19.**
 
+## Phase 3c.16 (shipped 2026-05-19, later) — Region tabs on weekly read-out
+
+Same 4-tab strip (Global / Americas / Europe / Asia) on `/`. Cluster-keyed cards (Biggest / Risks / Drama / Market Momentum / Community / Esports / Watch) filter via `cluster_regions()`. Non-cluster cards (Hottest games / Trends / Release Radar) carry a "Not region-tagged" chip — they aggregate by game/entity name, not cluster_id. Exec-summary CTA hidden on regional tabs (the prose is whole-corpus). No per-region Opus pass — filter-existing-`synthesis_json` only. See DECISIONS.md 2026-05-19 (later) + SESSION_LOG.md 2026-05-19 (3c.16).
+
+- [x] `_REGION_ALLOWED` constant + `_filter_cards_by_region()` helper in `app/routers/reports.py`. Collects all cluster_ids referenced by `synthesis_json` in one pass, calls `cluster_regions()` once, walks each card list in place. — **Done 2026-05-19.**
+- [x] `_build_week_payload(region="")` signature extended; `/` handler accepts `?region=`, normalizes garbage to Global, passes `region` / `region_active` / `exec_summary_hidden_for_region` to template. — **Done 2026-05-19.**
+- [x] Inlined region-tabs `<nav>` strip in `reports.html` (NOT shared `_region_tabs.html` partial — readout has different hx-include needs + needs `hx-select="body"`). `#readout-body` wrapper around grid. — **Done 2026-05-19.**
+- [x] "Not region-tagged" chips on Hottest games / Trends / Release Radar card headers when `region_active`. — **Done 2026-05-19.**
+- [x] Exec-summary CTA → inline note on regional tabs: "Exec summary covers the whole-corpus week. Switch to Global to read it." — **Done 2026-05-19.**
+- [x] CSS for `.gc-card-note`, `.gc-chip--muted`, `.gc-meta-tag--note` in `app/static/app.css`. — **Done 2026-05-19.**
+- [x] Smoke-tested all 4 tabs return 200 on `/`; active-class set correctly; exec-summary CTA toggles (Global=1 file-text icon, regional=0); 3 "Not region-tagged" chips on each regional tab; card empty-state counts increase on regional tabs (Global: 5, Americas: 6, Asia: 7, Europe: 9). — **Done 2026-05-19.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis

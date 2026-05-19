@@ -93,18 +93,50 @@
                 {% endif %}>
           <i data-lucide="refresh-cw"></i>Run pipeline
         </button>
+        {% if exec_summary_hidden_for_region %}
+        <span class="gc-meta-tag gc-meta-tag--note" title="The exec summary is generated against the whole corpus. Switch to Global to read it.">
+          Exec summary covers the whole-corpus week. Switch to Global to read it.
+        </span>
+        {% else %}
         <label class="gc-cta" for="modal-open"
                hx-get="{{ request.url_for('reports_exec_summary') }}?week={{ active_week_key }}"
                hx-target="#exec-summary-body" hx-swap="innerHTML">
           <i data-lucide="file-text"></i>Exec summary
         </label>
+        {% endif %}
       </div>
     </header>
 
     {# ----- Scroll area ----- #}
     <div class="gc-scroll">
 
+      {# Phase 3c.16 — region tabs (inlined; the shared partial's hx-include
+         targets q/section/week_id selectors that this page doesn't use, and
+         this page needs hx-select to extract from the full-page response
+         since '/' has no fragment branch). Full-body swap keeps the header
+         exec-summary chip in sync with the active region. #}
+      {% set _tabs = [
+        ('',         'Global'),
+        ('americas', 'Americas'),
+        ('europe',   'Europe'),
+        ('asia',     'Asia'),
+      ] %}
+      <nav class="gc-region-tabs" aria-label="Filter by region">
+        {% for val, label in _tabs %}
+          <button type="button"
+                  class="gc-region-tab{% if (region or '') == val %} gc-region-tab--active{% endif %}"
+                  hx-get="{{ request.url_for('reports_view') }}?week={{ active_week_key }}{% if val %}&region={{ val }}{% endif %}"
+                  hx-target="body"
+                  hx-select="body"
+                  hx-swap="innerHTML"
+                  hx-push-url="true">
+            {{ label }}
+          </button>
+        {% endfor %}
+      </nav>
+
       {% set synth_ran = week.cards.synthesis_meta %}
+      <div id="readout-body">
       <div class="gc-grid">
 
         {# 2. Biggest stories (spans 2) — Phase 3c.5: plural top-3,
@@ -165,6 +197,7 @@
         <div>
           <div class="gc-card">
             {{ card_header("Hottest games", "By mention count this week", hot.all|length ~ " tracked") }}
+            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card aggregates by game name; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
             <div class="gc-hot-tabs">
               <input type="radio" name="hot-tab" id="hot-tab-all" class="gc-tab-input" checked>
               <input type="radio" name="hot-tab" id="hot-tab-current" class="gc-tab-input">
@@ -229,6 +262,7 @@
         <div>
           <div class="gc-card">
             {{ card_header("Trends", "WoW mention-rate delta") }}
+            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card aggregates by entity name; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
             {% if not tr.has_prior %}
               <div class="gc-row-empty">Need 2 weeks of data to compute WoW deltas.</div>
             {% else %}
@@ -408,6 +442,7 @@
                  "Upcoming releases mentioned this week",
                  '<a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">Calendar →</a>'|safe
                ) }}
+            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card is sourced from game release dates; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
             <div class="gc-row-list gc-row-list--scrollable">
               {% for r in releases %}
               <label class="gc-row gc-row--release gc-row-trigger" for="drawer-open"
@@ -460,6 +495,7 @@
         </div>
 
       </div>{# /gc-grid #}
+      </div>{# /readout-body #}
 
     </div>{# /gc-scroll #}
 
