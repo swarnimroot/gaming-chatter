@@ -26,6 +26,14 @@
 {% endblock %}
 
 {% block main_content %}
+{# Phase 3c.23 — drawer state radios + panel must be siblings of each other
+   for the existing :checked ~ .gc-drawer-panel CSS to slide the panel in.
+   Placing them as siblings inside main_content keeps everything scoped to
+   this page (no body-level overrides; /sentiment is the only non-reports
+   page with a drawer right now). #}
+<input type="radio" name="drawer-state" id="drawer-closed" class="gc-overlay-state" checked>
+<input type="radio" name="drawer-state" id="drawer-open"   class="gc-overlay-state">
+
 <div class="gc-sentiment-view">
   <div class="gc-card">
     <div class="gc-card-header">
@@ -39,7 +47,9 @@
     {% if rows %}
     <div class="gc-sentiment-list">
       {% for r in rows %}
-      <div class="gc-sentiment-row gc-sentiment-row--{{ r.tone }}">
+      <label class="gc-sentiment-row gc-sentiment-row--{{ r.tone }} gc-row-trigger" for="drawer-open"
+             hx-get="{{ request.url_for('reports_drawer') }}?kind=category&value={{ r.category|urlencode }}&from={{ date_range.from_display }}&to={{ date_range.to_display }}"
+             hx-target="#source-drawer-body" hx-swap="innerHTML">
         <div class="gc-sentiment-cat">{{ r.category }}</div>
         <div class="gc-sentiment-bar">
           <div class="gc-sentiment-bar-track">
@@ -55,7 +65,7 @@
         </div>
         <div class="gc-sentiment-score gc-sentiment-score--{{ r.tone }}">{{ '%+.2f' | format(r.avg_score) }}</div>
         <div class="gc-sentiment-count">{{ r.item_count }} item{{ 's' if r.item_count != 1 else '' }}</div>
-      </div>
+      </label>
       {% endfor %}
     </div>
     {% else %}
@@ -65,6 +75,23 @@
     {% endif %}
   </div>
 </div>
+
+{# Drawer overlay + panel. Same markup as the reports-page drawer; HTMX
+   swaps into #source-drawer-body when a row is clicked. #}
+<label class="gc-drawer-overlay" for="drawer-closed" aria-label="Close drawer"></label>
+<aside class="gc-drawer-panel" id="source-drawer" aria-label="Source drawer">
+  <label class="gc-drawer-close" for="drawer-closed" title="Close" aria-label="Close drawer">×</label>
+  <div id="source-drawer-body" class="gc-drawer-body-wrap">
+    <div class="gc-drawer-header">
+      <div class="gc-eyebrow">Source drawer</div>
+      <div class="gc-drawer-title">Click a category to drill in</div>
+      <div class="gc-drawer-meta">{{ date_range.from_display }} → {{ date_range.to_display }}</div>
+    </div>
+    <div class="gc-drawer-body">
+      <div class="gc-row-empty">Pick a category to see the items behind it.</div>
+    </div>
+  </div>
+</aside>
 {% endblock %}
 
 {% block end_scripts %}

@@ -484,8 +484,13 @@ def _merge_wow(
     cur_total: int,
     prev_total: int,
     limit: int,
-) -> list[dict]:
-    """Compute rate-delta rows and return top-N sorted by delta DESC.
+) -> dict[str, list[dict]]:
+    """Compute rate-delta rows; return both directions (Phase 3c.23).
+
+    Returns `{"rising": [...limit], "declining": [...limit]}`.
+    - rising: positive delta_pp, sorted DESC (biggest growers first)
+    - declining: negative delta_pp, sorted ASC (biggest fallers first)
+    Neutrals (|delta_pp| ~ 0) appear in neither bucket.
 
     Each row: {name, count, prev_count, delta_pp, delta_display, tone}.
     `count` is this-week absolute count (kept for tooltip / sanity); ranking is
@@ -513,18 +518,25 @@ def _merge_wow(
             "delta_display": delta_display,
             "tone": tone,
         })
-    rows.sort(key=lambda r: r["delta_pp"], reverse=True)
-    return rows[:limit]
+    rising = sorted(
+        [r for r in rows if r["delta_pp"] > 0],
+        key=lambda r: r["delta_pp"], reverse=True,
+    )[:limit]
+    declining = sorted(
+        [r for r in rows if r["delta_pp"] < 0],
+        key=lambda r: r["delta_pp"],
+    )[:limit]
+    return {"rising": rising, "declining": declining}
 
 
-def top_genres_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+def top_genres_wow(session: Session, week_id: str, limit: int = 5) -> dict[str, list[dict]]:
     cur = _tag_counts_for_week(session, week_id, "genres")
     prev = _tag_counts_for_week(session, prev_week_id(week_id), "genres")
     return _merge_wow(cur, prev, week_item_total(session, week_id),
                       week_item_total(session, prev_week_id(week_id)), limit)
 
 
-def top_platforms_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+def top_platforms_wow(session: Session, week_id: str, limit: int = 5) -> dict[str, list[dict]]:
     cur = _tag_counts_for_week(session, week_id, "platforms")
     prev = _tag_counts_for_week(session, prev_week_id(week_id), "platforms")
     return _merge_wow(cur, prev, week_item_total(session, week_id),
@@ -536,22 +548,25 @@ def top_games_wow(
     week_id: str,
     lifecycle: str | None = None,
     limit: int = 5,
-) -> list[dict]:
-    """WoW mover-list for games. lifecycle in {None, 'existing', 'upcoming'}."""
+) -> dict[str, list[dict]]:
+    """WoW mover-list for games. lifecycle in {None, 'existing', 'upcoming'}.
+
+    Phase 3c.23: Trends card collapsed current+upcoming into a single Games tab
+    (lifecycle=None). The lifecycle param is preserved for other callers."""
     cur = _game_counts_for_week(session, week_id, lifecycle=lifecycle)
     prev = _game_counts_for_week(session, prev_week_id(week_id), lifecycle=lifecycle)
     return _merge_wow(cur, prev, week_item_total(session, week_id),
                       week_item_total(session, prev_week_id(week_id)), limit)
 
 
-def top_live_service_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+def top_live_service_wow(session: Session, week_id: str, limit: int = 5) -> dict[str, list[dict]]:
     cur = _game_counts_for_week(session, week_id, live_service_only=True)
     prev = _game_counts_for_week(session, prev_week_id(week_id), live_service_only=True)
     return _merge_wow(cur, prev, week_item_total(session, week_id),
                       week_item_total(session, prev_week_id(week_id)), limit)
 
 
-def top_events_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]:
+def top_events_wow(session: Session, week_id: str, limit: int = 5) -> dict[str, list[dict]]:
     cur = _event_counts_for_week(session, week_id)
     prev = _event_counts_for_week(session, prev_week_id(week_id))
     return _merge_wow(cur, prev, week_item_total(session, week_id),
@@ -559,7 +574,11 @@ def top_events_wow(session: Session, week_id: str, limit: int = 5) -> list[dict]
 
 
 def trends_for_week(session: Session, week_id: str, limit: int = 5) -> dict:
-    """Full 5-tab Trends payload for a week.
+    """Full 5-tab Trends payload for a week (Phase 3c.23 — bidirectional + games-collapse).
+
+    Each tab key (games / genres / platforms / live_service / events) holds a
+    `{"rising": [...limit], "declining": [...limit]}` dict. The Games tab no
+    longer splits current vs. upcoming — a single combined view (lifecycle=None).
 
     has_prior=False means the prior ISO week has zero items — the whole card
     falls back to an empty state. In practice that only happens for synthetic
@@ -573,8 +592,7 @@ def trends_for_week(session: Session, week_id: str, limit: int = 5) -> dict:
     return {
         "has_prior": True,
         "prev_week_id": prev_id,
-        "games_current": top_games_wow(session, week_id, lifecycle="existing", limit=limit),
-        "games_upcoming": top_games_wow(session, week_id, lifecycle="upcoming", limit=limit),
+        "games": top_games_wow(session, week_id, lifecycle=None, limit=limit),
         "genres": top_genres_wow(session, week_id, limit=limit),
         "platforms": top_platforms_wow(session, week_id, limit=limit),
         "live_service": top_live_service_wow(session, week_id, limit=limit),
@@ -587,7 +605,7 @@ def trends_for_week(session: Session, week_id: str, limit: int = 5) -> dict:
 # backed that entity in the week, with source pill + tldr + permalink. Reuses
 # the same json_each + case-insensitive grouping that powers top_*_for_week.
 
-_DRAWER_KINDS = {"game", "genre", "platform", "event", "cluster"}
+_DRAWER_KINDS = {"game", "genre", "platform", "event", "cluster", "category"}
 
 
 def _drawer_source_kind(type_: str | None, url_or_handle: str | None, name: str | None) -> str:
@@ -627,10 +645,21 @@ def items_for_entity_in_week(
     session: Session,
     kind: str,
     value: str,
-    week_id: str,
+    week_id: str = "",
     limit: int = 25,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> list[dict]:
-    """Articles backing a given entity (game/genre/platform/event) in an ISO week.
+    """Articles backing a given entity (game/genre/platform/event/category) in a window.
+
+    Window is set by EITHER:
+      - `week_id` (ISO week) — original mode, converts to [Mon 00:00, next-Mon 00:00)
+      - `start` + `end` datetimes (Phase 3c.23) — date-range callers (e.g. /sentiment).
+        Both must be provided together. `end` is treated as exclusive.
+
+    The `category` kind (3c.23) filters by `enrichments.category` (the locked
+    Haiku taxonomy: industry-news / community / etc.). Used by the sentiment
+    view drawer.
 
     Output is ordered newest-first. Each row carries enough fields for the
     drawer template: source pill + when + title + tldr + permalink + sentiment.
@@ -638,7 +667,12 @@ def items_for_entity_in_week(
     if kind not in _DRAWER_KINDS:
         raise ValueError(f"unknown drawer kind: {kind!r} (expected one of {_DRAWER_KINDS})")
 
-    start, end = iso_week_bounds(week_id)
+    if start is not None and end is not None:
+        pass  # use the explicit window
+    elif week_id:
+        start, end = iso_week_bounds(week_id)
+    else:
+        raise ValueError("items_for_entity_in_week: pass either week_id or (start, end)")
 
     if kind == "cluster":
         # `value` is the cluster_id as a string; fetch member_item_ids and
@@ -734,7 +768,7 @@ def items_for_entity_in_week(
             ORDER BY i.published_at DESC
             LIMIT :lim
         """
-    else:  # event — scalar column, case-insensitive match
+    elif kind == "event":  # scalar column, case-insensitive match
         sql = """
             SELECT i.id, i.title, i.url, i.published_at,
                    e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
@@ -746,6 +780,21 @@ def items_for_entity_in_week(
               AND e.status = 'ok'
               AND e.event IS NOT NULL
               AND LOWER(TRIM(e.event)) = LOWER(:v)
+            ORDER BY i.published_at DESC
+            LIMIT :lim
+        """
+    else:  # category (Phase 3c.23) — scalar column, case-insensitive match
+        sql = """
+            SELECT i.id, i.title, i.url, i.published_at,
+                   e.tldr, e.sentiment_score, e.sentiment_summary, e.category,
+                   s.name AS src_name, s.type AS src_type, s.url_or_handle AS src_url
+            FROM items i
+            JOIN enrichments e ON e.item_id = i.id
+            JOIN sources s ON s.id = i.source_id
+            WHERE i.published_at >= :s AND i.published_at < :e
+              AND e.status = 'ok'
+              AND e.category IS NOT NULL
+              AND LOWER(TRIM(e.category)) = LOWER(:v)
             ORDER BY i.published_at DESC
             LIMIT :lim
         """

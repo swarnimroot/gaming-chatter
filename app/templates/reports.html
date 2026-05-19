@@ -304,17 +304,40 @@
                 <label for="trend-tab-liveservice" class="gc-tab-label">Live-service</label>
                 <label for="trend-tab-events" class="gc-tab-label">Events</label>
               </div>
+              {# Phase 3c.23 — each tab now shows two subsections: Rising +
+                 Declining. The Games tab collapsed current/upcoming into a
+                 single combined view (lifecycle=None). #}
               <div class="gc-tab-panes">
                 <div class="gc-tab-pane gc-tab-pane--games">
-                  <div class="gc-trend-subhead">Current</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.games_current, "game") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Upcoming</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.games_upcoming, "game") }}</div>
+                  <div class="gc-trend-subhead">Rising</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.games.rising, "game") }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.games.declining, "game") }}</div>
                 </div>
-                <div class="gc-tab-pane gc-tab-pane--genres"><div class="gc-row-list">{{ trend_rows(tr.genres, "genre") }}</div></div>
-                <div class="gc-tab-pane gc-tab-pane--platforms"><div class="gc-row-list">{{ trend_rows(tr.platforms, "platform") }}</div></div>
-                <div class="gc-tab-pane gc-tab-pane--liveservice"><div class="gc-row-list">{{ trend_rows(tr.live_service, "game") }}</div></div>
-                <div class="gc-tab-pane gc-tab-pane--events"><div class="gc-row-list">{{ trend_rows(tr.events, "event") }}</div></div>
+                <div class="gc-tab-pane gc-tab-pane--genres">
+                  <div class="gc-trend-subhead">Rising</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.genres.rising, "genre") }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.genres.declining, "genre") }}</div>
+                </div>
+                <div class="gc-tab-pane gc-tab-pane--platforms">
+                  <div class="gc-trend-subhead">Rising</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.platforms.rising, "platform") }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.platforms.declining, "platform") }}</div>
+                </div>
+                <div class="gc-tab-pane gc-tab-pane--liveservice">
+                  <div class="gc-trend-subhead">Rising</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.live_service.rising, "game") }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.live_service.declining, "game") }}</div>
+                </div>
+                <div class="gc-tab-pane gc-tab-pane--events">
+                  <div class="gc-trend-subhead">Rising</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.events.rising, "event") }}</div>
+                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
+                  <div class="gc-row-list">{{ trend_rows(tr.events.declining, "event") }}</div>
+                </div>
               </div>
             </div>
             {% endif %}

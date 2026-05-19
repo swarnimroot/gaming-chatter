@@ -20,7 +20,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text as _sqltext
 from sqlmodel import Session
@@ -479,30 +479,73 @@ _DRAWER_KIND_LABELS = {
     "platform": "Platform",
     "event": "Event",
     "cluster": "Cluster",
+    "category": "Category",   # Phase 3c.23 — used by /sentiment drawer triggers
 }
 
 
 @router.get("/reports/drawer")
-def reports_drawer(request: Request, kind: str = "", value: str = "", week: str = ""):
-    """Return the drawer fragment for an entity (game/genre/platform/event) in a week."""
-    if kind not in _DRAWER_KIND_LABELS or not value or not week:
+def reports_drawer(
+    request: Request,
+    kind: str = "",
+    value: str = "",
+    week: str = "",
+    from_: str = Query("", alias="from"),
+    to: str = "",
+):
+    """Return the drawer fragment for an entity in a window.
+
+    Two window modes:
+      - Week mode: `?week=2026-W19` — original (Phase 3c.3). Used by the
+        weekly read-out cards on `/`.
+      - Date-range mode: `?from=YYYY-MM-DD&to=YYYY-MM-DD` (Phase 3c.23). Used
+        by `/sentiment` rows so the drawer scopes match the picker.
+    """
+    if kind not in _DRAWER_KIND_LABELS or not value:
         return templates.TemplateResponse(
             request, "_drawer.html",
-            {"error": "Drawer requires kind, value, and week parameters.",
+            {"error": "Drawer requires kind and value parameters.",
              "kind_label": "", "value": "", "week_label": "", "items": []},
         )
-    try:
-        week_label, _ = report_q.week_label_and_range(week)
-    except (ValueError, IndexError):
+
+    window_start = None
+    window_end = None
+    week_label = ""
+    if week:
+        try:
+            week_label, _ = report_q.week_label_and_range(week)
+        except (ValueError, IndexError):
+            return templates.TemplateResponse(
+                request, "_drawer.html",
+                {"error": f"Unknown week id: {week!r}.",
+                 "kind_label": _DRAWER_KIND_LABELS[kind], "value": value, "week_label": "", "items": []},
+            )
+    elif from_ and to:
+        try:
+            window_start = datetime.strptime(from_, "%Y-%m-%d")
+            window_end = datetime.strptime(to, "%Y-%m-%d") + timedelta(days=1)  # exclusive
+        except ValueError:
+            return templates.TemplateResponse(
+                request, "_drawer.html",
+                {"error": f"Bad date-range params: from={from_!r} to={to!r}.",
+                 "kind_label": _DRAWER_KIND_LABELS[kind], "value": value, "week_label": "", "items": []},
+            )
+        week_label = f"{from_} → {to}"
+    else:
         return templates.TemplateResponse(
             request, "_drawer.html",
-            {"error": f"Unknown week id: {week!r}.",
+            {"error": "Drawer needs either ?week= or ?from=&to= parameters.",
              "kind_label": _DRAWER_KIND_LABELS[kind], "value": value, "week_label": "", "items": []},
         )
 
     with Session(engine) as session:
         try:
-            items = report_q.items_for_entity_in_week(session, kind, value, week, limit=25)
+            if window_start is not None:
+                items = report_q.items_for_entity_in_week(
+                    session, kind, value,
+                    start=window_start, end=window_end, limit=25,
+                )
+            else:
+                items = report_q.items_for_entity_in_week(session, kind, value, week, limit=25)
         except ValueError as e:
             return templates.TemplateResponse(
                 request, "_drawer.html",
