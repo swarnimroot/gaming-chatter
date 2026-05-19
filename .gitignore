@@ -31,7 +31,7 @@ Thumbs.db
 desktop.ini
 
 # Local Claude state
-.claude/settings.local.json
+.claude/
 
 # Design bundle from claude.ai/design — kept locally for Phase 3c.3 reference, not for git
 .tmp_design_bundle/
