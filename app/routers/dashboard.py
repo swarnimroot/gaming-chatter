@@ -31,6 +31,8 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 _WINDOW_DAYS = 7
 
+_REGION_ALLOWED = {"americas", "europe", "asia"}
+
 
 def _source_kind(s: Source) -> str:
     """Derive a pill kind from the source row — same rule as reports.py."""
@@ -46,11 +48,13 @@ def _build_list_context(
     q: str,
     week_id: str,
     section: str,
+    region: str,
 ) -> dict:
     """Build the items-list context. Filters applied in order:
        1. published_at window (week_id or last-7-days default)
        2. section (item belongs to a cluster in the requested editorial section)
-       3. q (title/TLDR/source.name ILIKE)"""
+       3. region (item's enrichment.region_focus contains the requested tag)
+       4. q (title/TLDR/source.name ILIKE)"""
 
     # 1. Time window.
     if week_id:
@@ -86,10 +90,19 @@ def _build_list_context(
                 "q": q,
                 "week_id": week_id,
                 "section": section,
+                "region": region,
             }
         stmt = stmt.where(col(Item.id).in_(list(section_item_ids)))
 
-    # 3. Text search.
+    # 3. Region filter — strict tag match against Enrichment.region_focus.
+    #    Unknown / empty region values fall through (= Global, no filter).
+    if region in _REGION_ALLOWED:
+        region_item_ids = select(Enrichment.item_id).where(
+            Enrichment.region_focus.ilike(f"%{region}%")
+        )
+        stmt = stmt.where(col(Item.id).in_(region_item_ids))
+
+    # 4. Text search.
     if q:
         pattern = f"%{q.strip()}%"
         matching_enr_ids = select(Enrichment.item_id).where(Enrichment.tldr.ilike(pattern))
@@ -124,6 +137,7 @@ def _build_list_context(
         "q": q,
         "week_id": week_id,
         "section": section,
+        "region": region,
     }
 
 
@@ -133,10 +147,13 @@ def dashboard(
     q: str = "",
     week_id: str = "",
     section: str = "",
+    region: str = "",
     session: Session = Depends(get_session),
 ):
     """Stories list — full page, or fragment for HTMX live-search swap."""
-    ctx = _build_list_context(session, q, week_id, section)
+    # Normalize region — anything outside the allowed set is treated as Global.
+    region_norm = region if region in _REGION_ALLOWED else ""
+    ctx = _build_list_context(session, q, week_id, section, region_norm)
 
     # HTMX live-search returns just the list fragment.
     if request.headers.get("HX-Request"):

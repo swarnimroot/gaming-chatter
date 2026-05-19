@@ -161,6 +161,21 @@ scrapers-lib v1.7.0 shipped the yt-dlp + faster-whisper audio fallback; gaming-c
 - [x] Document outcome in `docs/DECISIONS.md` (model = `small.en`, runtime profile, quality delta, honest caveats on attribution). — **Done 2026-05-15.**
 - [x] Close out the `docs/OPEN_QUESTIONS.md` transcript-deferred entry — resolved; 3 new flag-only entries added (audio-fallback length cap, transcript quality floor, rerun_enrichment cp1252 print bug). — **Done 2026-05-15.**
 
+## Phase 3c.15 (shipped 2026-05-19) — Region tagging
+
+Content-inferred `region_focus` added to per-item enrichment + 4-tab filter (Global / Americas / Europe / Asia) on `/stories` and `/clusters`. Cluster region computed on-the-fly as union of member tags. 1405-item Haiku backfill completed (~$0.30). Distribution: 89 Americas / 66 Europe / 59 Asia / 1220 untagged across 1412 ok enrichments; 18 multi-region items. See DECISIONS.md 2026-05-19 + SESSION_LOG.md 2026-05-19.
+
+- [x] SQLite ALTER `enrichments` — added `region_focus TEXT NULL` via `_migrate_enrichments_columns` in `app/db/init.py`. — **Done 2026-05-19.**
+- [x] Updated `Enrichment` SQLModel in `app/db/models.py` to expose the new field. — **Done 2026-05-19.**
+- [x] Extended Haiku enrichment prompt + JSON schema in `app/services/ollama.py` — `region_focus` added to `EnrichmentData` with `_filter_region_focus` validator; taxonomy locked to subset of `{americas, europe, asia}` or NULL; added to `_enrichment_json_schema` required list. — **Done 2026-05-19.**
+- [x] `scripts/backfill_region.py` — idempotent Haiku one-shot via new `tag_region()` in `app/services/anthropic.py`. Ran on 1405 rows / 0 failures / 29:43 wall / ~$0.30 actual. — **Done 2026-05-19.**
+- [x] `/stories` region filter in `app/routers/dashboard.py` — `?region=americas|europe|asia` query param, strict tag match via JOIN on `Enrichment.region_focus.ilike('%region%')`. Unknown values normalize to Global. — **Done 2026-05-19.**
+- [x] `/clusters` region filter in `app/routers/clusters.py` + new `cluster_regions(session, cluster_ids) -> dict[int, set[str]]` helper in `app/services/sections.py`. — **Done 2026-05-19.**
+- [x] New `_region_tabs.html` partial; included in `dashboard.html` + `clusters.html`; HTMX-driven, `hx-include="[name='q'],[name='section'],[name='week_id']"` chains with existing filters; `hx-push-url="true"` for shareable state. — **Done 2026-05-19.**
+- [x] CSS `.gc-region-tabs` + `.gc-region-tab` appended to `app/static/app.css` (visually inherits `.gc-view-labels` pill row; accent on active). — **Done 2026-05-19.**
+- [x] Empty-state copy `"No region-tagged items yet — coverage depends on your source mix"` wired into `_dashboard_list.html` and `_clusters_list.html`; shows only when `region` is set and list is empty (not on Global). — **Done 2026-05-19.**
+- [x] Smoke-tested end-to-end on `:8001`: all 4 tabs return 200 on both `/stories` and `/clusters`; invalid `?region=` normalizes to Global; HTMX fragment swap returns correct partial; active-class set on correct tab; bare + `/gaming-chatter`-prefixed paths both work. Stories counts: 383 Global / 18 Americas / 6 Europe / 14 Asia (last-7-day window). Clusters: 247 Global / 33 Americas / 15 Europe / 10 Asia. — **Done 2026-05-19.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis

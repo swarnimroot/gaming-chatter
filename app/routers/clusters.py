@@ -23,12 +23,15 @@ from app.services.cluster import cluster_window
 from app.services.reports import available_weeks
 from app.services.sections import (
     SECTION_OPTIONS,
+    cluster_regions,
     load_synthesis_section_map,
     section_label_for,
 )
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+_REGION_ALLOWED = {"americas", "europe", "asia"}
 
 
 def _source_kind(s: Source) -> str:
@@ -39,7 +42,7 @@ def _source_kind(s: Source) -> str:
     return "outlet"
 
 
-def _build_clusters_context(session: Session, week_id: str, q: str, section: str) -> dict:
+def _build_clusters_context(session: Session, week_id: str, q: str, section: str, region: str) -> dict:
     """Run the clusters query (optionally filtered by q) and enrich members.
 
     Default (empty week_id): show per-ISO-week clusters from every week, ordered
@@ -90,6 +93,13 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
     weeks_in_result = {c.week_id for c in clusters_rows if c.week_id and c.week_id != "all"}
     section_map = load_synthesis_section_map(session, list(weeks_in_result))
 
+    # Region overlay — only when a region filter is active.
+    region_map: dict[int, set[str]] = {}
+    if region in _REGION_ALLOWED:
+        region_map = cluster_regions(
+            session, [c.id for c in clusters_rows if c.id is not None]
+        )
+
     enriched = []
     for c, member_ids in zip(clusters_rows, cluster_member_ids):
         cluster_sections = section_map.get(c.id, [])  # list (possibly empty)
@@ -101,6 +111,10 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
             else:
                 if not any(s["section"] == section for s in cluster_sections):
                     continue
+        # Apply region filter — cluster appears if ANY member carries that tag.
+        if region in _REGION_ALLOWED:
+            if region not in region_map.get(c.id, set()):
+                continue
         members = []
         seen_sources: set[int] = set()
         for iid in member_ids:
@@ -130,6 +144,7 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
         "section_label": section_label_for(section),
         "section_options": SECTION_OPTIONS,
         "week_options": week_options,
+        "region": region,
     }
 
 
@@ -155,10 +170,12 @@ def clusters_view(
     week_id: str = "",
     q: str = "",
     section: str = "",
+    region: str = "",
     session: Session = Depends(get_session),
 ):
     """Clusters list — full page or HTMX fragment."""
-    ctx = _build_clusters_context(session, week_id, q, section)
+    region_norm = region if region in _REGION_ALLOWED else ""
+    ctx = _build_clusters_context(session, week_id, q, section, region_norm)
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "_clusters_list.html", ctx)

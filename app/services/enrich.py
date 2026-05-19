@@ -58,6 +58,7 @@ def _persist_ok(session: Session, item_id: int, data: EnrichmentData) -> None:
         "genres": json.dumps(data.genres) if data.genres else None,
         "platforms": json.dumps(data.platforms) if data.platforms else None,
         "event": data.event,
+        "region_focus": ",".join(data.region_focus) if data.region_focus else None,
         "status": "ok",
         "error": None,
     }

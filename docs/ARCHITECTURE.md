@@ -46,7 +46,7 @@ raw_items  ──▶  items (normalized + exact-match dedup)
 | `sources` | id, name, type (rss/reddit/youtube), url_or_handle, enabled, last_fetched_at, last_error, error_count |
 | `raw_items` | source_id, external_id (dedup key), raw_payload (JSON blob), fetched_at |
 | `items` | normalized: title, url, body_text, author, published_at, score, comment_count, fingerprint |
-| `enrichments` | item_id, tldr, entities (games/companies/people JSON), category, sentiment_score, sentiment_summary, embedding (BLOB), status (`ok`/`failed`/`skipped`), error |
+| `enrichments` | item_id, tldr, entities (games/companies/people JSON), category, sentiment_score, sentiment_summary, embedding (BLOB), genres (JSON list — Phase 3c.0), platforms (JSON list — Phase 3c.0), event (string — Phase 3c.0), region_focus (comma-separated subset of `{americas, europe, asia}` or NULL — Phase 3c.15), status (`ok`/`failed`/`skipped`), error |
 | `clusters` | week_id, label, centroid (BLOB), member_item_ids, member_count, source_count, latest_published_at, score (Phase 3b) |
 | `weekly_reports` | week_start, week_end, markdown_content, html_content, generated_at, status |
 | `run_log` | job_type, source_id, started_at, completed_at, status, items_processed, error |
@@ -57,7 +57,7 @@ Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **sema
 
 | Stage | Where | Cost | Trigger |
 |---|---|---|---|
-| Per-item enrichment (TL;DR, entities, category, sentiment, genres, platforms, event) | Anthropic Haiku 4.5 | ~$100–200/yr | After each daily ingest |
+| Per-item enrichment (TL;DR, entities, category, sentiment, genres, platforms, event, region_focus) | Anthropic Haiku 4.5 | ~$100–200/yr | After each daily ingest |
 | Per-item embedding (768-dim) | Ollama `nomic-embed-text` local | $0 | After each daily ingest |
 | Game tagging (lifecycle + live_service per unique game) | Anthropic Haiku 4.5 | ~$1 per backfill | After enrichment |
 | Weekly clustering (cosine connected-components @ 0.85) | numpy in-process | $0 | Monday before report |
@@ -76,6 +76,7 @@ Two-stage dedup: **exact** (`external_id` or fingerprint hash) on ingest; **sema
 - **Biggest story** = top-scored cluster from Phase 3b ranking: `score = source_count × member_count / (1 + days_since_latest)`. Reddit upvote/comment weighting was rejected during 3b because Reddit RSS doesn't carry score data; reconsider only if PRAW reapproves
 - **Watch-list** = entities with rising trajectory but low absolute volume late in the week
 - The LLM **narrates the numbers**; it does not invent them
+- **Region focus** is content-inferred by Haiku during enrichment (`region_focus` ∈ subset of `{americas, europe, asia}` or NULL — Phase 3c.15). Not source-attributed — IGN can publish a story anchored in Japan. Cluster-level region is computed on-the-fly as the union of member-item tags (no column on `clusters`), mirroring the Phase 3c.12 section-overlay pattern
 
 ## UI
 
@@ -83,14 +84,18 @@ HTMX + Jinja, server-rendered. No JS build step.
 
 | Route | Purpose |
 |---|---|
-| `/` | Dashboard (live) — latest exec summary on top + this-week-so-far cards + trend mini-charts + regenerate button |
-| `/sources` | CRUD + per-source status (last fetched, error count, enabled toggle) |
-| `/reports` | Per-ISO-week read-out (9-card grid as of Phase 3c.4 wiring; 3c.5 will restructure the template). Selects via `?week=2026-Wnn` |
-| `/reports/drawer` | HTMX fragment endpoint — source drawer body, params: `kind={game\|genre\|platform\|event\|cluster}&value=&week=` (3c.3 + 3c.4) |
-| `/reports/exec-summary` | HTMX fragment endpoint — exec-summary modal body, param: `week=` (3c.3) |
-| `/runs` | Recent ingest / enrichment / report run log |
+| `/` | Weekly read-out (Monday exec summary; 9-card layout; ISO-week selector). Phase 3c.7 swapped from `/reports`. |
+| `/stories` | Live stories table — items in last 7 days by default; HTMX search + section / week / region filters (Phase 3c.7 + 3c.9 + 3c.11 + 3c.15) |
+| `/clusters` | Per-ISO-week cluster cards with editorial-section overlay chips, region tabs, view toggle (cluster cards / flat list) (Phase 3c.7 + 3c.10–3c.12 + 3c.15) |
+| `/sources` | Source list — name / type / status / last fetch / errors; HTMX live search; force-pull buttons. (CRUD via web forms pending Phase 4.) |
+| `/about` | 5-stage visual pipeline infographic + glossary + stack panel (Phase 3c.8) |
+| `/reports/drawer` | HTMX fragment — source drawer body, params: `kind={game\|genre\|platform\|event\|cluster}&value=&week=` (3c.3 + 3c.4) |
+| `/reports/exec-summary` | HTMX fragment — exec-summary modal body, param: `week=` (3c.3) |
+| `/pipeline/run-full` | POST trigger — full pipeline (ingest → enrich → embed → cluster_window_incremental → synthesize); module-level lock prevents double-fire (Phase 3c.9) |
+| `/static/{path:path}` | Static file serve — FastAPI route, NOT `app.mount(StaticFiles(...))` (Phase 3c.13 — Mount + `root_path` interaction breaks proxy-stripped paths) |
+| `/runs` | **Deferred — Phase 4.** Will surface recent ingest / enrich / cluster / synthesis runs from the `run_log` table. |
 
-UI template is being built externally in **claude.ai/design** and will be ported to Jinja partials when delivered.
+UI shell ported from claude.ai/design 2026-05-11 (one-time delivery), maintained in-repo via `shell_base.html` + `_sidebar.html` + `chrome.py`.
 
 ## External dependencies
 

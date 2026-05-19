@@ -82,7 +82,9 @@
   </ol>
 {% else %}
   <div class="gc-row-empty">
-    {% if q %}No clusters match "{{ q }}".{% else %}
+    {% if q %}No clusters match "{{ q }}".
+    {% elif region %}No region-tagged items yet — coverage depends on your source mix.
+    {% else %}
       No clusters{% if week_id %} for week <code>{{ week_id }}</code>{% endif %}. Run <code>scripts/run_cluster.py</code> to generate them.
     {% endif %}
   </div>

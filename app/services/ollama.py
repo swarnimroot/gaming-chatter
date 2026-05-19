@@ -37,6 +37,7 @@ PLATFORMS = {"PC","PlayStation","Xbox","Nintendo","Mobile","Multi-platform"}
 EVENTS = {"Summer Game Fest","Gamescom","Tokyo Game Show","The Game Awards",
           "State of Play","Nintendo Direct","Xbox Showcase","PC Gaming Show",
           "EVO","BlizzCon","Future Games Show","Other-showcase"}
+REGIONS = {"americas", "europe", "asia"}
 
 
 class Entities(BaseModel):
@@ -61,6 +62,7 @@ class EnrichmentData(BaseModel):
     genres: list[str] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)
     event: Optional[str] = None
+    region_focus: list[str] = Field(default_factory=list)
 
     @field_validator("genres", mode="before")
     @classmethod
@@ -83,6 +85,19 @@ class EnrichmentData(BaseModel):
             return v
         return None
 
+    @field_validator("region_focus", mode="before")
+    @classmethod
+    def _filter_region_focus(cls, v):
+        if not isinstance(v, list):
+            return []
+        seen: list[str] = []
+        for r in v:
+            if isinstance(r, str):
+                r_norm = r.strip().lower()
+                if r_norm in REGIONS and r_norm not in seen:
+                    seen.append(r_norm)
+        return seen
+
 
 SYSTEM_PROMPT = """You are an analyst summarizing a single gaming-news item for a personal aggregator.
 
@@ -95,6 +110,7 @@ Return ONLY valid JSON with these fields:
 - genres: array (max 3) of strings from the genres taxonomy below. [] if not about a specific game.
 - platforms: array of strings from the platforms taxonomy below. [] if no platform mentioned.
 - event: one string from the events taxonomy below, or null. null unless reporting from a listed event.
+- region_focus: array from [americas, europe, asia], or []. Tag only when news is *anchored* in that region (regulators, region-specific events, region-only releases, region-specific business news). Company HQ alone is NOT enough.
 
 Rules:
 - Do not invent facts. If the body is short, give a short tldr.
@@ -121,6 +137,21 @@ Rules:
   A generic patch note with no event context -> event=null.
   Unknown showcases / minor publisher streams -> event="Other-showcase".
 
+- region_focus taxonomy:
+    [americas, europe, asia]
+  Tag a region only when the news is ANCHORED in it — regulatory action, region-specific event,
+  region-only release / pricing, region-specific business or operational news.
+  Company HQ alone is NOT enough — a Japanese studio's worldwide reveal is [], not ["asia"].
+  Multi-tag for cross-region stories (e.g. CN buyer + EU target -> ["asia","europe"]).
+  Worked examples:
+    - "FTC sues Microsoft over Activision deal" -> ["americas"]
+    - "Capcom delays game in Japan only" -> ["asia"]
+    - "Tencent acquires Norwegian studio Funcom" -> ["asia","europe"]
+    - "EU passes new game-rating law" -> ["europe"]
+    - "GTA 6 trailer drops Nov 5" -> []          (worldwide launch)
+    - "Nintendo Direct September recap" -> []   (event is global despite JP host)
+    - "Halo Season 8 patch notes" -> []         (gameplay, no regional angle)
+
 Out-of-taxonomy rule: if a value doesn't fit the lists above, OMIT it.
 Do NOT map "MOBA"->"Strategy", do NOT map "Switch"->"Nintendo" (model: just output "Nintendo"),
 do NOT map "Linux/Steam Deck"->"PC" (omit it).
@@ -145,13 +176,13 @@ Output JSON only. No prose, no code fences, no commentary."""
 def _enrichment_json_schema() -> dict:
     """Build a JSON schema for Ollama structured-output constrained decoding.
 
-    Derived from EnrichmentData.model_json_schema() but with all 8 fields marked
-    required so the model cannot silently omit genres/platforms/event.
+    Derived from EnrichmentData.model_json_schema() but with all 9 fields marked
+    required so the model cannot silently omit genres/platforms/event/region_focus.
     """
     schema = EnrichmentData.model_json_schema()
     schema["required"] = [
         "tldr", "entities", "category", "sentiment_score", "sentiment_summary",
-        "genres", "platforms", "event",
+        "genres", "platforms", "event", "region_focus",
     ]
     return schema
 

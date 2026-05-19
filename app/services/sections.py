@@ -216,3 +216,64 @@ def items_in_section(
         except (TypeError, ValueError):
             pass
     return out
+
+
+_REGION_TAGS = {"americas", "europe", "asia"}
+
+
+def cluster_regions(session: Session, cluster_ids: list[int]) -> dict[int, set[str]]:
+    """Map cluster_id -> set of region tags carried by ANY of its member items.
+
+    Walks each cluster's `member_item_ids` (JSON-array string on the Cluster row),
+    joins to `enrichments.region_focus`, unions the tags. Items with NULL
+    `region_focus` contribute nothing (they only appear under the Global tab).
+
+    Returns `{cluster_id: {'americas', 'europe', ...}}`. Clusters with no
+    region-tagged members are absent from the result dict.
+    """
+    if not cluster_ids:
+        return {}
+
+    cid_placeholders = ",".join(str(int(c)) for c in cluster_ids)
+    cluster_rows = session.exec(_sqltext(
+        f"SELECT id, member_item_ids FROM clusters WHERE id IN ({cid_placeholders})"
+    )).all()
+
+    members_by_cid: dict[int, list[int]] = {}
+    all_item_ids: set[int] = set()
+    for cid, mids_json in cluster_rows:
+        try:
+            ids = [int(i) for i in json.loads(mids_json or "[]")]
+        except (TypeError, ValueError):
+            ids = []
+        members_by_cid[int(cid)] = ids
+        all_item_ids.update(ids)
+
+    if not all_item_ids:
+        return {}
+
+    iid_placeholders = ",".join(str(i) for i in all_item_ids)
+    enr_rows = session.exec(_sqltext(
+        f"SELECT item_id, region_focus FROM enrichments "
+        f"WHERE item_id IN ({iid_placeholders}) AND region_focus IS NOT NULL"
+    )).all()
+    tags_by_item: dict[int, set[str]] = {}
+    for item_id, region_focus in enr_rows:
+        if not region_focus:
+            continue
+        tags = {
+            tag.strip().lower()
+            for tag in str(region_focus).split(",")
+            if tag.strip().lower() in _REGION_TAGS
+        }
+        if tags:
+            tags_by_item[int(item_id)] = tags
+
+    out: dict[int, set[str]] = {}
+    for cid, item_ids in members_by_cid.items():
+        union: set[str] = set()
+        for iid in item_ids:
+            union.update(tags_by_item.get(iid, ()))
+        if union:
+            out[cid] = union
+    return out

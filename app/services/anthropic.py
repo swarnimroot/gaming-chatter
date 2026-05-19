@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 
 import anthropic
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.config import (
     ANTHROPIC_CLUSTER_LABEL_MODEL,
@@ -27,6 +27,7 @@ from app.services.ollama import (
     _ALLOWED_CATEGORIES,
     GAME_TAG_SYSTEM_PROMPT,
     GameTagData,
+    REGIONS,
     SYSTEM_PROMPT,
     EnrichmentData,
 )
@@ -200,3 +201,83 @@ def tag_game(game_name: str) -> GameTagData:
         stop = getattr(message, "stop_reason", "unknown")
         raise ValueError(f"anthropic tag_game returned no parsed output (stop_reason={stop})")
     return data
+
+
+REGION_TAG_SYSTEM_PROMPT = """You tag a gaming-news item with a region focus.
+
+Return ONLY valid JSON with one field:
+- region_focus: array of region tags from [americas, europe, asia], or [].
+
+Tag a region ONLY when the news is ANCHORED in it — regulatory action,
+region-specific event, region-only release / pricing, region-specific
+business or operational news.
+
+Company HQ alone is NOT enough — a Japanese studio's worldwide reveal is
+[], not ["asia"]. Worldwide announcements / trailers / launches / gameplay
+news are [].
+
+Multi-tag for cross-region stories (e.g. a CN buyer acquiring an EU target
+-> ["asia","europe"]).
+
+Worked examples:
+- "FTC sues Microsoft over Activision deal" -> ["americas"]
+- "Capcom delays game in Japan only" -> ["asia"]
+- "Tencent acquires Norwegian studio Funcom" -> ["asia","europe"]
+- "EU passes new game-rating law" -> ["europe"]
+- "GTA 6 trailer drops Nov 5" -> []          (worldwide launch)
+- "Nintendo Direct September recap" -> []   (event is global despite JP host)
+- "Halo Season 8 patch notes" -> []         (gameplay, no regional angle)
+
+Output JSON only. No prose, no code fences."""
+
+
+class RegionTagData(BaseModel):
+    region_focus: list[str] = Field(default_factory=list)
+
+    @field_validator("region_focus", mode="before")
+    @classmethod
+    def _filter(cls, v):
+        if not isinstance(v, list):
+            return []
+        seen: list[str] = []
+        for r in v:
+            if isinstance(r, str):
+                r_norm = r.strip().lower()
+                if r_norm in REGIONS and r_norm not in seen:
+                    seen.append(r_norm)
+        return seen
+
+
+def tag_region(tldr: str) -> list[str]:
+    """Call Anthropic Haiku 4.5 to extract region_focus from a tldr.
+
+    Used by scripts/backfill_region.py to retro-tag existing enrichments
+    without re-running the full enrich pass. Returns subset of
+    {americas, europe, asia}; [] when no clear regional anchor.
+    Raises ValueError on transport / schema failure.
+    """
+    user_prompt = f"TLDR: {tldr}"
+    try:
+        message = _get_client().messages.parse(
+            model=ANTHROPIC_ENRICH_MODEL,
+            max_tokens=128,
+            system=[
+                {
+                    "type": "text",
+                    "text": REGION_TAG_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=RegionTagData,
+        )
+    except anthropic.APIError as e:
+        raise ValueError(f"anthropic tag_region API error: {e}") from e
+    except ValidationError as e:
+        raise ValueError(f"anthropic tag_region response failed schema: {e}") from e
+
+    data = getattr(message, "parsed_output", None)
+    if data is None:
+        stop = getattr(message, "stop_reason", "unknown")
+        raise ValueError(f"anthropic tag_region returned no parsed output (stop_reason={stop})")
+    return list(data.region_focus or [])

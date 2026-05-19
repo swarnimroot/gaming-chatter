@@ -18,6 +18,16 @@ Living doc. Resolved items move to `DECISIONS.md`. New unknowns are appended her
 
 - ~~**`scripts/rerun_enrichment.py` post-run diff print crashes on emoji titles under Windows cp1252.**~~ **Resolved 2026-05-15 (Phase 3c.14 close-out).** Added `if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at the script's entry block (after the `sys.path` bootstrap, before `logging.basicConfig`). Defensive `hasattr` guard for the rare case where stdout has been swapped to a non-TextIOWrapper (won't matter for the CLI script's normal usage but keeps the fix free of edge-case crashes). Fix is in-place at `scripts/rerun_enrichment.py:21-22`.
 
+## Open from 2026-05-19 (Phase 3c.15)
+
+- **Source-level region tagging deferred.** Phase 3c.15 ships content-inferred region (Haiku per item) because content focus ≠ source bias (IGN regularly covers Japanese games). A `sources.region` column would still be useful as a *secondary* dimension once the source mix diversifies — e.g., to surface "Asian-source Asian-content" stories distinctly from "Western-source Asian-content." Revisit when ≥3 Asian sources are added to `sources.yaml`. Fix is straightforward: ALTER `sources`, populate manually (small N), add an optional secondary chip to the region tabs.
+
+- **Regional / per-region synthesis deferred.** v1 treats region as a filter dimension on existing surfaces only — the weekly Opus synthesis remains one global pass per ISO week. Per-region synthesis (3× Opus calls per Monday → Americas / Europe / Asia summaries) was considered and dropped: corpus is too thin per region today (esp. Asia), and the multiplied cost would produce three weaker reports rather than one solid one. Revisit once each regional tab reliably hits ≥30–40 items/week.
+
+- **Cluster region as simple union of member tags may be noisy.** One stray Asia-tagged item in an otherwise-Americas-focused 10-item cluster will paint that cluster as Asia on `/clusters`. Not observed yet — flagged on ship. Tighten to a ≥2-member threshold (or proportional `≥30% of members carry the tag`) if noise becomes visible during real-week usage. The fix is a one-line predicate change inside the `cluster_regions(...)` helper, no schema impact.
+
+- **Asia tab will be near-empty at launch — honest signal, not a bug.** Corpus is currently English/US/UK-heavy by source-mix design (15 news sites are all Anglophone; subreddits + YouTube channels likewise). Feature ships anyway because a thin tab honestly surfaces the coverage gap (vs. hiding it). Action item is on the source-list side: when adding new sources in Phase 4's `/sources` CRUD work, weight toward Asian-content sources (Famitsu RSS / Automaton / r/JRPG / r/Genshin_Impact / etc.) to give the Asia tab real signal.
+
 ## Pending external delivery
 
 - ~~**UI template**~~ — **delivered + ported 2026-05-11.** claude.ai/design bundle for the weekly read-out ported to `/reports` with the locked variants (grid + comfortable + light + orange `#D9682B`). All 13 cards render with placeholder data. Section trim + production-data wiring is the next session's walkthrough work. See SESSION_LOG 2026-05-11.

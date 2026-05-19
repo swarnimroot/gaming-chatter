@@ -1349,3 +1349,22 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-filter-select:hover  { border-color: var(--gc-fg3); }
 .gc-filter-select:focus  { outline: none; border-color: var(--gc-accent); box-shadow: 0 0 0 2px var(--gc-accent-soft); }
+
+/* ---------- Region tabs (Phase 3c.15) — Global/Americas/Europe/Asia.
+   HTMX-driven, state lives in URL ?region=. Visually inherits the .gc-view-labels
+   pill row but on <button> elements rather than radio :checked. */
+.gc-region-tabs {
+  display: inline-flex;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  overflow: hidden; margin-bottom: 16px; background: var(--gc-surface);
+}
+.gc-region-tab {
+  padding: 7px 16px; font-size: 12px; font-weight: 600;
+  color: var(--gc-fg2); cursor: pointer; user-select: none;
+  background: var(--gc-surface); border: none; font-family: inherit;
+  transition: background 0.1s, color 0.1s;
+}
+.gc-region-tab:not(:last-of-type) { border-right: 1px solid var(--gc-border); }
+.gc-region-tab:hover { background: var(--gc-surface-alt); color: var(--gc-fg); }
+.gc-region-tab--active { background: var(--gc-accent); color: #FFF; }
+.gc-region-tab--active:hover { background: var(--gc-accent); color: #FFF; }

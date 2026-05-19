@@ -33,6 +33,9 @@ def _migrate_enrichments_columns() -> None:
         if "event" not in cols:
             conn.execute(text("ALTER TABLE enrichments ADD COLUMN event TEXT"))
             log.info("migrated enrichments: added event column")
+        if "region_focus" not in cols:
+            conn.execute(text("ALTER TABLE enrichments ADD COLUMN region_focus TEXT"))
+            log.info("migrated enrichments: added region_focus column")
 
 
 def _migrate_games_columns() -> None:

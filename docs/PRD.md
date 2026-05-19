@@ -16,6 +16,7 @@ One: me. Local, no auth, no sharing (initial scope).
 4. Surface trends (WoW/MoM) on games and topics, not just headlines.
 5. Make sources easy to add / remove / disable via a light admin UI.
 6. Allow on-demand report regeneration and export-as-HTML.
+7. Filter the live dashboard and clusters view by content region (Americas / Europe / Asia), so the digest can be narrowed to stories anchored in a specific market when the user has time to focus there.
 
 ## Report sections
 
@@ -37,6 +38,7 @@ One: me. Local, no auth, no sharing (initial scope).
 - Mobile-specific UI — desktop browser on localhost
 - Backfill of historical data — accept cold start
 - Replacement for primary news consumption — this is a *digest*, not a feed reader
+- Per-region weekly synthesis — region is a filter dimension on existing surfaces, not a separate synthesis pass. One global read-out per ISO week remains the unit of work.
 
 ## Success criteria
 

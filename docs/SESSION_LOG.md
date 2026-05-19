@@ -4,6 +4,63 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.15) — Region tagging shipped · 4-tab filter on /stories + /clusters · 1405-item Haiku backfill ($0.30) · 89/66/59/1220 distribution
+
+**What shipped.** Content-inferred `region_focus` per item (Haiku) → 4-tab filter (Global / Americas / Europe / Asia) on `/stories` and `/clusters`. Cluster region computed on-the-fly as union of member tags, mirroring the Phase 3c.12 section-overlay pattern (no `clusters` schema change). Strict tag matching — Global is the unfiltered default, regional tabs use `LIKE '%region%'`; `?region=garbage` normalizes to Global. Empty-state copy on sparse regional tabs: "No region-tagged items yet — coverage depends on your source mix."
+
+**Data layer.**
+- SQLite `enrichments.region_focus TEXT NULL` via `_migrate_enrichments_columns` in `app/db/init.py`. Column accepts comma-separated subset of `{americas, europe, asia}` or NULL. NULL = no regional anchor (item appears under Global only).
+- `EnrichmentData` Pydantic schema (`app/services/ollama.py`) gained `region_focus: list[str]` + `_filter_region_focus` validator (lowercase, dedup, taxonomy-locked). `SYSTEM_PROMPT` extended with strict-tagging rule + 7 worked examples (anchor → tag mapping: "Capcom delays game in Japan only" → `["asia"]`; "GTA 6 trailer drops Nov 5" → `[]`; "Tencent acquires Norwegian studio Funcom" → `["asia","europe"]`). Added to `_enrichment_json_schema` required list so Haiku can't silently omit. Zero marginal cost on the going-forward enrich path — rides on the existing per-item call.
+- `_persist_ok` in `app/services/enrich.py` now serializes `data.region_focus` as `",".join(...)` or NULL.
+
+**Backfill** — new `scripts/backfill_region.py` + `tag_region(tldr)` + `RegionTagData` in `app/services/anthropic.py`. Lightweight prompt (uses existing `tldr` text, not full body) — much cheaper than a full re-enrich.
+- Ran on `enrichments WHERE region_focus IS NULL AND status='ok'`. Idempotent (skip-on-non-NULL).
+- **Result:** 1405 attempted / 1405 ok / 0 failed / 29:43 wall-clock / ~$0.30 actual spend.
+- **Final distribution across 1412 ok enrichments:** 89 Americas (6.3%) / 66 Europe (4.7%) / 59 Asia (4.2%) / 1220 untagged (86.4%). **18 multi-region items** (4 carry all 3 tags — e.g., Switch 2 cross-region pricing, IGN consumer research report; 14 carry 2-region — e.g., Tencent-Funcom cross-border deal).
+- Hand-picked candidate quality check (10 items): 9/10 correct (FTC/Activision → Americas; CA Stop Killing Games bill → Americas; Mozilla/UK gov → Europe; NetEase studio shutdown → Asia; Steins;Gate JP release → Asia; HK animated film → Asia; Trump+Huang+China → Americas+Asia; CA AB 1921 → Americas; activision CoD platform-skip → untagged; MS Game Pass speculation → untagged). One borderline: Korean toilet-paper Pokemon product (model picked untagged; arguably Asia).
+
+**UI layer.**
+- `/stories` (`app/routers/dashboard.py`): new `?region=` query param, JOIN to `Enrichment` with `ilike('%region%')`. Unknown values normalize to Global. `_REGION_ALLOWED = {"americas","europe","asia"}` constant gates the predicate.
+- `/clusters` (`app/routers/clusters.py`): same param shape; uses new helper.
+- New `cluster_regions(session, cluster_ids) -> dict[int, set[str]]` in `app/services/sections.py`. Walks each cluster's `member_item_ids` JSON, joins to `enrichments.region_focus`, returns union per cluster. Bulk-fetched in two queries (one for clusters, one for items) — O(n) on member count, not O(n²).
+- New `_region_tabs.html` partial. Parent templates set `route_name` + `target_id` Jinja vars before include. HTMX `hx-get` + `hx-target` + `hx-include="[name='q'],[name='section'],[name='week_id']"` to chain with the existing filter dropdowns. `hx-push-url="true"` for shareable URLs.
+- `dashboard.html` + `clusters.html` updated to include the partial above their respective swap-target divs.
+- `_dashboard_list.html` + `_clusters_list.html` empty-state branches: `{% elif region %}` shows the source-mix copy.
+- `app/static/app.css` — ~20-line `.gc-region-tabs` + `.gc-region-tab` block. Visually inherits `.gc-view-labels` pill-row look; accent on active.
+
+**Smoke-test (live on `:8001`).**
+- All 4 tabs return 200 on both `/stories` and `/clusters`. Both bare paths and `/gaming-chatter`-prefixed paths work.
+- HTMX fragment swap returns correct partial (verified `HX-Request: true` header path).
+- Active-class set on correct tab per server-rendered partial.
+- Invalid `?region=garbage` → falls back to Global.
+- Stories counts (default last-7-day window): 383 Global / 18 Americas / 6 Europe / 14 Asia.
+- Cluster counts (across all weeks): 247 Global / 33 Americas / 15 Europe / 10 Asia.
+- Empty-state copy renders for sparse regional tab combinations (e.g. `?week_id=2025-W01&region=asia`).
+
+**Pre-flight doc updates** — all 5 main docs updated BEFORE implementation (delegated read+draft to a subagent to save context; reviewed and applied edits manually):
+- PRD.md — new goal #7 (regional filtering); new non-goal (per-region synthesis deferred).
+- ARCHITECTURE.md — `region_focus` added to enrichments-row, LLM-pipeline row, and a new Trend-detection bullet.
+- DECISIONS.md — full 2026-05-19 (Phase 3c.15) dated entry with 10 locked decisions: content-inferred (not source-attributed) / strict tag match / no `global` tag value / Global tab is unfiltered (not "untagged" bucket) / cluster region computed on-the-fly / backfill via Haiku one-shot on existing tldr / cluster simple-union accepted for v1 / per-region synthesis deferred / honest scope note re: thin Asia tab.
+- TASKS.md — Phase 3c.15 block inserted between 3c.14 and Phase 4. All 10 checkboxes flipped on ship.
+- OPEN_QUESTIONS.md — 4 new entries under 2026-05-19: source-level region deferred, regional synthesis deferred, cluster-region union noise watch-item, Asia-tab thin-by-design (action: weight new sources Asian when CRUD lands).
+
+**Carry-over staleness flagged but NOT auto-fixed during pre-flight** (per scope rules), THEN swept in close-out:
+- ARCHITECTURE UI route table was pre-3c.7 stale (said `/` = Dashboard). Replaced with current 11-route table including `/stories`, `/clusters`, `/about`, `/pipeline/run-full`, `/static/{path}`, plus marking `/runs` as deferred-to-Phase-4.
+- ARCHITECTURE `enrichments` row was missing `genres`/`platforms`/`event` from Phase 3c.0 (added 2026-05-12). Backfilled inline alongside `region_focus`.
+
+**Spend this session.** ~$0.30 (Haiku backfill: 1405 × ~$0.0002 with prompt caching). **Cumulative project:** ~$10.96.
+
+**Where we left off.** Phase 3c.15 fully shipped + smoke-tested + docs current + committed. No blockers.
+
+**Open / next session — TBD.** Phase 4 (Automation) deferred at user request — revisit when daily/manual cadence becomes painful. Three carry-over candidates on the table from this session's planning conversation:
+1. **pcgamer.com release-date integration** — one-shot Haiku parse on the static list page (`https://www.pcgamer.com/games/new-pc-games-2026/`) → upsert `games.release_date`. Replaces the abandoned IGN release-date-page scrape with a simpler LLM-on-static-URL approach.
+2. **Date-range picker** replacing the ISO-week dropdown on `/stories` + `/clusters`. Open Q on cluster semantics (filter cluster members within range vs. show all members of clusters whose week overlaps range) + library choice (native `<input type="date">` × 2 vs. vendored flatpickr — new dep, needs user OK per CLAUDE.md global rule).
+3. **Add IGN.cn as a regional source** — the only GREEN of 8 candidates probed 2026-05-18. Five REDs dropped (3dmgame, gamersky, vgn.cn TLS-expired, a9vg RSS-disabled, xiaoheihe SPA — see SESSION_LOG entry, this one's earlier text). Two YELLOWs (sector.sk, gamestar.de) need one more RSS-path probe. New source would auto-populate `region_focus="asia"` via the going-forward enrich path.
+
+Plus Phase 5 (Polish) is pending — trend mini-charts, watch-list synthesis, sentiment view, source-failure UI banner, eval harness.
+
+---
+
 ## 2026-05-15 (Phase 3c.14) — YouTube audio-transcribe path wired up · 35-item backfill · W20 force-resynth · cluster effect = ~0, per-item enrichment quality ↑
 
 **What was done:**

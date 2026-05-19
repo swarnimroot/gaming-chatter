@@ -4,6 +4,29 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-19 (Phase 3c.15) — Region tagging: content-inferred per-item `region_focus` (Haiku) + 4-tab filter on `/stories` and `/clusters`; cluster region = union of member tags
+
+**Scope:** Add a `region_focus` field to per-item enrichment (Haiku call already in flight — incremental prompt + schema change, no new API call), backfill the 1412 already-enriched items via a one-shot Haiku pass on existing `tldr` text, and surface a 4-tab filter (Global / Americas / Europe / Asia) on `/stories` and `/clusters`. Cluster region is computed on-the-fly as the union of member-item tags (no new column on `clusters`), mirroring the Phase 3c.12 section-overlay pattern.
+
+**Locked decisions:**
+
+- **Content-inferred, not source-attributed.** Region is set by Haiku from the item's body/tldr, not by the publication's HQ. Rationale: source bias ≠ content focus — IGN.com covers Japanese games regularly; tagging by publisher would mislabel half the corpus. Source-level tagging (a `sources.region` column) is deferred as a useful *secondary* dimension once Asian sources are added — see deferred item in OPEN_QUESTIONS.
+- **Tag values: comma-separated subset of `{americas, europe, asia}`, or NULL.** Three-region split chosen for tab-bar sanity (4 tabs total incl. Global) and because the corpus signal isn't granular enough to support country-level tagging without slop. Multi-value supported because plenty of stories straddle regions (e.g., a Capcom Tokyo press conference with Western release implications → `asia,americas`). NULL means "no regional anchor" — a story about a game's mechanics, an industry-wide trend, or a non-geographic topic.
+- **No `global` tag value.** Items without a regional anchor are NULL, not `'global'`. Rationale: avoids name collision with the Global tab (which is "show all, don't filter"). A `'global'` tag would have created the ambiguous question "does the Global tab show only `'global'`-tagged items, or everything?" — by making it strictly absence-of-filter, the semantics are unambiguous.
+- **Strict tag matching for regional tabs.** The Americas tab shows items with `americas` in their `region_focus` set — nothing else. NULL-tagged items appear *only* in Global. Rejected: showing NULL items in every regional tab as "could be anywhere" — defeats the filter; the user clicked Americas because they wanted Americas. Rejected: showing NULL items as a fallback when a regional tab is sparse — silent mis-filtering.
+- **Global tab is unfiltered, NOT a bucket of "untagged."** Default tab. No `region_focus` predicate in the query. Same data as today's `/stories` and `/clusters` views.
+- **Cluster region is computed on-the-fly, not stored.** New helper (likely `cluster_regions(session, cluster_ids) -> dict[int, set[str]]`) walks `member_item_ids` and unions their `region_focus` tags. Mirrors `items_in_section` from Phase 3c.12. Rationale: cluster membership is already incremental (Phase 3c.12); persisting region on `clusters` would require backfill on every incremental cluster update. The on-the-fly cost is a single indexed lookup per cluster page render. Rejected: column on `clusters` — write-amplification + risk of staleness.
+- **Backfill is a Haiku one-shot on existing `tldr` text** (`scripts/backfill_region.py`), idempotent (skip rows where `region_focus IS NOT NULL`). Cheaper than re-running full enrichment on 1412 items because the prompt only asks for the region field and the input is the already-condensed tldr (~50–100 tokens) rather than the full body. Estimated cost: ~$0.15–0.25.
+- **Cluster region as simple union accepted for v1.** A 1-stray-Asia-item cluster could carry an Asia chip on `/clusters`. Flagged as a watch-item; tightening to a ≥2-member threshold (or proportional `≥30% of members`) is a one-line change if noise is observed.
+- **Per-region synthesis deferred.** Region is a filter dimension in v1, not a synthesis input. The weekly read-out remains one global summary per ISO week. Rationale: the corpus is still thin per-region (esp. Asia until source mix diversifies); per-region synthesis would multiply Opus cost 3× and produce three weaker summaries instead of one solid one. Revisit once each regional tab has ≥30–40 items/week.
+- **Honest scope note.** Corpus today is English/US/UK-heavy. The Asia tab will be near-empty at launch. Feature ships anyway because a thin tab is the honest signal that source coverage is missing — surfacing the gap is more useful than hiding it. Tab-empty state copy: "No region-tagged items yet — coverage depends on your source mix."
+
+**Verification:** Pending implementation.
+
+**Spend this session:** Pending. Estimated ~$0.15–0.25 for the 1412-item Haiku backfill; ongoing Haiku marginal cost on new ingest is negligible (the existing per-item call returns one extra field).
+
+---
+
 ## 2026-05-15 (later) — YouTube audio-transcribe path integrated (scrapers-lib 1.7.0 + `[youtube-audio]` extra); per-item enrichment quality improved, cross-source clustering unchanged
 
 **Scope:** Wired up scrapers-lib v1.7.0's new yt-dlp + faster-whisper audio fallback. 3-line app change + one imperative install of the optional extra; spike-tested on 3 yesterday-`IpBlocked` IDs; backfilled the 35 YT items enriched on 2026-05-14 (when ~19 caption fetches hit `BlockedError(IpBlocked)`); re-embedded, re-clustered W20, force-resynthesized W20.

@@ -56,6 +56,7 @@ class Enrichment(SQLModel, table=True):
     genres: Optional[str] = Field(default=None, sa_column=Column(Text))
     platforms: Optional[str] = Field(default=None, sa_column=Column(Text))
     event: Optional[str] = None
+    region_focus: Optional[str] = None  # comma-separated subset of {americas, europe, asia} or NULL — Phase 3c.15
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

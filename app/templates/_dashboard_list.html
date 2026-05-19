@@ -44,5 +44,9 @@
     </tbody>
   </table>
 {% else %}
-  <div class="gc-row-empty">{% if q %}No items match "{{ q }}".{% else %}No items in the corpus yet.{% endif %}</div>
+  <div class="gc-row-empty">
+    {% if q %}No items match "{{ q }}".
+    {% elif region %}No region-tagged items yet — coverage depends on your source mix.
+    {% else %}No items in the corpus yet.{% endif %}
+  </div>
 {% endif %}

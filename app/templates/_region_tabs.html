@@ -1,0 +1,26 @@
+{# Region tabs — Global / Americas / Europe / Asia. Phase 3c.15.
+   Parent template must set these vars before including:
+     - region    : current selection ('' | 'americas' | 'europe' | 'asia')
+     - route_name: FastAPI route name for hx-get target ('dashboard' or 'clusters_view')
+     - target_id : DOM id of the swap target ('dashboard-list' or 'clusters-list')
+   The tab strip chains with q / week_id / section via hx-include so the other
+   filters persist when the user switches region. #}
+{% set _tabs = [
+  ('',         'Global'),
+  ('americas', 'Americas'),
+  ('europe',   'Europe'),
+  ('asia',     'Asia'),
+] %}
+<nav class="gc-region-tabs" aria-label="Filter by region">
+  {% for val, label in _tabs %}
+    <button type="button"
+            class="gc-region-tab{% if (region or '') == val %} gc-region-tab--active{% endif %}"
+            hx-get="{{ request.url_for(route_name) }}{% if val %}?region={{ val }}{% endif %}"
+            hx-target="#{{ target_id }}"
+            hx-swap="innerHTML"
+            hx-include="[name='q'],[name='section'],[name='week_id']"
+            hx-push-url="true">
+      {{ label }}
+    </button>
+  {% endfor %}
+</nav>

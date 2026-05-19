@@ -34,6 +34,9 @@
 {% endblock %}
 
 {% block main_content %}
+{% set route_name = 'dashboard' %}
+{% set target_id = 'dashboard-list' %}
+{% include "_region_tabs.html" %}
 <div id="dashboard-list">
   {% include "_dashboard_list.html" %}
 </div>
