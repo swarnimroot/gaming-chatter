@@ -1576,3 +1576,22 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* ---------- Phase 3c.22 — Watch-list category chips ------------------
+   Per-item chip rendered inline at the head of .gc-row-item on the Watch
+   card. Tone-mapped to existing accent tokens; falls back to muted style
+   when category is missing (old synthesis_json rows without the field). */
+.gc-watch-chip {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 6px; border-radius: 3px; margin-right: 8px;
+  vertical-align: 1px;
+  background: var(--gc-surface-alt); border: 1px solid var(--gc-border);
+  color: var(--gc-fg2);
+}
+.gc-watch-chip--release   { color: var(--gc-success);  border-color: var(--gc-success); }
+.gc-watch-chip--drama     { color: var(--gc-danger);   border-color: var(--gc-danger); }
+.gc-watch-chip--business  { color: var(--gc-accent);   border-color: var(--gc-accent); }
+.gc-watch-chip--community { color: var(--gc-warning);  border-color: var(--gc-warning); }
+.gc-watch-chip--event     { color: var(--gc-fg2);      border-color: var(--gc-border); }

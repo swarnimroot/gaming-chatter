@@ -38,7 +38,7 @@ from datetime import datetime
 from typing import Literal, Optional
 
 import anthropic
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import text as _sqltext
 from sqlmodel import Session, select
 
@@ -139,10 +139,47 @@ class ReleaseNote(BaseModel):
     note: str = Field(..., max_length=280)
 
 
+_WATCH_DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "TBA"}
+_WATCH_CATEGORIES = {"release", "drama", "business", "community", "event"}
+
+
 class WatchItem(BaseModel):
-    day: str = Field(..., max_length=48, description="'Mon' / 'Tue' / 'Mid-week' / 'Weekend' / 'TBA'")
+    day: str = Field(..., max_length=12, description="One of: Mon, Tue, Wed, Thu, Fri, Sat, Sun, TBA")
     item: str = Field(..., max_length=360)
     cluster_id: Optional[int] = None
+    category: str = Field(default="event", max_length=12,
+                          description="One of: release | drama | business | community | event")
+
+    @field_validator("day", mode="before")
+    @classmethod
+    def _normalize_day(cls, v):
+        """Coerce loose day strings to the strict 8-value set. 'Mid-week' /
+        'Weekend' / 'Tuesday' / unknown -> the nearest specific day or TBA.
+        Forgiving by design — a normalization here avoids a $0.30 retry on
+        a single bad day value."""
+        if not isinstance(v, str):
+            return "TBA"
+        s = v.strip()
+        if s in _WATCH_DAYS:
+            return s
+        lower = s.lower()
+        for prefix, code in [
+            ("mon", "Mon"), ("tue", "Tue"), ("wed", "Wed"), ("thu", "Thu"),
+            ("fri", "Fri"), ("sat", "Sat"), ("sun", "Sun"),
+        ]:
+            if lower.startswith(prefix):
+                return code
+        # Mid-week / Weekend / etc. fall through to TBA (not actionable).
+        return "TBA"
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _normalize_category(cls, v):
+        """Coerce to one of the 5 valid categories. Unknown -> 'event'."""
+        if not isinstance(v, str):
+            return "event"
+        s = v.strip().lower()
+        return s if s in _WATCH_CATEGORIES else "event"
 
 
 class WeeklySynthesis(BaseModel):
@@ -176,8 +213,8 @@ class WeeklySynthesis(BaseModel):
         description="1-line note for each upcoming release mentioned this week",
     )
     watch: list[WatchItem] = Field(
-        default_factory=list, max_length=5,
-        description="Things worth tracking next week — derived from upcoming releases + WoW risers",
+        default_factory=list, max_length=7,
+        description="Things worth tracking next week — derived from upcoming releases + WoW risers + ongoing stories",
     )
     exec_summary_paragraph: str = Field(
         ..., max_length=1600,
@@ -213,7 +250,16 @@ SECTIONS YOU PRODUCE (all fields required unless marked optional):
 
 8. **release_notes** (0-6 items). For each upcoming release in UPCOMING_RELEASES, write a 1-line `note` (≤140 chars) reflecting what the corpus says about that release this week — new trailer? delay? platform reveal? Use EXACT game names from UPCOMING_RELEASES. Skip games without a concrete corpus signal this week rather than padding.
 
-9. **watch** (0-5 items). Things worth tracking next week. Draw from UPCOMING_RELEASES (date-imminent items), Trends WoW risers (rising entities with low absolute volume), or scheduled events. Each: day (one of: Mon, Tue, Wed, Thu, Fri, Mid-week, Weekend, TBA), item (≤180 chars), optional cluster_id reference.
+9. **watch** (5-7 items). Things worth tracking next week. Draw from UPCOMING_RELEASES (date-imminent items), Trends WoW risers (rising entities with low absolute volume), scheduled events, ongoing controversies/drama, or pending business outcomes. Each item: {day, item, category, cluster_id?}.
+   - **day**: pick a specific weekday (`Mon`, `Tue`, `Wed`, `Thu`, `Fri`, `Sat`, `Sun`) when an article or release date grounds it (e.g. "launches May 27" → "Wed"). Only use `TBA` when no week-day inference is possible. Do NOT use `Mid-week` or `Weekend` — pick the most likely specific day instead.
+   - **item**: ≤180 chars, prose describing the thing to watch AND why (what would shift, what to look for).
+   - **category**: one of:
+     - `release` — a game / DLC / expansion launching next week
+     - `drama` — ongoing controversy / studio feud / exec PR situation that could escalate
+     - `business` — M&A close, layoffs follow-up, regulatory deadline, financial filing
+     - `community` — sentiment trend, mod release, content-creator moment to watch
+     - `event` — scheduled showcase, esports tournament, dev stream, conference talk
+   - **cluster_id**: integer reference into this week's CLUSTERS when the item directly continues an existing cluster story; omit for corpus-wide editorial. Mix at least one cluster-grounded item AND at least one corpus-wide item across the list.
 
 10. **exec_summary_paragraph** (≤900 chars). A 3-5 sentence factual paragraph capturing the week. Lead with the biggest concrete signal (name it specifically — game, company, or event). Follow with one or two sentences on supporting signals (top genre / platform / sentiment direction). Close with one sentence on what's worth watching next week. No marketing language, no first/second person, no rhetorical questions, no hype words.
 
@@ -237,6 +283,7 @@ _CRITIC_SYSTEM_PROMPT = """You are a critic-editor reviewing the structured week
 4. **Tighten prose.** Cut marketing verbs (stunning / incredible / must-watch / groundbreaking / exciting). Replace generic phrases ("various studios", "many fans") with concrete names.
 5. **Enforce section scope.** A layoff in market_momentum belongs in risks. A community-anger item in drama belongs in community_sentiment.heated_about. A business deal in risks belongs in market_momentum. Move misplaced items.
 6. **Enforce empty-state preference.** If a section's items are weak or stretched, drop the weakest rather than pad. Sections allow empty lists.
+7. **Validate watch[] specifically.** Every watch item must derive from explicit signals in the input: UPCOMING_RELEASES with a date next week, WoW risers with momentum continuing, scheduled events in the corpus, ongoing-coverage threads still alive at week-end. Drop speculative items with no grounding. Prefer specific weekdays over `TBA` when a release date or scheduled event grounds the day. Verify each `category` value is one of {release, drama, business, community, event} — if anything else slipped through, infer the correct one from the item text.
 7. **Tighten the exec_summary_paragraph.** Must lead with the strongest concrete signal naming a specific entity. 3-5 sentences. No first/second person, no hype.
 8. **Preserve item count where possible.** Do not aggressively delete — but never keep an ungrounded or out-of-scope item.
 

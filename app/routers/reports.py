@@ -246,6 +246,7 @@ def _apply_synthesis(session: Session, cards: dict, synth: dict) -> None:
             "day": w["day"],
             "item": w["item"],
             "cluster_id": w.get("cluster_id"),
+            "category": w.get("category"),
         }
         for w in data.get("watch", [])
     ]

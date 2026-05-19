@@ -500,13 +500,13 @@
                      hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ w.cluster_id }}&week={{ active_week_key }}"
                      hx-target="#source-drawer-body" hx-swap="innerHTML">
                 <span class="gc-row-day">{{ w.day }}</span>
-                <span class="gc-row-item">{{ w.item }}</span>
+                <span class="gc-row-item">{% if w.category %}<span class="gc-watch-chip gc-watch-chip--{{ w.category }}">{{ w.category }}</span>{% endif %}{{ w.item }}</span>
                 <span></span>
               </label>
               {% else %}
               <div class="gc-row gc-row--watch">
                 <span class="gc-row-day">{{ w.day }}</span>
-                <span class="gc-row-item">{{ w.item }}</span>
+                <span class="gc-row-item">{% if w.category %}<span class="gc-watch-chip gc-watch-chip--{{ w.category }}">{{ w.category }}</span>{% endif %}{{ w.item }}</span>
                 <span></span>
               </div>
               {% endif %}
