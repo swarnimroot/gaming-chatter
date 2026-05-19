@@ -1,9 +1,9 @@
 {% extends "shell_base.html" %}
 {% block title %}Clusters — Gaming Chatter{% endblock %}
-{% block eyebrow %}Topic groupings{% endblock %}
+{% block eyebrow %}{{ date_range.from_display }} → {{ date_range.to_display }}{% endblock %}
 {% block heading %}Clusters{% endblock %}
 {% block header_meta %}
-  {{ total_count }} cluster{{ 's' if total_count != 1 else '' }}{% if week_id %} · week <code>{{ week_id }}</code>{% else %} · across all weeks{% endif %}{% if section %} · filtered: {{ section_label }}{% endif %}
+  {{ total_count }} cluster{{ 's' if total_count != 1 else '' }}{% if section %} · filtered: {{ section_label }}{% endif %}
 {% endblock %}
 {% block header_actions %}
   <input type="search" name="q" value="{{ q or '' }}"
@@ -11,26 +11,33 @@
          placeholder="Search cluster label…"
          hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#clusters-list" hx-swap="innerHTML"
-         hx-include="[name='week_id'],[name='section']"
+         hx-include="[name='from'],[name='to'],[name='section']"
          hx-push-url="true">
   <select name="section" class="gc-filter-select"
           hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="change"
           hx-target="#clusters-list" hx-swap="innerHTML"
-          hx-include="[name='week_id'],[name='q']"
+          hx-include="[name='from'],[name='to'],[name='q']"
           hx-push-url="true">
     {% for val, label in section_options %}
       <option value="{{ val }}"{% if section == val %} selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-  <select name="week_id" class="gc-filter-select"
-          hx-get="{{ request.url_for('clusters_view') }}" hx-trigger="change"
-          hx-target="#clusters-list" hx-swap="innerHTML"
-          hx-include="[name='section'],[name='q']"
-          hx-push-url="true">
-    {% for val, label in week_options %}
-      <option value="{{ val }}"{% if week_id == val %} selected{% endif %}>{{ label }}</option>
+  <div class="gc-date-range-group">
+    <input type="text" id="date-range-display" class="gc-date-range-input"
+           value="{{ date_range.from_display }} to {{ date_range.to_display }}"
+           placeholder="Pick date range…" readonly autocomplete="off">
+    <input type="hidden" id="date-from" name="from" value="{{ date_range.from_display }}"
+           hx-get="{{ request.url_for('clusters_view') }}"
+           hx-trigger="gc:daterange-picked from:#date-range-display"
+           hx-target="#clusters-list" hx-swap="innerHTML"
+           hx-include="#date-from,#date-to,[name='q'],[name='section']"
+           hx-push-url="true">
+    <input type="hidden" id="date-to" name="to" value="{{ date_range.to_display }}">
+    {% for p in presets %}
+      <button type="button" class="gc-preset"
+              data-from="{{ p.from }}" data-to="{{ p.to }}">{{ p.label }}</button>
     {% endfor %}
-  </select>
+  </div>
 {% endblock %}
 
 {% block main_content %}

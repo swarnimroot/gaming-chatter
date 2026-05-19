@@ -1,6 +1,6 @@
 {% extends "shell_base.html" %}
 {% block title %}Stories — Gaming Chatter{% endblock %}
-{% block eyebrow %}{% if week_id %}Week {{ week_id }}{% else %}Last {{ window_days }} days{% endif %}{% endblock %}
+{% block eyebrow %}{{ date_range.from_display }} → {{ date_range.to_display }}{% endblock %}
 {% block heading %}Stories{% endblock %}
 {% block header_meta %}
   {{ total_count }} item{{ 's' if total_count != 1 else '' }}{% if section %} · {{ section_label }}{% endif %}{% if q %} · matching "{{ q }}"{% endif %}
@@ -11,26 +11,37 @@
          placeholder="Search title, TL;DR, source…"
          hx-get="{{ request.url_for('dashboard') }}" hx-trigger="keyup changed delay:300ms, search"
          hx-target="#dashboard-list" hx-swap="innerHTML"
-         hx-include="[name='week_id'],[name='section']"
+         hx-include="[name='from'],[name='to'],[name='section']"
          hx-push-url="true">
   <select name="section" class="gc-filter-select"
           hx-get="{{ request.url_for('dashboard') }}" hx-trigger="change"
           hx-target="#dashboard-list" hx-swap="innerHTML"
-          hx-include="[name='week_id'],[name='q']"
+          hx-include="[name='from'],[name='to'],[name='q']"
           hx-push-url="true">
     {% for val, label in section_options %}
       <option value="{{ val }}"{% if section == val %} selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
-  <select name="week_id" class="gc-filter-select"
-          hx-get="{{ request.url_for('dashboard') }}" hx-trigger="change"
-          hx-target="#dashboard-list" hx-swap="innerHTML"
-          hx-include="[name='section'],[name='q']"
-          hx-push-url="true">
-    {% for val, label in week_options %}
-      <option value="{{ val }}"{% if week_id == val %} selected{% endif %}>{{ label }}</option>
+  {# Phase 3c.17 — date-range picker (flatpickr). #date-range-display is the
+     visible input; #date-from / #date-to are hidden carriers. The custom
+     event 'gc:daterange-picked' is fired by the init script in shell_base
+     after both dates settle, triggering the HTMX swap. #}
+  <div class="gc-date-range-group">
+    <input type="text" id="date-range-display" class="gc-date-range-input"
+           value="{{ date_range.from_display }} to {{ date_range.to_display }}"
+           placeholder="Pick date range…" readonly autocomplete="off">
+    <input type="hidden" id="date-from" name="from" value="{{ date_range.from_display }}"
+           hx-get="{{ request.url_for('dashboard') }}"
+           hx-trigger="gc:daterange-picked from:#date-range-display"
+           hx-target="#dashboard-list" hx-swap="innerHTML"
+           hx-include="#date-from,#date-to,[name='q'],[name='section']"
+           hx-push-url="true">
+    <input type="hidden" id="date-to" name="to" value="{{ date_range.to_display }}">
+    {% for p in presets %}
+      <button type="button" class="gc-preset"
+              data-from="{{ p.from }}" data-to="{{ p.to }}">{{ p.label }}</button>
     {% endfor %}
-  </select>
+  </div>
 {% endblock %}
 
 {% block main_content %}

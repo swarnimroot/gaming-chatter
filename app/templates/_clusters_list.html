@@ -41,7 +41,7 @@
               <span class="gc-cluster-sep">·</span>
               <span>latest {{ c.cluster.latest_published_at.strftime('%b %d') }}</span>
             {% endif %}
-            {% if not week_id and c.cluster.week_id %}
+            {% if c.cluster.week_id %}
               <span class="gc-cluster-sep">·</span>
               <span>{{ c.cluster.week_id }}</span>
             {% endif %}
@@ -85,7 +85,7 @@
             {{ c.cluster.member_count }} item{% if c.cluster.member_count != 1 %}s{% endif %} ·
             {{ c.source_count }} source{% if c.source_count != 1 %}s{% endif %}
             {% if c.cluster.latest_published_at %} · latest {{ c.cluster.latest_published_at.strftime('%b %d') }}{% endif %}
-            {% if not week_id and c.cluster.week_id %} · {{ c.cluster.week_id }}{% endif %}
+            {% if c.cluster.week_id %} · {{ c.cluster.week_id }}{% endif %}
           </div>
         </div>
       </li>
@@ -96,7 +96,7 @@
     {% if q %}No clusters match "{{ q }}".
     {% elif region %}No region-tagged items yet — coverage depends on your source mix.
     {% else %}
-      No clusters{% if week_id %} for week <code>{{ week_id }}</code>{% endif %}. Run <code>scripts/run_cluster.py</code> to generate them.
+      No clusters in {{ date_range.from_display }} → {{ date_range.to_display }}. Run <code>scripts/run_cluster.py</code> to generate them, or widen the date range.
     {% endif %}
   </div>
 {% endif %}

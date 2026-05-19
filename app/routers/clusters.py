@@ -7,10 +7,15 @@ where it landed in the weekly synthesis (Biggest / MM / Risks / Community /
 Esports / Drama / Watch / Not surfaced), and a `?section=` dropdown filter.
 Phase 3c.11 — section helpers extracted to `app/services/sections.py`;
 added a `?week_id=` dropdown alongside section + search.
+Phase 3c.17 — week_id dropdown replaced with `?from=YYYY-MM-DD&to=YYYY-MM-DD`
+date-range picker. Cluster filter semantic: include cluster if ANY member
+item's published_at falls in the picked range. `?week_id=` still parsed as a
+back-compat shim for /reports footer links.
 """
 import json
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, col, select
@@ -20,16 +25,19 @@ from app.db.models import Cluster, Item, Source
 from app.db.session import get_session
 from app.services.chrome import nav_items_for
 from app.services.cluster import cluster_window
-from app.services.reports import available_weeks
+from app.services.reports import parse_date_range
 from app.services.sections import (
     SECTION_OPTIONS,
     cluster_regions,
+    clusters_with_items_in_range,
     load_synthesis_section_map,
     section_label_for,
 )
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+_DEFAULT_WINDOW_DAYS = 30
 
 _REGION_ALLOWED = {"americas", "europe", "asia"}
 
@@ -42,21 +50,35 @@ def _source_kind(s: Source) -> str:
     return "outlet"
 
 
-def _build_clusters_context(session: Session, week_id: str, q: str, section: str, region: str) -> dict:
-    """Run the clusters query (optionally filtered by q) and enrich members.
+def _build_clusters_context(
+    session: Session,
+    date_range: dict,
+    q: str,
+    section: str,
+    region: str,
+) -> dict:
+    """Run the clusters query and enrich members.
 
-    Default (empty week_id): show per-ISO-week clusters from every week, ordered
-    by score desc — excludes the legacy `week_id='all'` partition. Explicit
-    `?week_id=all` still works for opting in to the legacy set.
+    Date-range filter: a cluster appears if ANY of its member items has a
+    `published_at` in [date_range.start, date_range.end). Computed via
+    `clusters_with_items_in_range` (sections.py).
     """
+    in_range_ids = clusters_with_items_in_range(
+        session, date_range["start"], date_range["end"]
+    )
+
     stmt = (
         select(Cluster)
+        .where(Cluster.week_id != "all")
         .order_by(Cluster.score.desc().nulls_last(), Cluster.member_count.desc())
     )
-    if week_id:
-        stmt = stmt.where(Cluster.week_id == week_id)
+    if in_range_ids:
+        stmt = stmt.where(col(Cluster.id).in_(list(in_range_ids)))
     else:
-        stmt = stmt.where(Cluster.week_id != "all")
+        # Empty intersection → no clusters in range. Short-circuit to empty
+        # result while keeping the rest of the pipeline running (so the
+        # template still renders region tabs, view toggle, etc.).
+        stmt = stmt.where(Cluster.id == -1)
     if q:
         stmt = stmt.where(Cluster.label.ilike(f"%{q.strip()}%"))
 
@@ -89,7 +111,7 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
                 for s in sources if s.id is not None
             }
 
-    # Build section overlay for the weeks represented in the result set.
+    # Section overlay for the weeks represented in the result set.
     weeks_in_result = {c.week_id for c in clusters_rows if c.week_id and c.week_id != "all"}
     section_map = load_synthesis_section_map(session, list(weeks_in_result))
 
@@ -102,8 +124,7 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
 
     enriched = []
     for c, member_ids in zip(clusters_rows, cluster_member_ids):
-        cluster_sections = section_map.get(c.id, [])  # list (possibly empty)
-        # Apply section filter — match if ANY of the cluster's sections matches.
+        cluster_sections = section_map.get(c.id, [])
         if section:
             if section == "not_surfaced":
                 if cluster_sections:
@@ -111,7 +132,6 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
             else:
                 if not any(s["section"] == section for s in cluster_sections):
                     continue
-        # Apply region filter — cluster appears if ANY member carries that tag.
         if region in _REGION_ALLOWED:
             if region not in region_map.get(c.id, set()):
                 continue
@@ -131,21 +151,38 @@ def _build_clusters_context(session: Session, week_id: str, q: str, section: str
             "sections": cluster_sections,
         })
 
-    # Week dropdown: "All weeks" + each non-legacy week_id with clusters.
-    wk_ids = available_weeks(session)
-    week_options = [("", "All weeks")] + [(w, w) for w in wk_ids]
-
     return {
         "clusters": enriched,
         "sources_by_id": sources_by_id,
-        "week_id": week_id,
         "q": q,
         "section": section,
         "section_label": section_label_for(section),
         "section_options": SECTION_OPTIONS,
-        "week_options": week_options,
         "region": region,
+        "date_range": date_range,
     }
+
+
+def _preset_links(now: datetime | None = None) -> list[dict]:
+    """Date-range presets — mirrors dashboard router (same shape)."""
+    now = now or datetime.utcnow()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    fmt = "%Y-%m-%d"
+    this_monday = today - timedelta(days=today.isoweekday() - 1)
+    return [
+        {"label": "Last 7d",
+         "from": (today - timedelta(days=6)).strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "Last 30d",
+         "from": (today - timedelta(days=29)).strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "This week",
+         "from": this_monday.strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "All time",
+         "from": "2020-01-01",
+         "to":   today.strftime(fmt)},
+    ]
 
 
 @router.post("/clusters/run")
@@ -167,15 +204,18 @@ def clusters_run(
 @router.get("/clusters")
 def clusters_view(
     request: Request,
-    week_id: str = "",
+    week_id: str = "",   # back-compat shim for /reports footer links predating 3c.17
     q: str = "",
     section: str = "",
     region: str = "",
+    from_: str = Query("", alias="from"),
+    to: str = "",
     session: Session = Depends(get_session),
 ):
     """Clusters list — full page or HTMX fragment."""
+    date_range = parse_date_range(from_, to, week_id, _DEFAULT_WINDOW_DAYS)
     region_norm = region if region in _REGION_ALLOWED else ""
-    ctx = _build_clusters_context(session, week_id, q, section, region_norm)
+    ctx = _build_clusters_context(session, date_range, q, section, region_norm)
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "_clusters_list.html", ctx)
@@ -183,5 +223,6 @@ def clusters_view(
     ctx.update({
         "nav_items": nav_items_for(request, "clusters"),
         "total_count": len(ctx["clusters"]),
+        "presets": _preset_links(),
     })
     return templates.TemplateResponse(request, "clusters.html", ctx)

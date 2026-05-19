@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import text as _sqltext
@@ -277,3 +278,24 @@ def cluster_regions(session: Session, cluster_ids: list[int]) -> dict[int, set[s
         if union:
             out[cid] = union
     return out
+
+
+def clusters_with_items_in_range(
+    session: Session,
+    start: datetime,
+    end: datetime,
+) -> set[int]:
+    """Return cluster_ids whose member_item_ids JSON contains at least one item
+    with published_at in [start, end). 'Any member in range' semantic (Phase 3c.17).
+
+    Excludes the legacy week_id='all' bucket. Uses SQLite json_each over the
+    JSON-array string on each Cluster row — no Item.cluster_id FK exists.
+    """
+    rows = session.exec(_sqltext(
+        "SELECT DISTINCT c.id "
+        "FROM clusters c, json_each(c.member_item_ids) je "
+        "JOIN items i ON i.id = CAST(je.value AS INTEGER) "
+        "WHERE c.week_id != 'all' "
+        "  AND i.published_at >= :s AND i.published_at < :e"
+    ).bindparams(s=start, e=end)).all()
+    return {int(r[0]) for r in rows}

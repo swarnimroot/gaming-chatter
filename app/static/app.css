@@ -1418,3 +1418,60 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 @keyframes gc-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---------- Date-range picker (Phase 3c.17) -------------------------
+   Flatpickr-driven range picker that replaces the per-ISO-week dropdown on
+   /stories and /clusters. One visible input (#date-range-display) shows the
+   selected range; two hidden inputs (#date-from / #date-to) carry the values
+   to HTMX. Preset buttons (Last 7d / Last 30d / This week / All time) set the
+   hidden inputs and fire the same gc:daterange-picked event. */
+.gc-date-range-group {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;
+}
+.gc-date-range-input {
+  height: 32px; min-width: 200px; padding: 0 10px;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  background: var(--gc-surface); color: var(--gc-fg);
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; outline: none;
+}
+.gc-date-range-input:hover  { border-color: var(--gc-fg3); }
+.gc-date-range-input:focus  { border-color: var(--gc-accent); box-shadow: 0 0 0 2px var(--gc-accent-soft); }
+.gc-preset {
+  padding: 6px 10px; height: 32px;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  background: var(--gc-surface); color: var(--gc-fg2);
+  font-family: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.gc-preset:hover {
+  background: var(--gc-surface-alt); color: var(--gc-fg);
+  border-color: var(--gc-fg3);
+}
+/* Flatpickr accent override — use our accent color for the selected range. */
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected.inRange,
+.flatpickr-day.startRange.inRange,
+.flatpickr-day.endRange.inRange,
+.flatpickr-day.selected:focus,
+.flatpickr-day.startRange:focus,
+.flatpickr-day.endRange:focus,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover,
+.flatpickr-day.selected.prevMonthDay,
+.flatpickr-day.startRange.prevMonthDay,
+.flatpickr-day.endRange.prevMonthDay,
+.flatpickr-day.selected.nextMonthDay,
+.flatpickr-day.startRange.nextMonthDay,
+.flatpickr-day.endRange.nextMonthDay {
+  background: var(--gc-accent); border-color: var(--gc-accent);
+}
+.flatpickr-day.inRange {
+  background: var(--gc-accent-soft); border-color: var(--gc-accent-soft);
+  box-shadow: -5px 0 0 var(--gc-accent-soft), 5px 0 0 var(--gc-accent-soft);
+}

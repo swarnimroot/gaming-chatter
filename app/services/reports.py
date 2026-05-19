@@ -25,6 +25,61 @@ def iso_week_bounds(week_id: str) -> tuple[datetime, datetime]:
     return monday, monday + timedelta(days=7)
 
 
+def parse_date_range(
+    from_str: str,
+    to_str: str,
+    week_id: str,
+    default_days: int,
+    now: datetime | None = None,
+) -> dict:
+    """Resolve ?from / ?to / ?week_id query params into a datetime window.
+
+    Precedence (first valid wins):
+      1. `week_id` non-empty + parseable → iso_week_bounds(week_id). Back-compat
+         shim for /reports footer links predating Phase 3c.17.
+      2. `from_str` + `to_str` non-empty + parseable as 'YYYY-MM-DD' → use them.
+      3. fallback → [today - (default_days - 1), today], inclusive of today.
+
+    `to` is inclusive of the user-picked day; we add +1 day internally to get
+    the exclusive upper bound so SQL `published_at < end` still covers the 19th.
+
+    Returns dict: start (dt), end (dt, exclusive), from_display, to_display
+    ('YYYY-MM-DD' strings always populated so the picker is never blank).
+    """
+    now = now or datetime.utcnow()
+
+    if week_id:
+        try:
+            start, end_excl = iso_week_bounds(week_id)
+            to_disp = (end_excl - timedelta(days=1)).strftime("%Y-%m-%d")
+            return {
+                "start": start, "end": end_excl,
+                "from_display": start.strftime("%Y-%m-%d"), "to_display": to_disp,
+            }
+        except (ValueError, IndexError):
+            pass
+
+    if from_str and to_str:
+        try:
+            start = datetime.strptime(from_str, "%Y-%m-%d")
+            end_inclusive = datetime.strptime(to_str, "%Y-%m-%d")
+            if start <= end_inclusive:
+                return {
+                    "start": start, "end": end_inclusive + timedelta(days=1),
+                    "from_display": from_str, "to_display": to_str,
+                }
+        except ValueError:
+            pass
+
+    end_inclusive = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end_inclusive - timedelta(days=default_days - 1)
+    return {
+        "start": start, "end": end_inclusive + timedelta(days=1),
+        "from_display": start.strftime("%Y-%m-%d"),
+        "to_display": end_inclusive.strftime("%Y-%m-%d"),
+    }
+
+
 def prev_week_id(week_id: str) -> str:
     """Return the ISO week id one week prior (handles year rollovers)."""
     start, _ = iso_week_bounds(week_id)

@@ -18,7 +18,7 @@
             hx-get="{{ request.url_for(route_name) }}{% if val %}?region={{ val }}{% endif %}"
             hx-target="#{{ target_id }}"
             hx-swap="innerHTML"
-            hx-include="[name='q'],[name='section'],[name='week_id']"
+            hx-include="[name='q'],[name='section'],[name='from'],[name='to']"
             hx-push-url="true">
       {{ label }}
     </button>

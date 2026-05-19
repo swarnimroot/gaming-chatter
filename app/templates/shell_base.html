@@ -19,9 +19,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Gaming Chatter{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='img/alienware-head-light.svg') }}">
+  <link rel="stylesheet" href="{{ request.url_for('static', path='vendor/flatpickr/flatpickr.min.css') }}">
   <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <script src="{{ request.url_for('static', path='vendor/flatpickr/flatpickr.min.js') }}"></script>
 </head>
 <body class="gc-shell-body">
 
@@ -53,6 +55,47 @@
 {% block end_scripts %}
 <script>
   if (window.lucide && window.lucide.createIcons) window.lucide.createIcons();
+
+  // Phase 3c.17 — date-range picker (flatpickr) wiring. Activates only on
+  // pages that include a #date-range-display + hidden from/to inputs.
+  (function () {
+    const display = document.getElementById('date-range-display');
+    if (!display || typeof flatpickr === 'undefined') return;
+
+    const fromInput = document.getElementById('date-from');
+    const toInput = document.getElementById('date-to');
+
+    function fmt(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    flatpickr(display, {
+      mode: 'range',
+      dateFormat: 'Y-m-d',
+      defaultDate: [fromInput.value, toInput.value],
+      onClose: function (selectedDates) {
+        if (selectedDates.length !== 2) return;
+        const f = fmt(selectedDates[0]);
+        const t = fmt(selectedDates[1]);
+        if (fromInput.value === f && toInput.value === t) return;
+        fromInput.value = f;
+        toInput.value = t;
+        htmx.trigger(display, 'gc:daterange-picked');
+      },
+    });
+
+    // Preset buttons share the same custom event. Each carries data-from/data-to.
+    document.querySelectorAll('.gc-preset').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        fromInput.value = btn.dataset.from;
+        toInput.value = btn.dataset.to;
+        htmx.trigger(display, 'gc:daterange-picked');
+      });
+    });
+  })();
 </script>
 {% endblock %}
 

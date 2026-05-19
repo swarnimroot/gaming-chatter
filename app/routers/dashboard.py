@@ -1,4 +1,4 @@
-"""GET /stories — Stories: raw items with live HTMX search + week/section filters.
+"""GET /stories — Stories: raw items with live HTMX search + date-range/section/region filters.
 
 Phase 3c.7 — moved from `/` to `/dashboard`, re-skinned to `shell_base.html`,
 gained `?q=` text filter.
@@ -7,10 +7,13 @@ published in the trailing 7 days (no row cap, all matching items render).
 Phase 3c.10 — URL renamed `/dashboard` → `/stories` to match the nav label.
 Phase 3c.11 — added `?week_id=` and `?section=` dropdown filters matching the
 clusters page. Defaults: week_id="" → last 7 days; section="" → no filter.
+Phase 3c.17 — week_id dropdown replaced with `?from=YYYY-MM-DD&to=YYYY-MM-DD`
+date-range picker (flatpickr). `?week_id=` still parsed as a back-compat shim
+for /reports footer links.
 """
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
@@ -19,7 +22,7 @@ from app.config import TEMPLATES_DIR
 from app.db.models import Enrichment, Item, Source
 from app.db.session import get_session
 from app.services.chrome import nav_items_for
-from app.services.reports import available_weeks, iso_week_bounds
+from app.services.reports import available_weeks, parse_date_range
 from app.services.sections import (
     SECTION_OPTIONS,
     items_in_section,
@@ -29,7 +32,7 @@ from app.services.sections import (
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-_WINDOW_DAYS = 7
+_DEFAULT_WINDOW_DAYS = 7
 
 _REGION_ALLOWED = {"americas", "europe", "asia"}
 
@@ -46,56 +49,41 @@ def _source_kind(s: Source) -> str:
 def _build_list_context(
     session: Session,
     q: str,
-    week_id: str,
+    date_range: dict,
     section: str,
     region: str,
 ) -> dict:
     """Build the items-list context. Filters applied in order:
-       1. published_at window (week_id or last-7-days default)
+       1. published_at window (from date_range — defaults to last 7 days)
        2. section (item belongs to a cluster in the requested editorial section)
        3. region (item's enrichment.region_focus contains the requested tag)
        4. q (title/TLDR/source.name ILIKE)"""
 
-    # 1. Time window.
-    if week_id:
-        try:
-            start, end = iso_week_bounds(week_id)
-        except (ValueError, IndexError):
-            # Invalid week id — fall back to last 7 days.
-            start = datetime.utcnow() - timedelta(days=_WINDOW_DAYS)
-            end = None
-            week_id = ""  # signal back to template that the filter was ignored
-    else:
-        start = datetime.utcnow() - timedelta(days=_WINDOW_DAYS)
-        end = None
+    start, end = date_range["start"], date_range["end"]
 
     stmt = (
         select(Item)
-        .where(Item.published_at >= start)
+        .where(Item.published_at >= start, Item.published_at < end)
         .order_by(Item.published_at.desc().nullslast())
     )
-    if end is not None:
-        stmt = stmt.where(Item.published_at < end)
 
     # 2. Section filter.
     if section:
         wk_ids = available_weeks(session)
         section_item_ids = items_in_section(session, wk_ids, section)
         if section_item_ids is None or len(section_item_ids) == 0:
-            # No items match this section.
             return {
                 "items": [],
                 "sources_by_id": {},
                 "enrichments_by_item": {},
                 "q": q,
-                "week_id": week_id,
                 "section": section,
                 "region": region,
+                "date_range": date_range,
             }
         stmt = stmt.where(col(Item.id).in_(list(section_item_ids)))
 
     # 3. Region filter — strict tag match against Enrichment.region_focus.
-    #    Unknown / empty region values fall through (= Global, no filter).
     if region in _REGION_ALLOWED:
         region_item_ids = select(Enrichment.item_id).where(
             Enrichment.region_focus.ilike(f"%{region}%")
@@ -135,40 +123,61 @@ def _build_list_context(
         "sources_by_id": sources_by_id,
         "enrichments_by_item": enrichments_by_item,
         "q": q,
-        "week_id": week_id,
         "section": section,
         "region": region,
+        "date_range": date_range,
     }
+
+
+def _preset_links(now: datetime | None = None) -> list[dict]:
+    """Server-rendered date-range presets. Each item: {label, from, to} as
+    'YYYY-MM-DD' strings. Template emits them as buttons that pop into the
+    hidden from/to inputs and fire the HTMX swap via a custom event."""
+    now = now or datetime.utcnow()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    fmt = "%Y-%m-%d"
+    this_monday = today - timedelta(days=today.isoweekday() - 1)
+    return [
+        {"label": "Last 7d",
+         "from": (today - timedelta(days=6)).strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "Last 30d",
+         "from": (today - timedelta(days=29)).strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "This week",
+         "from": this_monday.strftime(fmt),
+         "to":   today.strftime(fmt)},
+        {"label": "All time",
+         "from": "2020-01-01",
+         "to":   today.strftime(fmt)},
+    ]
 
 
 @router.get("/stories")
 def dashboard(
     request: Request,
     q: str = "",
-    week_id: str = "",
+    week_id: str = "",   # back-compat shim for /reports footer links predating 3c.17
     section: str = "",
     region: str = "",
+    from_: str = Query("", alias="from"),
+    to: str = "",
     session: Session = Depends(get_session),
 ):
     """Stories list — full page, or fragment for HTMX live-search swap."""
-    # Normalize region — anything outside the allowed set is treated as Global.
+    date_range = parse_date_range(from_, to, week_id, _DEFAULT_WINDOW_DAYS)
     region_norm = region if region in _REGION_ALLOWED else ""
-    ctx = _build_list_context(session, q, week_id, section, region_norm)
+    ctx = _build_list_context(session, q, date_range, section, region_norm)
 
     # HTMX live-search returns just the list fragment.
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "_dashboard_list.html", ctx)
 
-    # Dropdown options.
-    wk_ids = available_weeks(session)
-    week_options = [("", f"Last {_WINDOW_DAYS} days")] + [(w, w) for w in wk_ids]
-
     ctx.update({
         "nav_items": nav_items_for(request, "stories"),
         "total_count": len(ctx["items"]),
-        "window_days": _WINDOW_DAYS,
         "section_options": SECTION_OPTIONS,
         "section_label": section_label_for(section),
-        "week_options": week_options,
+        "presets": _preset_links(),
     })
     return templates.TemplateResponse(request, "dashboard.html", ctx)
