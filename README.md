@@ -4,7 +4,7 @@ Personal weekly gaming-news aggregator. Daily ingest from a curated list of news
 
 ## Status
 
-**Phase 3c.14 shipped (2026-05-15).** 1597 items · 1412 Haiku-enriched + embedded (768-dim `nomic-embed-text`) · 184 games tagged · 247 per-ISO-week clusters with Sonnet-4.6 labels · 4 `weekly_reports` rows (W17–W20, all Opus-4.7-synthesized + critic-passed). Weekly read-out live at `/` with exec-summary 1-pager + HTML/PDF export; `/clusters`, `/stories`, `/sources` reskinned with HTMX live search and per-cluster section overlays; YouTube transcripts on the new audio-fallback path (scrapers-lib v1.7.0 `yt-dlp` + `faster-whisper` `small.en` — local CPU, no API). See [`CLAUDE.md`](CLAUDE.md) for per-phase history and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest handoff.
+**Phase 3c.23 shipped (2026-05-19).** 1597 items · 1412 Haiku-enriched + embedded (768-dim `nomic-embed-text`) · 184 games tagged · 286 authoritative game release dates from pcgamer (Phase 3c.18 `game_releases` table) · 247 per-ISO-week clusters with Sonnet-4.6 labels · 4 `weekly_reports` rows (W17–W20, all Opus-4.7-synthesized + critic-passed; W20 re-synthed under the 3c.22 watch[]-with-category schema). Weekly read-out live at `/` with exec-summary 1-pager + HTML/PDF export, date-range picker on `/stories` + `/clusters` (vendored flatpickr, replaces the ISO-week dropdown), bidirectional Trends card (top-5 rising + top-5 declining per tab), per-category sentiment view at `/sentiment` with right-drawer drill-in, source-failure alert banner when any source's `error_count > 3`, region tabs on `/`/`/stories`/`/clusters`, watch-list category chips on the Watch card. Cumulative LLM spend: ~$11.38. See [`CLAUDE.md`](CLAUDE.md) for per-phase history and [`docs/SESSION_LOG.md`](docs/SESSION_LOG.md) for the latest handoff.
 
 ## Stack
 
@@ -28,7 +28,7 @@ python scripts/run_cluster.py [--per-week]     # cluster + label + rank (no args
 python scripts/inspect_cluster_ranking.py [N]  # dump top-N clusters by score
 ```
 
-Dashboard: `http://localhost:8765/` · Cluster view: `/clusters` · Sources admin: `/sources`.
+Weekly read-out: `http://localhost:8001/` · Stories: `/stories` · Clusters: `/clusters` · Sentiment: `/sentiment` · Sources admin: `/sources`.
 
 ## Docs
 
