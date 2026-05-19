@@ -4,6 +4,33 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-19 (Phase 3c.22, latest, same session as 3c.21) — Watch-list polish: category chips on the Watch card + day-specificity push in the Opus prompt
+
+**Scope:** Tighten the Watch card on `/` so each item carries a small color-coded `category` chip + a more day-specific timing label. Changes land in `app/services/synthesis.py` (prompt + Pydantic schema + critic rule), `app/routers/reports.py` (card context plumbing), `app/templates/reports.html` (chip render), `app/static/app.css` (chip styles). One Opus re-synth on W20 to verify the new shape; W17 / W18 / W19 left untouched for backward-compat. See SESSION_LOG.md 2026-05-19 (Phase 3c.22) for the full file-by-file shape.
+
+**Locked decisions:**
+
+- **Watch[] category taxonomy locked at 5 values: `release | drama | business | community | event`.** Small enough to color-code memorably (one token per value, distinct semantic flavors), broad enough to catch any "thing worth watching this week" without forcing Opus into awkward shoehorning. Defaults to `event` if Opus emits anything else — the Pydantic `field_validator` coerces silently rather than failing the whole synthesis on a stray label. Rejected: a 3-value taxonomy (too coarse — `release` and `event` would collapse and lose the most-common-case distinction); an 8+ value taxonomy (more granular but harder to color-code memorably; would push the chip toward a noun rather than a flag).
+
+- **Day enum tightened to 8 strict values (`Mon`-`Sun` + `TBA`); variants coerced via a forgiving normalizer, NOT a strict Pydantic `Literal`.** Variants like `Mid-week`, `Weekend`, `Saturday`-spelled-out get coerced (best-effort to the closest enum value, or `TBA` if ambiguous). Rationale: a strict `Literal` would force a $0.30 Opus retry on any stray value (the Pydantic retry path round-trips the whole synthesis, not just the watch[] section). The normalizer captures intent cheaply. Rejected: strict `Literal` (cost penalty on every stray value); free-form string (already what we had — defeats the day-specificity push).
+
+- **Backward-compat preserved at the template level rather than re-synthing all 4 weeks.** Older `synthesis_json` rows (W17 / W18 / W19) lack the `category` field; the template renders without chips via `{% if w.category %}`. Page still 200 on all three older weeks. Rationale: $0.30 × 3 = $0.90 saved on re-synth + zero risk to historical archive consistency (re-synth would regenerate the entire synthesis_json, not just the watch[] section). The archive remains a frozen record of what was synthesized at the time. Rejected: forced backfill re-synth on the three older weeks (cost + archive-consistency risk).
+
+- **Watch-card category chip rendered inline at the head of item prose, not as a new layout column.** Each item's row now reads `[chip] title — body`. Rationale: avoids any grid-template changes to the Watch card; chip is small (10px font, uppercase, bordered) and reads as a category prefix rather than a competing visual element. Rejected: a new `<th>`-style first column with chips (grid surgery + visual weight competing with title); a colored left border per item (less scannable than an explicit chip).
+
+- **Critic rule 7 added specifically targeting watch[].** Verifies groundedness (item should tie to corpus signal, not generic editorial), category enum membership, and day-specificity preference. Rationale: prior critic rules were sectional-by-implication — rule 1 covers groundedness across all sections but doesn't explicitly call out watch[]'s tendency to drift into generic "keep an eye on…" prose. Making the rule explicit reduces drift. W20 verification: critic pruned 7 → 6 watch items, dropping the one without cluster_id grounding. Healthy signal — see OPEN_QUESTIONS.md for the watch-over-time caveat. Rejected: leaving the sectional-by-implication coverage and hoping for the best (the explicit rule is ~3 lines of prompt text — cheap insurance).
+
+**Implementation notes (for future readers):**
+- The router fix in `app/routers/reports.py` `cards["watch"]` dict comprehension (~line 244) is load-bearing: without passing `category` through from synthesis_json into the card context, the new field would be stripped before reaching the template. Caught during smoke render — prompt + Pydantic edits looked right but chips didn't appear; trace led back to the dict-comprehension scope.
+- CSS chips reuse existing tokens — no new design tokens introduced (`--gc-success` for release, `--gc-danger` for drama, `--gc-accent` for business, `--gc-warning` for community, muted fallback for `event`).
+- Both the cluster-linked `<label>` variant and the static `<div>` variant of the Watch row were updated. Easy to miss the second on the next iteration — the row currently exists in two shapes because cluster_id-bearing rows are clickable (`<label for="drawer-toggle">`) and the others are static.
+
+**Verification:** W20 re-synth via `python scripts/run_synthesis.py 2026-W20 --force` — ~112 s wall, 7 emitted, 6 after critic. Days: 2 Tue, 1 Fri, 3 TBA (both Tue entries grounded to actual May 19 release dates; Fri to May 22 LEGO Batman). Categories: 3 release / 2 business / 1 community. Live render at `:8011`: 6 `.gc-watch-chip` refs on `/`, distributed 3/0/2/1/0 across release/drama/business/community/event. W17 / W18 / W19 still 200 with no chips (backward-compat verified).
+
+**Spend this session:** $0.30 (one Opus synthesis + critic pass on W20). Cumulative project: ~$11.38 (was $11.08 after 3c.21).
+
+---
+
 ## 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21, late-session, parallel worktree agents) — Source-failure UI banner + Trends mini-bar + Sentiment view + parallel-worktree workflow meta-decision
 
 **Scope:** Three narrow polish items off the Phase 5 backlog, built simultaneously by three Claude Code worktree agents branched off the `9f4deb7` (Phase 3c.18) master HEAD, then cherry-picked back onto master in phase order (`52218eb` → `8974be9` → `ad0541f`). All three are UI / SQL / template work — no LLM calls, no schema change. See SESSION_LOG.md 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21) for the per-phase file lists + verification.

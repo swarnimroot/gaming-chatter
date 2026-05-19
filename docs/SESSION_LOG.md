@@ -4,6 +4,49 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.22, latest, same session) — Watch-list polish: category chips + day-specificity push in the Opus prompt
+
+**What shipped.** A focused upgrade to the Watch card on `/` — every Opus-emitted watch item now carries a `category` chip (one of `release | drama | business | community | event`) and a more day-specific timing label. Drives the card from "5 vague things to keep an eye on" toward "scannable, color-coded, mostly-grounded-to-a-real-date queue." No new LLM model, no schema change at the DB layer (synthesis_json is JSON-blob); strictly a prompt + Pydantic schema + template + critic-rule + CSS pass. One Opus W20 re-synth burned the only spend.
+
+**Prompt + schema (`app/services/synthesis.py`).**
+- Added `category` field to `WatchItem` (Pydantic) with a `field_validator` coercing to one of `{release, drama, business, community, event}`. Default `event`. If Opus emits anything else, it normalizes silently to `event` rather than failing the whole synthesis on a stray label.
+- Tightened the `day` field to a forgiving normalizer over `{Mon, Tue, Wed, Thu, Fri, Sat, Sun, TBA}`. Variants like `Mid-week`, `Weekend`, `Saturday`-spelled-out are coerced rather than rejected. Locked as a normalizer, NOT a strict `Literal` enum — strict would have forced a $0.30 Opus retry on every stray value (the Pydantic retry path round-trips the whole synthesis).
+- Bumped `WeeklySynthesis.watch` `max_length` 5 → 7 to give the synthesis a small generation buffer the critic can prune from.
+- Replaced section 9 of `_SYNTHESIS_SYSTEM_PROMPT` with a richer rule listing the 5 category definitions + day-specificity preference + mix-grounded-with-corpus-wide guidance (be explicit when an item ties to a real upcoming release date, otherwise default to `TBA`).
+- Added critic rule 7 to `_CRITIC_SYSTEM_PROMPT` specifically validating watch[] — verifies groundedness (item should tie to corpus signal, not generic editorial), category enum membership, and day-specificity preference. Prior critic rules were sectional-by-implication; making this explicit reduces drift.
+
+**Router + template + CSS.**
+- `app/routers/reports.py` — `cards["watch"]` dict comprehension around line 244 now passes `category` through from synthesis_json into the card context. **Without this fix, the new field would be stripped before reaching the template** — caught during smoke render after the prompt + Pydantic edits looked right but the chips didn't appear.
+- `app/templates/reports.html` — Watch-card loop renders a chip inline at the head of `.gc-row-item` when `w.category` is present. Backward-compat preserved via `{% if w.category %}` so older synthesis_json rows (W17 / W18 / W19) render without chips. Both the cluster-linked `<label>` variant and the static `<div>` variant updated.
+- `app/static/app.css` — appended `.gc-watch-chip` + 5 per-category modifiers at EOF. Re-uses existing tokens (`--gc-success` for release, `--gc-danger` for drama, `--gc-accent` for business, `--gc-warning` for community, muted fallback for `event`). Each chip is small (10px font, uppercase, bordered) — reads as a category prefix rather than a competing visual element.
+
+**Re-synth W20 verification.** `python scripts/run_synthesis.py 2026-W20 --force` succeeded in ~112 s wall. Synthesis pass emitted 7 watch items; critic pruned to 6 (drop signal working — exactly the kind of behavior critic rule 7 was added to enforce). New W20 watch[] distribution:
+- **Days:** 2 Tue, 1 Fri, 3 TBA. Both Tue entries correctly grounded to actual May 19 release date (Forza Horizon 6 + Subnautica 2 EA); Fri grounded to May 22 LEGO Batman. Day-specificity push working as intended.
+- **Categories:** 3 release, 2 business, 1 community.
+- All items have `cluster_id` (heavily cluster-grounded this week — the critic dropped the one corpus-wide editorial item that lacked cluster backing).
+
+**Template render verified live** (port 8011): 6 `.gc-watch-chip` refs on `/`, distributed 3/0/2/1/0 across release/drama/business/community/event.
+
+**Backward-compat verified at data level.** W17 / W18 / W19 synthesis_json rows each have 5 watch items with 0 `category` field. Template `{% if w.category %}` skips chips cleanly, page still 200 on all three older weeks.
+
+**Locked decisions (in DECISIONS.md 2026-05-19 Phase 3c.22 — five items):**
+1. Watch[] category taxonomy locked at 5 values: `release | drama | business | community | event`. Small enough to color-code memorably, broad enough to catch any "thing worth watching." Defaults to `event` if Opus emits anything else.
+2. Day enum tightened to 8 strict values (`Mon`-`Sun` + `TBA`); variants coerced. Forgiving normalizer, NOT a strict Literal — strict would force a $0.30 Opus retry on any stray value.
+3. Backward-compat preserved rather than re-synthing all 4 weeks. $0.30 × 3 = $0.90 saved + zero risk to historical archive consistency.
+4. Watch-card category chip rendered inline at head of item prose, not as a new layout column. Avoids grid-template changes; chip is small and reads naturally.
+5. Critic rule 7 added specifically targeting watch[] — verifies groundedness, category, day specificity. Prior critic rules were sectional-by-implication; explicit rule reduces drift.
+
+**Honest caveats (added to OPEN_QUESTIONS.md):**
+- W17 / W18 / W19 not re-synthed with the new schema. If consistent chips across the archive are wanted later, that's a $0.90 re-synth pass.
+- Critic dropped 1 of 7 entries this run. Healthy signal but worth watching over time — if the critic consistently drops, the synthesis prompt may be over-generating.
+- Pydantic `default="event"` for category means if Opus completely omits the field, it lands as `event`. Better than failing, but `event` becomes a soft catch-all over time. Watch for an event-heavy skew in future weeks.
+
+**Spend.** $0.30 (one Opus synthesis + critic pass on W20). **Cumulative project:** ~$11.38 (was $11.08 after 3c.21).
+
+**Where we left off.** Phase 3c.22 fully shipped + smoke-tested + docs current. Phase 5 "Polish" items remaining: **eval harness for synthesis quality** (the source-failure banner, trend mini-charts, sentiment view, and watch-list synthesis items have all now shipped). Phase 4 (Automation) is deferred at user request. Carry-over options for next session: IGN.cn regional source + IGN release-date ingestion as a second `game_releases` source.
+
+---
+
 ## 2026-05-19 (Phase 3c.19 / 3c.20 / 3c.21 in parallel, late-session) — Source-failure banner + Trends mini-bar + Sentiment view, all built by parallel worktree agents
 
 **What shipped.** Three narrow polish items from the Phase 5 "Polish" backlog, all built simultaneously by three Claude Code worktree agents branched off the `9f4deb7` (Phase 3c.18) master HEAD, then cherry-picked sequentially onto master:

@@ -255,6 +255,21 @@ New `/sentiment` page surfacing per-category average `sentiment_score` across en
 - [x] `app/static/app.css` — appended `.gc-sentiment-*` block at EOF. — **Done 2026-05-19.**
 - [x] Smoke-tested live — `/sentiment` 200 on default + explicit `?from`/`?to` + back-compat `?week_id=` + garbage params (graceful fallback to default 30d); 67 `.gc-sentiment` class refs on the page; sentiment nav link present on `/stories` shell (2 refs — icon + label); `/sentiment` appears in `/openapi.json`. — **Done 2026-05-19.**
 
+### Phase 3c.22 — watch-list polish (shipped 2026-05-19)
+
+Category chips + day-specificity push on the Watch card on `/`. Adds a `category` field to `WatchItem` (Pydantic) coerced to one of `{release, drama, business, community, event}` (default `event`); tightens `day` to a forgiving normalizer over `{Mon, Tue, Wed, Thu, Fri, Sat, Sun, TBA}` with variants coerced. `WeeklySynthesis.watch` `max_length` 5 → 7. Section 9 of `_SYNTHESIS_SYSTEM_PROMPT` rewritten + critic rule 7 added. W20 re-synthed for verification (~$0.30); W17 / W18 / W19 left untouched for backward-compat. See DECISIONS.md 2026-05-19 (Phase 3c.22) + SESSION_LOG.md 2026-05-19 (Phase 3c.22).
+
+- [x] `app/services/synthesis.py` — `category` field added to `WatchItem` with `field_validator` coercing to one of `{release, drama, business, community, event}`; default `event`. — **Done 2026-05-19.**
+- [x] `app/services/synthesis.py` — `day` field tightened to a forgiving normalizer over `{Mon, Tue, Wed, Thu, Fri, Sat, Sun, TBA}`; variants (`Mid-week` / `Weekend` / `Saturday`) coerced rather than rejected. — **Done 2026-05-19.**
+- [x] `app/services/synthesis.py` — `WeeklySynthesis.watch` `max_length` bumped 5 → 7 to give the critic room to prune. — **Done 2026-05-19.**
+- [x] `app/services/synthesis.py` — section 9 of `_SYNTHESIS_SYSTEM_PROMPT` replaced with the 5 category definitions + day-specificity preference + mix-grounded-with-corpus-wide guidance. — **Done 2026-05-19.**
+- [x] `app/services/synthesis.py` — critic rule 7 added to `_CRITIC_SYSTEM_PROMPT` validating watch[] groundedness, category enum, and day-specificity preference. — **Done 2026-05-19.**
+- [x] `app/routers/reports.py` — `cards["watch"]` dict comprehension (~line 244) passes `category` through from synthesis_json into the card context. — **Done 2026-05-19.**
+- [x] `app/templates/reports.html` — Watch-card loop renders a chip inline at the head of `.gc-row-item` when `w.category` is present; backward-compat preserved via `{% if w.category %}`. Both the cluster-linked `<label>` variant and the static `<div>` variant updated. — **Done 2026-05-19.**
+- [x] `app/static/app.css` — `.gc-watch-chip` + 5 per-category modifiers appended at EOF; reuses existing tokens (`--gc-success` / `--gc-danger` / `--gc-accent` / `--gc-warning` / muted fallback). — **Done 2026-05-19.**
+- [x] Re-synth W20 — `python scripts/run_synthesis.py 2026-W20 --force` succeeded in ~112 s; synthesis emitted 7 watch items, critic pruned to 6. Days: 2 Tue / 1 Fri / 3 TBA; Categories: 3 release / 2 business / 1 community; all items cluster-grounded. — **Done 2026-05-19.**
+- [x] Smoke-tested live (`:8011`) — 6 `.gc-watch-chip` refs on `/`, distributed 3/0/2/1/0 across release/drama/business/community/event. Backward-compat verified: W17 / W18 / W19 still 200 with no chips rendered. — **Done 2026-05-19.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis
@@ -266,7 +281,7 @@ New `/sentiment` page surfacing per-category average `sentiment_score` across en
 ## Phase 5 — Polish
 
 - [x] Trend mini-charts on dashboard (WoW/MoM) — **shipped 2026-05-19 (Phase 3c.20).** Inline CSS-only zero-line-centered mini-bars on Trends card; 12pp clamp.
-- [ ] Watch-list section in synthesis
+- [x] Watch-list section in synthesis — **shipped 2026-05-19 (Phase 3c.22).** Category chips (`release | drama | business | community | event`) + day-specificity push in the Opus prompt; critic rule 7 validates groundedness + category enum + day specificity. W20 re-synthed; W17–W19 backward-compatible (no chips).
 - [x] Sentiment view (per-category aggregate) — **shipped 2026-05-19 (Phase 3c.21).** `/sentiment` page with date-range filter; per-category `AVG(sentiment_score) + COUNT(*)`.
 - [x] Source-failure alert (UI banner when error_count > N) — **shipped 2026-05-19 (Phase 3c.19).** Banner inside `.gc-main` when ≥1 `sources.error_count > 3`.
 - [ ] Eval harness for synthesis quality (sample → manual rate → tune prompts)

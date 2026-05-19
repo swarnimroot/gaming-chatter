@@ -76,7 +76,7 @@ The `games.release_date` and `games.lifecycle` columns are now a **synced cache*
 | Weekly clustering (cosine connected-components @ 0.85) | numpy in-process | $0 | Monday before report |
 | Cluster labels | Anthropic Sonnet 4.6 (migrated 2026-05-13 from Ollama qwen2.5:7b) | ~$0.002/call (~$0.10 to relabel all 55 existing; ~$10/yr ongoing) | Same pass as clustering |
 | Cluster ranking (Phase 3b) | numpy in-process: `source_count × member_count / (1 + days_since_latest)` | $0 | Same pass as clustering |
-| Weekly synthesis (9 cards + exec_summary_paragraph) | Anthropic Opus 4.7, single structured `WeeklySynthesis` Pydantic call — **shipped 2026-05-13 Phase 3c.4** | ~$0.40/run | Monday 8am + on-demand (manual today; Phase 4 APScheduler) |
+| Weekly synthesis (9 cards + exec_summary_paragraph) | Anthropic Opus 4.7, single structured `WeeklySynthesis` Pydantic call — **shipped 2026-05-13 Phase 3c.4; watch[] schema tightened in Phase 3c.22 2026-05-19** | ~$0.40/run | Monday 8am + on-demand (manual today; Phase 4 APScheduler) |
 | Synthesis critic pass | Anthropic Opus 4.7 second call (drop-and-replace revision) — **shipped 2026-05-13 Phase 3c.4** | ~$0.50/run | Same run as synthesis |
 | Exec-summary modal (1-paragraph TLDR) | Anthropic Haiku 4.5 on first open; **overwritten by Opus 4.7 once weekly synthesis has run** — shipped 2026-05-13 Phase 3c.3 / 3c.4 | ~$0.001/run on Haiku path | On modal open (lazy + cached to `weekly_reports.exec_summary_text`) |
 
@@ -87,7 +87,7 @@ The `games.release_date` and `games.lifecycle` columns are now a **synced cache*
 - **WoW/MoM** = entity-mention counts week-over-week, month-over-month, by game/company/category
 - **Hottest games** = entity-mention velocity (acceleration × signal score)
 - **Biggest story** = top-scored cluster from Phase 3b ranking: `score = source_count × member_count / (1 + days_since_latest)`. Reddit upvote/comment weighting was rejected during 3b because Reddit RSS doesn't carry score data; reconsider only if PRAW reapproves
-- **Watch-list** = entities with rising trajectory but low absolute volume late in the week
+- **Watch-list** = entities with rising trajectory but low absolute volume late in the week. As of Phase 3c.22 (2026-05-19) each `WatchItem` in `synthesis_json.watch[]` carries a **`category`** field locked to one of 5 values — `release | drama | business | community | event` (default `event` via Pydantic validator if Opus emits anything else). The `day` field is a forgiving normalizer over `{Mon, Tue, Wed, Thu, Fri, Sat, Sun, TBA}` — variants like `Mid-week` / `Weekend` / `Saturday` coerced rather than rejected. `WeeklySynthesis.watch` `max_length` is 7 (was 5 pre-3c.22) to give the critic room to prune. Older synthesis_json rows (W17 / W18 / W19) lack the `category` field; templates render them without chips via a backward-compat guard
 - The LLM **narrates the numbers**; it does not invent them
 - **Region focus** is content-inferred by Haiku during enrichment (`region_focus` ∈ subset of `{americas, europe, asia}` or NULL — Phase 3c.15). Not source-attributed — IGN can publish a story anchored in Japan. Cluster-level region is computed on-the-fly as the union of member-item tags (no column on `clusters`), mirroring the Phase 3c.12 section-overlay pattern
 
