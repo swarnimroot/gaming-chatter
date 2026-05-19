@@ -4,7 +4,49 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
-## 2026-05-19 (Phase 3c.22, latest, same session) — Watch-list polish: category chips + day-specificity push in the Opus prompt
+## 2026-05-19 (Phase 3c.23, latest, same session) — Trends card bidirectional (rising + declining) + games-collapse; Sentiment rows clickable → right-drawer
+
+**What shipped.** Two user-requested changes on top of the late-session 3c.21 / 3c.22 polish pass. (1) Trends card on `/` previously showed only top-N by `delta_pp` DESC — visually all risers and flat lines, no declines. Now shows **top-5 rising AND top-5 declining per tab**; the Games tab loses its prior current/upcoming split in favor of a single combined view (Hottest card still carries the lifecycle split — different card, different lens). (2) `/sentiment` rows became clickable, opening the same right-drawer pattern as `/` for per-category items in the active date window. No new LLM calls, no schema change, $0 spend.
+
+**Trends bidirectional (`app/services/reports.py` + `app/templates/reports.html`).**
+- `_merge_wow()` return shape flipped from `list[dict]` (top-N by `delta_pp` DESC) to `dict[str, list[dict]]` = `{"rising": [...limit], "declining": [...limit]}`. Rising = positive `delta_pp` sorted DESC; declining = negative `delta_pp` sorted ASC; neutrals dropped from both buckets (would visually clutter both ends).
+- All 5 callers — `top_genres_wow` / `top_platforms_wow` / `top_games_wow` / `top_live_service_wow` / `top_events_wow` — pass through the new shape. `trends_for_week()` payload drops the `games_current` + `games_upcoming` keys, replaces with a single combined `games` (lifecycle=None) per user request.
+- Template restructure: each tab pane now renders two subsections — `<div class="gc-trend-subhead">Rising</div>` + the rising list + `<div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>` + the declining list. The `trend_rows(rows, kind)` macro itself is unchanged (still takes a flat list). Games tab dropped the `tr.games_current` + `tr.games_upcoming` references; uses single `tr.games` with rising + declining.
+- No new CSS — existing `.gc-trend-subhead` (originally added for the Current/Upcoming pattern) carries over to the new Rising/Declining headers cleanly.
+
+**Sentiment drawer (`app/services/reports.py` + `app/routers/reports.py` + `app/templates/sentiment.html`).**
+- `_DRAWER_KINDS` set gains `category` (Phase 3c.23 — for the `/sentiment` row → drawer flow). `items_for_entity_in_week()` signature gains optional `start: datetime | None` + `end: datetime | None` params as an alternative window mode to `week_id`; both modes route to the same SQL filter on `items.published_at`. Added a `category` branch in the if-chain — SQL filter is `WHERE e.category IS NOT NULL AND LOWER(TRIM(e.category)) = LOWER(:v)`.
+- `_DRAWER_KIND_LABELS` gains `"category": "Category"`. `/reports/drawer` endpoint signature gains `?from=YYYY-MM-DD&to=YYYY-MM-DD` query params as an alternative window mode to `?week=`; `from` aliased via `Query(alias="from")` for the Python-keyword workaround. When both provided: parse to datetimes, treat `to` as inclusive (add +1 day for exclusive end), pass `start` / `end` kwargs into `items_for_entity_in_week`. Error paths added for bad date strings and the "neither week nor from/to" case.
+- Each `/sentiment` row converted from `<div class="gc-sentiment-row">` to `<label class="gc-sentiment-row ... gc-row-trigger" for="drawer-open" hx-get=".../reports/drawer?kind=category&value=X&from=Y&to=Z" hx-target="#source-drawer-body">`. Drawer infrastructure (state radios + overlay + panel) duplicated from `reports.html` into the bottom of the `main_content` block — they must be siblings of each other for the CSS `:checked ~ .gc-drawer-panel` slide-in selector to work. Modal radios NOT included (no exec-summary on `/sentiment`).
+
+No CSS additions — `.gc-trend-subhead` carries over; `.gc-row-trigger` handles hover/cursor; `.gc-sentiment-row`'s grid layout works on `<label>` elements identically.
+
+**Verification (live, port 8012).**
+- Routes 200: `/`, `/sentiment`, `/reports/drawer?kind=category&value=industry&from=2026-05-12&to=2026-05-19`, `/reports/drawer?kind=cluster&value=262&week=2026-W20` (back-compat).
+- 10 `.gc-trend-subhead` refs on `/` (5 tabs × 2 subsections).
+- Trends games tab sample: **5 rising** (Forza Horizon 6 22→3, Stardew Valley 8→0, Star Wars: Fate Of The Old Republic, The Talos Principle 3, Subnautica 2 9→4) + **5 declining** (Star Fox 4←21, Mixtape 2←18, Star Fox 64 1←14, LEGO Batman 3←11, Mortal Kombat 1←6). Direction correct — every declining row has `prior_count > current_count`.
+- Drawer endpoint `kind=category value=industry` returns 25 items (the cap), 125 class refs total in the rendered markup (5 per item).
+
+**Locked decisions (in DECISIONS.md 2026-05-19 Phase 3c.23 — five items):**
+1. Trends bidirectional via dict shape (`{"rising": [...], "declining": [...]}`), not parallel lists. Keeps the dispatcher contract simple (1 return value vs. a side-channel list).
+2. Games tab collapsed to single view (`lifecycle=None`). Hottest card retains the current/upcoming split. Trends games now shows all games regardless of release-date status.
+3. Drawer `kind=category` added, not a new endpoint. Reused `/reports/drawer` — adding a SQL branch is ~15 LOC vs. a parallel endpoint with its own template + slide-in CSS.
+4. Drawer accepts `?from=` & `?to=` as window-mode alternative to `?week=`. `/sentiment` is date-range-based (Phase 3c.17 picker), not week-based. The function-level `(start, end)` kwargs are also exposed in `items_for_entity_in_week` so future callers can use either.
+5. Sentiment drawer markup duplicated from `reports.html`, not extracted to a shared partial. Low blast radius today (only 2 pages use the drawer); shared partial refactor is a future cleanup pass when a third page wants in.
+
+**Honest caveats (added to OPEN_QUESTIONS.md):**
+- Drawer markup duplicated in `sentiment.html` and `reports.html`. If a third page wants the drawer, refactor to `_drawer_panel.html` partial first.
+- `trend_rows` macro emits "No movement this week." even when displayed under the "Declining" header — works either direction but copy could be tighter ("No declining entities this week.").
+- Live-service tab kept as a separate top-level tab. Logically Games-with-lifecycle-filter; could be merged into a games-tab sub-toggle if the top-tab strip ever gets crowded.
+- Smoke caveat (caught + corrected in-session): initial drawer probe used `value=industry-news` which isn't a valid category. Real Haiku-locked categories are `news / industry / community / launch / patch / review / opinion / leak`. Test value matters.
+
+**Spend.** $0 (no LLM calls). **Cumulative project:** ~$11.38 (unchanged from 3c.22).
+
+**Where we left off.** Phase 3c.23 fully shipped + smoke-tested + docs current. Phase 5 "Polish" items remaining: **eval harness for synthesis quality** (the source-failure banner, trend mini-charts, sentiment view, and watch-list synthesis items have all now shipped). Phase 4 (Automation) is deferred at user request. Carry-over options for next session: IGN.cn regional source + IGN release-date ingestion as a second `game_releases` source.
+
+---
+
+## 2026-05-19 (Phase 3c.22, same session) — Watch-list polish: category chips + day-specificity push in the Opus prompt
 
 **What shipped.** A focused upgrade to the Watch card on `/` — every Opus-emitted watch item now carries a `category` chip (one of `release | drama | business | community | event`) and a more day-specific timing label. Drives the card from "5 vague things to keep an eye on" toward "scannable, color-coded, mostly-grounded-to-a-real-date queue." No new LLM model, no schema change at the DB layer (synthesis_json is JSON-blob); strictly a prompt + Pydantic schema + template + critic-rule + CSS pass. One Opus W20 re-synth burned the only spend.
 
