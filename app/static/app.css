@@ -1396,3 +1396,25 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   font-size: 12px; color: var(--gc-fg2); font-style: italic;
   padding: 6px 10px;
 }
+
+/* ---------- HTMX loading indicator + readout region spinner (Phase 3c.16) ----- */
+/* HTMX default indicator behavior — hidden, becomes visible when the
+   element (or one of its ancestors) has the htmx-request class. */
+.htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+.htmx-request .htmx-indicator { opacity: 1; }
+.htmx-request.htmx-indicator { opacity: 1; }
+
+.gc-region-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  margin-left: 10px;
+  border: 2px solid var(--gc-border);
+  border-top-color: var(--gc-accent);
+  border-radius: 50%;
+  vertical-align: middle;
+  align-self: center;
+  animation: gc-spin 0.8s linear infinite;
+}
+@keyframes gc-spin {
+  to { transform: rotate(360deg); }
+}

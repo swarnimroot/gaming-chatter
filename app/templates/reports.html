@@ -129,10 +129,12 @@
                   hx-target="#readout-main"
                   hx-select="#readout-main"
                   hx-swap="outerHTML"
+                  hx-indicator=".gc-region-spinner"
                   hx-push-url="true">
             {{ label }}
           </button>
         {% endfor %}
+        <span class="htmx-indicator gc-region-spinner" role="status" aria-label="Loading region filter"></span>
       </nav>
 
       {% set synth_ran = week.cards.synthesis_meta %}
