@@ -1259,8 +1259,12 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-view-label:not(:last-of-type) { border-right: 1px solid var(--gc-border); }
 .gc-view-label:hover { background: var(--gc-surface-alt); color: var(--gc-fg); }
-#view-cluster:checked ~ .gc-view-labels label[for="view-cluster"],
-#view-list:checked ~ .gc-view-labels label[for="view-list"] {
+/* View-labels live INSIDE #clusters-list (Phase 3c.15 fix 2026-05-19) so
+   the active-class selector must traverse down through #clusters-list to
+   reach them. Radios stay siblings of #clusters-list, so the descendant
+   selector works. */
+#view-cluster:checked ~ #clusters-list .gc-view-labels label[for="view-cluster"],
+#view-list:checked ~ #clusters-list .gc-view-labels label[for="view-list"] {
   background: var(--gc-accent); color: #FFF;
 }
 
@@ -1268,6 +1272,16 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-cluster-flatlist { display: none; }
 #view-list:checked ~ #clusters-list .gc-clusters-cards { display: none; }
 #view-list:checked ~ #clusters-list .gc-cluster-flatlist { display: block; }
+
+/* Clusters toolbar (Phase 3c.15 fix 2026-05-19) — region tabs left, view
+   toggle right; both rendered server-side inside #clusters-list so HTMX
+   swap re-renders the active-class on each. */
+.gc-clusters-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; gap: 16px;
+}
+.gc-clusters-toolbar .gc-region-tabs { margin-bottom: 0; }
+.gc-clusters-toolbar .gc-view-labels { margin-bottom: 0; }
 
 /* Clusters flat-list view (list mode) */
 .gc-cluster-flatlist {

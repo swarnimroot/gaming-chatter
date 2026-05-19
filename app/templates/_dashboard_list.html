@@ -1,6 +1,11 @@
 {# Dashboard list fragment — swap target for HTMX live-search.
    Server returns this alone when HX-Request header is set, or wrapped in
-   shell_base via dashboard.html on normal requests. #}
+   shell_base via dashboard.html on normal requests. Region tabs live at the
+   top so HTMX swaps re-render the active-class on the right tab (Phase 3c.15
+   fix 2026-05-19). #}
+{% set route_name = 'dashboard' %}
+{% set target_id = 'dashboard-list' %}
+{% include "_region_tabs.html" %}
 {% if items %}
   <table class="gc-table">
     <thead>

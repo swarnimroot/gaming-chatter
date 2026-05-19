@@ -4,6 +4,27 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-19 (Phase 3c.16 fixes, end of session) — Three bug fixes from real-world tab-clicking
+
+User-reported issues after the 3c.15 + 3c.16 ship; all three fixed in this same session.
+
+**(1) Cluster cards / List view toggle moved to the right.** Was rendering left-aligned below the region tabs. Restructured `clusters.html` + `_clusters_list.html` to wrap region tabs + view-toggle labels in a new `.gc-clusters-toolbar` flex row (`justify-content: space-between`). Radios stay outside `#clusters-list` (so HTMX swap doesn't reset the user's view-toggle choice); view-labels move *inside* `#clusters-list` (so HTMX swap re-renders the active-class on them).
+
+**(2) Active highlight on region tab stuck at "Global" on `/stories` + `/clusters`.** Tabs were rendered *outside* the swap target (`#dashboard-list` / `#clusters-list`), so HTMX swaps re-rendered only the list, leaving the server-rendered active-class on the original (Global) tab. Fix: moved `_region_tabs.html` include from the parent templates (`dashboard.html`, `clusters.html`) *into* the swap target — added as the first thing inside `_dashboard_list.html` and inside the new toolbar in `_clusters_list.html`. Now HTMX responses re-render the tab strip with the correct active class.
+
+**(3) Blank white screen on `/?region=…`** (the readout). The previous Phase 3c.16 implementation used `hx-target="body" hx-select="body"` for a full-body swap to keep the header exec-summary CTA in sync. `hx-select="body"` produced an unrendered/empty swap in practice. Replaced with a tighter scope: added `id="readout-main"` to the `<div class="gc-main">`, and changed the tab buttons to `hx-target="#readout-main" hx-select="#readout-main" hx-swap="outerHTML"`. Still re-renders both the header (exec CTA toggles correctly) and the grid body (cards filter correctly), but as a properly-scoped element swap instead of a full-body innerHTML replacement.
+
+**CSS** — updated `app/static/app.css`:
+- `#view-cluster:checked ~ .gc-view-labels label[for=…]` → `#view-…:checked ~ #clusters-list .gc-view-labels label[for=…]` (descendant traversal through `#clusters-list` since view-labels moved inside it).
+- New `.gc-clusters-toolbar` rules — `display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 16px;` + zero-out the inner-element margins.
+
+**Smoke-tested live on `:8001`.** All three issues resolved:
+- `/stories?region=americas` (HX-Request) returns fragment with active-class on Americas (not Global). Same for asia.
+- `/clusters?region=europe` (HX-Request) returns fragment with `gc-clusters-toolbar` + `gc-view-labels` present and active-class on Europe tab.
+- `/?region=americas` returns 50517 bytes, `/?region=asia` returns 49994 bytes (vs. 61993 for Global), `#readout-main` wraps the content, 1 active tab, exec-summary note present on regional tabs. Full readout not blank.
+
+---
+
 ## 2026-05-19 (Phase 3c.16, later) — Region tabs on weekly read-out (filter-existing synthesis, no per-region Opus pass)
 
 **What shipped.** Same 4-tab strip (Global / Americas / Europe / Asia) now appears on `/` (the weekly read-out). Cluster-keyed cards (Biggest / Risks / Drama / Market Momentum / Community / Esports / Watch) are filtered on the fly via `cluster_regions()` — same helper shipped in 3c.15. Non-cluster cards (Hottest games / Trends / Release Radar) carry a small **"Not region-tagged"** chip on regional tabs because they aggregate by game-name or entity-name, not cluster_id. Exec-summary CTA is hidden on regional tabs and replaced with an inline note ("Exec summary covers the whole-corpus week. Switch to Global to read it.") — the synthesis prose was generated globally; showing it as if it were region-specific would mislead.

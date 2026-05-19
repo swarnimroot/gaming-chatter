@@ -1,6 +1,17 @@
 {# Clusters list fragment — swap target for HTMX live-search.
    Renders BOTH the card grid and the flat list; the view toggle on the parent
-   page (.gc-clusters-view radio inputs) shows one and hides the other via CSS. #}
+   page (.gc-clusters-view radio inputs) shows one and hides the other via CSS.
+   Toolbar at top: region tabs (left) + view-toggle labels (right). Lives
+   inside #clusters-list so HTMX swaps re-render the active-class. #}
+<div class="gc-clusters-toolbar">
+  {% set route_name = 'clusters_view' %}
+  {% set target_id = 'clusters-list' %}
+  {% include "_region_tabs.html" %}
+  <div class="gc-view-labels">
+    <label for="view-cluster" class="gc-view-label">Cluster cards</label>
+    <label for="view-list" class="gc-view-label">List</label>
+  </div>
+</div>
 {% if clusters %}
   <div class="gc-clusters-cards">
     {% for c in clusters %}

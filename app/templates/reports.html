@@ -60,7 +60,7 @@
   </aside>
 
   {# ===== Main column ===== #}
-  <div class="gc-main">
+  <div class="gc-main" id="readout-main">
 
     {# ----- Header ----- #}
     <header class="gc-header">
@@ -126,9 +126,9 @@
           <button type="button"
                   class="gc-region-tab{% if (region or '') == val %} gc-region-tab--active{% endif %}"
                   hx-get="{{ request.url_for('reports_view') }}?week={{ active_week_key }}{% if val %}&region={{ val }}{% endif %}"
-                  hx-target="body"
-                  hx-select="body"
-                  hx-swap="innerHTML"
+                  hx-target="#readout-main"
+                  hx-select="#readout-main"
+                  hx-swap="outerHTML"
                   hx-push-url="true">
             {{ label }}
           </button>
