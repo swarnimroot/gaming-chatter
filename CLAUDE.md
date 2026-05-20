@@ -4,7 +4,7 @@ Personal gaming-news aggregator. Daily ingest from 15 news sites + 10 subreddits
 
 ## Status
 
-Latest shipped: **Phase 3c.31 (2026-05-20)**. Corpus: 1597 items / 1412 Haiku-enriched + embedded / 184 games / 247 per-ISO-week clusters / 4 synthesized `weekly_reports` rows (W17–W20). For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
+Latest shipped: **Phase 3c.32 (2026-05-20)**. Corpus: 1597 items / 1412 Haiku-enriched + embedded / 184 games / 247 per-ISO-week clusters / 4 synthesized `weekly_reports` rows (W17–W20). For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
 
 ## Read first
 - `docs/PRD.md` — what we're building and why
