@@ -4,6 +4,41 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-20 (Phases 3c.25 → 3c.31, later same day) — In-app `/eval` form + critic-feedback loop + welcome modal
+
+**What shipped (6 phases, iterative).** The Phase 5 "eval harness for synthesis quality" checkbox went from `[ ]` to `[x]` and then kept iterating UX-wise until the loop was actually usable AND closed. Started with markdown skeletons (decided earlier the same day — see DECISIONS 2026-05-20 "markdown over in-app form [SUPERSEDED]"). User pushed back: editor↔browser friction is real and ✓/~/✗ aren't keyboard-accessible. Built `/eval` as a real route. Then 4 rounds of "page works but is confusing / overflowing / unclear" tightening. Closed the loop at the end with eval scores actually informing future synthesis. Zero LLM spend this session — eval is a UI + DB feature. Project cumulative ~$11.46 (unchanged from 3c.24).
+
+- **3c.25 — `/eval` page** (replaces markdown skeletons). New router `app/routers/eval.py` (GET + 3 POST routes), new template `eval.html` (standalone shell, mirrors `reports.html`), new partial `_eval_aggregate.html` (HTMX-swapped on each save), new SQLModels `EvalCardScore(week_id, card)` + `EvalMeta(week_id)` in `app/db/models.py`. Tables auto-create via `SQLModel.metadata.create_all()` at boot. **Refactor:** extracted `_report_grid.html` from `reports.html` so both `/` and `/eval` can include it; `reports.html` 591 → 188 lines. Existing markdown skeletons archived under `evals/.archive/` (kept in case a future export path needs them).
+- **3c.26 — Eval as a distinct boundary'd button at the bottom of the sidebar nav, not a peer item.** `eval` removed from `NAV_ITEMS_BASE`; new `EXTRA_NAV_ROUTES = ["eval_view"]` keeps boot-time route validation honest. New `.gc-sb-eval-button` styling. Active-state path comparison uses `request.app.url_path_for('eval_view')` so it survives the `GC_ROOT_PATH=/gaming-chatter` mount.
+- **3c.27 — Display labels + legend + click-to-scroll anchors.** Row labels now read "Biggest stories" / "Hottest games — reasons" / "Controversy tracker" / etc., matching the left pane card titles (not the Pydantic field names). Technical name shown as small sub. Each card in `_report_grid.html` carries `id="card-{slug}"` (10 cards); right-pane row labels are `<a href="#card-X">` — browser auto-scrolls the left pane (overflow-y: auto). Form head replaced with a 3-line F/S/B legend.
+- **3c.28 — Vertical F/S/B layout.** `.gc-eval-cells` flipped to `flex-direction: column`. Three rows per card (F+pips, S+pips, B+pips) instead of one cramped horizontal row. Right pane shrunk 440 → 360px; left pane gains room. Dim labels grew from 10px to 12px.
+- **3c.29 — Stale-scores banner.** New `_stale_info()` helper compares `weekly_reports.synthesis_generated_at` to `MAX(eval_card_scores.updated_at)` for the week. Yellow warning banner shows when synth re-ran after the user's last score. Clears on the next POST. Pre-existing columns, no schema change.
+- **3c.30a — Editorial intro strip.** 3-step `01 READ → 02 SCORE → 03 COMPOUND ↻` editorial header (monospaced numerals, dashed separators, loop icon on step 3) between the page header and the split layout. For someone walking up cold — <10s to grasp the loop without reading the legend in the form.
+- **3c.30b — Eval scores feed back into the critic prompt** (the real architectural change). New `app/services/eval_feedback.py`. `synthesize_week()` Pass 2 prepends `=== PAST HUMAN CONCERNS ===` to the critic's user message, built from recurring (card, dim) failure patterns over the last 4 weeks (threshold ≥2 fails/concerns; notes verbatim with week_id tags). Same block rendered on `/eval` in a collapsible `<details>` panel — transparency: user sees what critic sees. Reverses the earlier same-day "avoid feedback into synthesis" recommendation; full reasoning in DECISIONS 2026-05-20 "Eval scores feed back into the critic prompt".
+- **3c.31 — Welcome modal on `/`** (built in a separate Claude session by the user; surfaced + folded into this session-close commit). `_welcome_modal.html` + ~130 lines of `.gc-welcome-*` CSS + ~20 lines of inline JS in reports.html. 3-section grid: feeds problem / pipeline pitch / nav primer. `sessionStorage.gc_welcome_seen` gates one-show-per-session; only fires on `/` so in-app navigation can't re-trigger.
+
+**Locked decisions** (in DECISIONS.md 2026-05-20 — three entries today):
+1. **In-app `/eval` form over markdown skeletons** — editor↔browser context-switching friction was undervalued in the morning; UX delta was the deciding factor.
+2. **Eval scores feed back into the critic prompt** — reverses the "I'd avoid Goodhart" recommendation made earlier the same session. Goodhart bites when a *proxy* diverges from the true objective; the eval IS the objective here. Inject into critic (not synthesis), 4-week window, ≥2-pattern threshold, notes verbatim. Kill-switch: 4 weeks in if aggregate pass-rate doesn't climb, remove the prepend.
+3. **The earlier markdown decision is marked `[SUPERSEDED]`** at the top of its DECISIONS entry rather than deleted — append-only history.
+
+**Honest caveats.**
+- ISO-week lookback in `eval_feedback._iso_week_lookback()` treats every year as 52 weeks for rollover. W53 years (≈1 in 6) lose at most one week of lookback. Acceptable for a heuristic; would matter if/when we keep more than a year of eval data.
+- The transparency panel on `/eval` shows what the critic WILL see on the NEXT synth run, not what informed the current week's report. For weeks synthesized before 3c.30 shipped, none of the past concerns were actually injected. Per-week historical accuracy would require a `synth_inputs` log we don't keep.
+- The aggregate pass-rate is the only signal we have for whether the loop is helping. After ~4 weeks of scoring against the new feedback'd synth, eyeball the numbers; if F/S/B pass counts don't trend up, kill the prepend.
+- No bootstrap problem currently — first synth run after 3c.30 ships will have zero past concerns (`format_critic_block` returns `""` → no prepend). Loop "warms up" naturally as the user scores.
+- Smoke tests went via FastAPI's `TestClient` against the live `gaming_chatter.db` — no separate uvicorn process for the round-trip verification. Synthesis itself was NOT re-run; verified only that imports + the prepend logic don't crash.
+
+**Where we left off.** Eval loop fully shipped end-to-end. User only needs to interact with `/eval` weekly. Remaining manual step: triggering synthesis itself (`scripts/run_synthesis.py {week_id}`). Phase 4 (Automation — APScheduler-driven Monday synth) is still deferred at user request; with Phase 4 + the 3c.30 feedback loop, the user would never touch the terminal — the system would run synthesis on schedule, read the user's scores, refine, repeat.
+
+**Next session candidates.**
+1. Score W17–W20 manually (~10–15 min per week) so the feedback loop has signal to inject. Re-synth one of them to see the critic feedback work end-to-end.
+2. Phase 4 — APScheduler-driven daily ingest + Monday synthesis + catch-up logic.
+3. Carry-over from 2026-05-18: re-probe the 2 YELLOW regional-source candidates that need a second look.
+4. Three Phase 3c.24 follow-ups in OPEN_QUESTIONS.md still defer-able (IGN regex sanity gate, cross-source date-conflict warning log, IGN past/future month URL probing).
+
+---
+
 ## 2026-05-20 (Phase 3c.24) — Region-tab spinner alignment + IGN as second `game_releases` source + Release Radar dual-link
 
 **What shipped.** Three items in one session — one UI polish bug on `/`, one carry-over from Phase 3c.18, one small ride-along on the second. (a) The HTMX loading spinner on the `/` region-tab pill was visually extruding past the "Asia" tab — fixed by lifting the spinner out of the `<nav>` into a sibling wrapper. (b) IGN release-date ingestion shipped as a second `game_releases` source, with PCGamer remaining primary via `SOURCE_PRIORITY`. (c) The Release Radar card on `/` now exposes both source-of-truth calendar URLs as stacked ghost links. Total spend ~$0.08 (IGN Haiku passes only).

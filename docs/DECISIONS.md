@@ -4,6 +4,85 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-20 — Eval scores feed back into the critic prompt (Phase 3c.30)
+
+**Decision:** When `synthesize_week()` runs its Pass 2 (critic), prepend a `=== PAST HUMAN CONCERNS ===` block to the critic's user message. The block is built from recurring (card, dim) failure patterns in `eval_card_scores` over the last 4 weeks. The same block is rendered on `/eval` in a collapsible `<details>` panel for transparency — what the user sees is what the critic gets.
+
+**Why the reversal of the earlier "I'd avoid feeding eval back to synthesis" recommendation** (made earlier the same session, before the user pushed back):
+
+The "avoid" cited Goodhart's Law — when a measure becomes a target, it ceases to be a good measure. On reflection, Goodhart bites when a *proxy* diverges from the true objective. In this setup the eval IS the objective: single user, in-context (no fine-tuning), user re-scores fresh content each week. The closed loop is healthy — if Opus games one dim, the other two suffer and the user marks them down. No benchmark to overfit to; no proxy to diverge from.
+
+**Design choices:**
+
+- **Inject into the critic prompt, not the synthesis prompt.** Synthesis = generate from corpus, keep it focused. Critic = quality enforcement; past human-flagged concerns belong there alongside the existing static rules.
+- **Recent window — last 4 weeks only.** Stale taste shouldn't compound forever. Year-rollover handled by treating each year as 52 weeks (W53 years lose at most one week of lookback — acceptable for a heuristic).
+- **Threshold — only patterns with ≥2 fails/concerns on the same (card, dim).** Single fails are noise; ≥2 is a real recurring concern.
+- **Include the note text verbatim**, tagged with the week_id (up to 3 example notes per pattern). The *why* teaches more than the score — "recap repeated the headline" lands, "B=fail" doesn't.
+- **`na` and `pass` ignored** — empty cards aren't feedback; pass carries no actionable signal.
+- **Transparency on `/eval`** — collapsible `<details>` renders the exact same block the critic will see. User stays calibrated; no black-box loop.
+
+**Implementation files:**
+
+- `app/services/eval_feedback.py` (new, ~110 lines): `gather_recent_failures()` + `format_critic_block()`.
+- `app/services/synthesis.py:629–645` — Pass 2 prepends `past_concerns` to the existing `critic_user`. Lazy-imports `eval_feedback` to keep cycles loose.
+- `app/routers/eval.py` — computes the same block per request; passes `feedback_block` + `feedback_count` to the template.
+- `app/templates/eval.html` — `{% if feedback_block %}<details class="gc-eval-feedback">...` at the top of `.gc-eval-form-wrap`.
+
+**Cost:** ~$0.01–0.02 extra per critic run. At most ~10 patterns × 3 notes × ~30 tokens ≈ 900 tokens prepended. Negligible vs the ~$0.30/week baseline.
+
+**Kill-switch:** if 4 weeks in the per-week aggregate pass-rate hasn't climbed, the loop isn't helping — remove the prepend in `synthesis.py` and the panel in `eval.html`. The eval scoring data itself stays untouched (always re-derivable).
+
+**Risks accepted (smaller than the original "avoid" implied):**
+
+1. **Over-correction.** Opus reads "factuality concerns on biggest" → hedges every claim → Brevity drops. Caught in aggregate within a week.
+2. **Style monoculture.** Opus internalizes the user's voice. For a *personal* tool, that's the goal, not a bug.
+3. **Confirmation bias on the user's side.** They may score more leniently knowing Opus "tried to fix" what they flagged. Mitigated only by the transparency panel — user can see exactly what the critic was told.
+4. **Contradictory notes across weeks.** Each note carries its `week_id`, so Opus weighs context, not abstract rules.
+
+**Future trigger to revisit:** if the per-week aggregate pass-rate plateaus or contradicts the notes, kill the prepend and reassess. Per the kill-switch above.
+
+---
+
+## 2026-05-20 — Synthesis eval harness — in-app `/eval` form (Phase 3c.25)
+
+**Decision:** Score synthesis quality through a new `/eval` page in the dashboard. Two new SQLite tables (`eval_card_scores`, `eval_meta`) persist scores; the page reuses the weekly `_report_grid.html` partial on the left and a sticky HTMX form on the right — save-on-change radios for F/S/B per card, per-card note, free-text Missing textarea, live aggregate footer.
+
+**Why the reversal (same day as the markdown decision below):**
+- Editor↔browser context-switching friction undervalued in the morning's markdown call. The Pass/Concern/Fail glyphs (`✓ ~ ✗`) aren't keyboard-accessible — every cell would need copy-paste from a reference or remembering markdown table syntax. Friction in a discretionary-effort workflow → workflow gets abandoned.
+- HTMX + Jinja stack was already in place; marginal cost of one more route was ~90 min, not a green-field build.
+- Save-on-change UX gives instant per-cell persistence; markdown required remembering to save the editor file.
+
+**Implementation:**
+- `_report_grid.html` extracted from `reports.html` (no behavioral change to `/`) so both `/` and `/eval` can include it.
+- `EvalCardScore(week_id, card)` + `EvalMeta(week_id)` SQLModels. Composite PK on EvalCardScore — one row per (week, card) holds `f_score`, `s_score`, `b_score`, `note`.
+- POST `/eval/score` returns the re-rendered aggregate fragment for HTMX swap; POST `/eval/note` and `/eval/missing` return 204 (fire-and-forget).
+- Nav: new "Eval" item between Sources and About in `NAV_ITEMS_BASE` (`clipboard-check` lucide icon).
+- Rubric / glyphs / 3-point scale unchanged from the superseded entry below — only the substrate changed.
+
+**Markdown skeletons** at `evals/W{17–20}.md` archived to `evals/.archive/` (not deleted, in case a future export path needs them).
+
+**Revisit when:** 8+ weeks scored AND aggregate becomes hard to eyeball → add a trend view that reads from `eval_card_scores`. Until then, the per-week aggregate footer is enough.
+
+---
+
+## 2026-05-20 — Synthesis eval harness — markdown over in-app form [SUPERSEDED]
+
+**STATUS:** Superseded by the in-app `/eval` entry above, decided same day after surfacing UX friction in walkthrough planning.
+
+**Decision:** Score synthesis quality by hand using per-week markdown templates in `evals/W{nn}.md`. Defer in-app form / `eval_scores` table / aggregation script.
+
+**Why:**
+- 4 weekly reports in corpus (W17–W20) → no aggregation pain to solve yet
+- Single user; no UX requirement to share scores
+- Critic pass already enforces factuality of cluster_ids, entity names, marketing-verb prose. Human eval is for what the critic could miss — subtle attribution chains, signal vs filler, padding the critic missed
+- Markdown lets `grep "✗" evals/*.md` surface repeat failures → prompt-fix candidates
+
+**Rubric:** 3 dimensions per card (Factuality / Signal / Brevity), 3-point scale (✓ pass / ~ concern / ✗ fail). Plus one free-text "Missing" field per week. Coverage/recall deliberately under-scored.
+
+**Revisit when:** ≥8 weeks scored AND a pattern emerges that wants trend lines → consider `scripts/eval_aggregate.py` (~30 LOC) or in-app form (3–4 hrs).
+
+---
+
 ## 2026-05-20 (Phase 3c.24) — Region-tab spinner alignment + IGN as second `game_releases` source + Release Radar dual-link
 
 **Scope:** Three items in one session. (a) Region-tab spinner on `/` was visually extruding past the pill — structural fix via a wrapper, not a positioning tweak. (b) IGN release-date ingestion shipped as the second `game_releases` source (carry-over from 3c.18); pcgamer remains primary via the already-locked `SOURCE_PRIORITY`. (c) Release Radar card on `/` exposes both PCGamer + IGN calendar URLs as stacked ghost links. Changes land in `app/templates/reports.html`, `app/static/app.css`, `app/services/anthropic.py`, `app/db/models.py` (docstring only), and a new `scripts/refresh_ign_releases.py`. Total spend ~$0.08 (IGN Haiku passes only). See SESSION_LOG.md 2026-05-20 (Phase 3c.24) for the full file-by-file shape.

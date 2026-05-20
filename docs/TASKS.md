@@ -312,7 +312,7 @@ Three items in one session — one UI polish bug on `/`, one carry-over from 3c.
 - [x] Sentiment view (per-category aggregate) — **shipped 2026-05-19 (Phase 3c.21).** `/sentiment` page with date-range filter; per-category `AVG(sentiment_score) + COUNT(*)`.
 - [x] Source-failure alert (UI banner when error_count > N) — **shipped 2026-05-19 (Phase 3c.19).** Banner inside `.gc-main` when ≥1 `sources.error_count > 3`.
 - [x] IGN as a second `game_releases` source — **shipped 2026-05-20 (Phase 3c.24).** `tag_ign_releases()` + `scripts/refresh_ign_releases.py` + TBA-line preprocessor. 299 IGN rows / 2 games dim syncs / 29-game pcgamer overlap (dates agree); priority unchanged (`SOURCE_PRIORITY = ["pcgamer", "ign"]`). Release Radar card now exposes both calendar URLs as stacked ghost links.
-- [ ] Eval harness for synthesis quality (sample → manual rate → tune prompts)
+- [x] Eval harness for synthesis quality (sample → manual rate → tune prompts) — **shipped 2026-05-20 (Phase 3c.25).** In-app `/eval` page replaces the markdown skeletons (now under `evals/.archive/`). Per-card F/S/B radios + note input + Missing textarea + live aggregate footer, persisting to new `eval_card_scores` + `eval_meta` tables. Reuses `_report_grid.html` (extracted from `reports.html` in the same phase). See DECISIONS 2026-05-20 "in-app `/eval` form". Outstanding: actual scoring across W17–W20; analyze repeat failures after 2–3 weeks scored.
 
 ## Later (deferred)
 
