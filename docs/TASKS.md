@@ -283,6 +283,20 @@ Two user-requested polish items on top of the late-session 3c.21 / 3c.22 pass. (
 - [x] No CSS additions — existing `.gc-trend-subhead` carries over from the old Current/Upcoming pattern; `.gc-row-trigger` handles hover/cursor; `.gc-sentiment-row`'s grid layout works on `<label>` elements identically. — **Done 2026-05-19.**
 - [x] Smoke-tested live on `:8012` — routes 200 on `/`, `/sentiment`, `/reports/drawer?kind=category&value=industry&from=2026-05-12&to=2026-05-19`, `/reports/drawer?kind=cluster&value=262&week=2026-W20` (back-compat). 10 `.gc-trend-subhead` refs on `/` (5 tabs × 2 subsections). Trends games sample: 5 rising + 5 declining with `prior_count > current_count` on every declining row. Drawer `kind=category value=industry` returns 25 items (cap), 125 class refs total. — **Done 2026-05-19.**
 
+### Phase 3c.24 — Region-tab spinner alignment + IGN as 2nd `game_releases` source + Release Radar dual-link (shipped 2026-05-20)
+
+Three items in one session — one UI polish bug on `/`, one carry-over from 3c.18, one small UI ride-along on the second. Region-tab spinner on `/` was visually extruding past the pill; fixed by lifting the spinner out of the `<nav>` into a sibling wrapper. IGN release-date ingestion shipped as the second source in `game_releases`; pcgamer remains primary via the already-locked `SOURCE_PRIORITY`. Release Radar card on `/` exposes both calendar URLs as stacked ghost links. Spend ~$0.08 (IGN Haiku passes only). See DECISIONS.md 2026-05-20 (Phase 3c.24) + SESSION_LOG.md 2026-05-20 (Phase 3c.24).
+
+- [x] `app/templates/reports.html` — wrapped region-tabs `<nav>` + spinner `<span>` in new `<div class="gc-region-tabs-row">`; spinner is now a sibling of the nav, not a child. — **Done 2026-05-20.**
+- [x] `app/static/app.css` — added `.gc-region-tabs-row` rule (inline-flex, gap 10px, align-items center, carries the bottom margin); stripped `margin-bottom` from `.gc-region-tabs`; stripped `margin-left` + `vertical-align` + `align-self` from `.gc-region-spinner`. — **Done 2026-05-20.**
+- [x] `app/services/anthropic.py` — new `IGN_RELEASES_SYSTEM_PROMPT` + `tag_ign_releases(body_text)` after `tag_pcgamer_releases`. Reuses existing `PCGamerReleaseList` schema unchanged. `max_tokens=8192`; cached system prompt. — **Done 2026-05-20.**
+- [x] `scripts/refresh_ign_releases.py` (~220 lines) — mirrors `refresh_pcgamer_releases.py` structurally. `SOURCE="ign"`, `DEFAULT_URL="https://www.ign.com/upcoming/games"`. CLI args: `--url` / `--limit` / `--dry-run` / new `--keep-tba` (disables preprocessor). — **Done 2026-05-20.**
+- [x] `_strip_tba_year_lines(body)` preprocessor in the new script — regex `^\s*TBA\s*[/ ]\s*\d{4}\s*$` matches IGN's `TBA/<year>` date lines + pops the preceding name line (consecutive-line layout). Smoke run: 953 stripped → 9,370-char body remaining → 299 parsed entries / 0 format errors. — **Done 2026-05-20.**
+- [x] `app/db/models.py:74` `GameRelease` docstring updated `"current sources: 'pcgamer'. IGN deferred."` → `"current sources: 'pcgamer' (3c.18) + 'ign' (3c.24)."` — **Done 2026-05-20.**
+- [x] `app/templates/reports.html:493` — Release Radar `card_header` action arg replaced with two stacked ghost-links wrapped in an inline `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">` — "PCGamer →" + "IGN →". No new CSS class. — **Done 2026-05-20.**
+- [x] Dry-run + real-run verified — body 34,616 chars; 953 TBA stripped → 9,370 chars; Haiku parsed 299 valid entries / 0 invalid / ~46 s wall. 299 inserted into `game_releases`; **2 games dim rows synced** (sample: *Yoshi and the Mysterious Book* → 2026-05-21 → `lifecycle='upcoming'`). 29-game overlap with pcgamer; all dates agree on the May overlap. — **Done 2026-05-20.**
+- [x] Release Radar dual-link verified live — server boot on `:8021` → GET `/` 200 → regex-extracted ghost-link labels returned `PCGamer →` + `IGN →` in order. — **Done 2026-05-20.**
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis
@@ -297,6 +311,7 @@ Two user-requested polish items on top of the late-session 3c.21 / 3c.22 pass. (
 - [x] Watch-list section in synthesis — **shipped 2026-05-19 (Phase 3c.22).** Category chips (`release | drama | business | community | event`) + day-specificity push in the Opus prompt; critic rule 7 validates groundedness + category enum + day specificity. W20 re-synthed; W17–W19 backward-compatible (no chips).
 - [x] Sentiment view (per-category aggregate) — **shipped 2026-05-19 (Phase 3c.21).** `/sentiment` page with date-range filter; per-category `AVG(sentiment_score) + COUNT(*)`.
 - [x] Source-failure alert (UI banner when error_count > N) — **shipped 2026-05-19 (Phase 3c.19).** Banner inside `.gc-main` when ≥1 `sources.error_count > 3`.
+- [x] IGN as a second `game_releases` source — **shipped 2026-05-20 (Phase 3c.24).** `tag_ign_releases()` + `scripts/refresh_ign_releases.py` + TBA-line preprocessor. 299 IGN rows / 2 games dim syncs / 29-game pcgamer overlap (dates agree); priority unchanged (`SOURCE_PRIORITY = ["pcgamer", "ign"]`). Release Radar card now exposes both calendar URLs as stacked ghost links.
 - [ ] Eval harness for synthesis quality (sample → manual rate → tune prompts)
 
 ## Later (deferred)
