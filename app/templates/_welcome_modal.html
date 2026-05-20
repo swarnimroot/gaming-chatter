@@ -2,47 +2,99 @@
    Visibility is gated client-side: the wrapper starts hidden, then the
    inline script in the parent template (reports.html) toggles it on first
    load per session and writes sessionStorage.gc_welcome_seen on dismiss.
-   Lives only on / (Weekly read-out), so in-app navigation can't re-fire it. #}
+   Lives only on / (Weekly read-out), so in-app navigation can't re-fire it.
+
+   Phase 3c.32: rewrite — editorial-newsroom direction. Structure follows
+   problem → what → who → how (matches the user's pulse-check + spec-compass
+   reference designs from other projects). #}
 <div id="gc-welcome" class="gc-welcome" role="dialog" aria-labelledby="gc-welcome-title" aria-modal="true" hidden>
   <div class="gc-welcome-overlay" data-gc-welcome-dismiss></div>
   <div class="gc-welcome-card">
     <button type="button" class="gc-welcome-close" data-gc-welcome-dismiss aria-label="Close">&times;</button>
 
-    <div class="gc-welcome-header">
-      <div class="gc-eyebrow">gaming-chatter</div>
-      <h2 class="gc-welcome-title" id="gc-welcome-title">A weekly read on what mattered.</h2>
-    </div>
+    <header class="gc-welcome-header">
+      <div class="gc-welcome-eyebrow">Gaming-Chatter</div>
+      <h2 class="gc-welcome-title" id="gc-welcome-title">A weekly gaming brief, <em>what is it?</em></h2>
+    </header>
 
-    <div class="gc-welcome-grid">
+    <div class="gc-welcome-cols">
 
-      <section class="gc-welcome-section">
-        <div class="gc-welcome-section-icon"><i data-lucide="rss"></i></div>
-        <div class="gc-welcome-section-head">30+ feeds, low signal.</div>
-        <p class="gc-welcome-section-body">RSS dumps everything. Weekly roundups go generic and miss what you actually care about.</p>
-      </section>
-
-      <section class="gc-welcome-section">
-        <div class="gc-welcome-pipeline" aria-label="Ingest, cluster, synthesize">
-          <span class="gc-welcome-pipe-step"><i data-lucide="download"></i><span>Ingest</span></span>
-          <span class="gc-welcome-pipe-arrow" aria-hidden="true">&rsaquo;</span>
-          <span class="gc-welcome-pipe-step"><i data-lucide="shapes"></i><span>Cluster</span></span>
-          <span class="gc-welcome-pipe-arrow" aria-hidden="true">&rsaquo;</span>
-          <span class="gc-welcome-pipe-step"><i data-lucide="sparkles"></i><span>Synthesize</span></span>
+      <section class="gc-welcome-col">
+        <div class="gc-welcome-col-head">
+          <i data-lucide="alert-octagon" class="gc-welcome-col-icon" aria-hidden="true"></i>
+          <span class="gc-welcome-col-label">The problem</span>
         </div>
-        <div class="gc-welcome-section-head">A curated Monday-morning digest, running on a laptop.</div>
-        <p class="gc-welcome-section-body">Daily ingest from 15 news sites &middot; 10 subreddits &middot; 6 YouTube channels &rarr; cluster the week &rarr; LLM-synthesized read-out with WoW/MoM trends.</p>
+        <p class="gc-welcome-col-body">Gaming news is scattered across feeds, subs, and channels. Generic Monday roundups read the same for everyone &mdash; they miss what one reader actually cares about.</p>
+        <div class="gc-welcome-viz gc-welcome-viz--problem" aria-hidden="true">
+          <span class="gc-welcome-chip">pcgamer</span>
+          <span class="gc-welcome-chip">r/games</span>
+          <span class="gc-welcome-chip">yt: DF</span>
+          <span class="gc-welcome-chip">eurogamer</span>
+          <span class="gc-welcome-chip">+27</span>
+          <span class="gc-welcome-viz-arrow">&rarr;</span>
+          <span class="gc-welcome-viz-q">?</span>
+        </div>
       </section>
 
-      <section class="gc-welcome-section">
-        <div class="gc-welcome-section-icon"><i data-lucide="compass"></i></div>
-        <div class="gc-welcome-section-head">How to read this.</div>
-        <p class="gc-welcome-section-body">You&rsquo;re on the <strong>Weekly read-out</strong> &mdash; Monday digest. <strong>Stories</strong> = live feed. <strong>Clusters</strong> = raw groupings behind each digest. Filter any by region (Americas / Europe / Asia).</p>
+      <section class="gc-welcome-col">
+        <div class="gc-welcome-col-head">
+          <i data-lucide="sparkles" class="gc-welcome-col-icon" aria-hidden="true"></i>
+          <span class="gc-welcome-col-label">What this does</span>
+        </div>
+        <p class="gc-welcome-col-body">Daily ingest from 15 sites + 10 subreddits + 6 YouTube channels. Cluster the week&rsquo;s items by topic. Opus writes a 9-card brief &mdash; biggest stories, hottest games, trends, risks, watch next week, more.</p>
+        <div class="gc-welcome-viz gc-welcome-viz--what" aria-hidden="true">
+          <div class="gc-welcome-funnel-row"><span class="gc-welcome-funnel-num">31</span><span class="gc-welcome-funnel-label">sources</span></div>
+          <div class="gc-welcome-funnel-arrow">&darr;</div>
+          <div class="gc-welcome-funnel-row"><span class="gc-welcome-funnel-num">1,597</span><span class="gc-welcome-funnel-label">items / wk</span></div>
+          <div class="gc-welcome-funnel-arrow">&darr;</div>
+          <div class="gc-welcome-funnel-row gc-welcome-funnel-row--target"><span class="gc-welcome-funnel-num">9</span><span class="gc-welcome-funnel-label">card brief</span></div>
+        </div>
+      </section>
+
+      <section class="gc-welcome-col">
+        <div class="gc-welcome-col-head">
+          <i data-lucide="users" class="gc-welcome-col-icon" aria-hidden="true"></i>
+          <span class="gc-welcome-col-label">Who it&rsquo;s for</span>
+        </div>
+        <div class="gc-welcome-roles">
+          <div class="gc-welcome-role">
+            <span class="gc-welcome-role-label">Partnerships</span>
+            <span class="gc-welcome-role-body">Release radar + market momentum surface deals, sponsorships, platform shifts.</span>
+          </div>
+          <div class="gc-welcome-role">
+            <span class="gc-welcome-role-label">Market intel</span>
+            <span class="gc-welcome-role-body">Hottest games + trends track the competitive landscape week over week.</span>
+          </div>
+          <div class="gc-welcome-role">
+            <span class="gc-welcome-role-label">Community</span>
+            <span class="gc-welcome-role-body">Sentiment + heated / celebrating clusters surface what players actually feel.</span>
+          </div>
+          <div class="gc-welcome-role">
+            <span class="gc-welcome-role-label">Comms / PR</span>
+            <span class="gc-welcome-role-body">Drama + risks flag exec missteps and studio layoffs ahead of inbox.</span>
+          </div>
+        </div>
       </section>
 
     </div>
 
-    <div class="gc-welcome-footer">
+    <section class="gc-welcome-loop-panel">
+      <div class="gc-welcome-loop-head">
+        <div class="gc-welcome-loop-label">The weekly loop</div>
+        <div class="gc-welcome-loop-sub">How the brief sharpens toward your team&rsquo;s taste over weeks.</div>
+      </div>
+      <div class="gc-welcome-loop-rows">
+        <div class="gc-welcome-loop-row"><span class="gc-welcome-day-chip">Mon</span><span>Open <code>/</code>. Read this week&rsquo;s 9-card brief.</span></div>
+        <div class="gc-welcome-loop-row"><span class="gc-welcome-day-chip">Tue</span><span>Open <code>/eval</code>. Score F/S/B per card, jot a note when something&rsquo;s off.</span></div>
+        <div class="gc-welcome-loop-row"><span class="gc-welcome-day-chip">Next Mon</span><span>Brief auto-incorporates your past notes via the critic-prompt feedback.</span></div>
+        <div class="gc-welcome-loop-row"><span class="gc-welcome-day-chip">Compound</span><span>Recurring <code>&#x2717;</code> marks (2+ weeks on the same card / dim) bake into the critic permanently.</span></div>
+        <div class="gc-welcome-loop-row"><span class="gc-welcome-day-chip gc-welcome-day-chip--alt">Anytime</span><span><code>Stories</code> live feed &middot; <code>Clusters</code> raw groupings &middot; <code>Sentiment</code> per-category pulse.</span></div>
+      </div>
+    </section>
+
+    <footer class="gc-welcome-footer">
       <button type="button" class="gc-cta gc-welcome-dismiss-btn" data-gc-welcome-dismiss>Got it</button>
-    </div>
+    </footer>
+
   </div>
 </div>

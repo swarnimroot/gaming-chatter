@@ -1,5 +1,5 @@
-/* =============================================================
-   gaming-chatter — global stylesheet
+﻿/* =============================================================
+   gaming-chatter â€” global stylesheet
    - Top section: legacy placeholder rules for Dashboard / Sources /
      Clusters pages (existing functional UI).
    - Bottom section (gc-*): port of the claude.ai/design "Gaming
@@ -23,7 +23,7 @@ code { font-size: 0.85em; }
 .cluster-members .when { color: #999; font-size: 0.8em; margin-left: 0.4rem; }
 
 /* =============================================================
-   gc-* — Reports view (claude.ai/design port)
+   gc-* â€” Reports view (claude.ai/design port)
    ============================================================= */
 
 :root {
@@ -44,7 +44,7 @@ code { font-size: 0.85em; }
   --gc-border: #D9DCE7;
   --gc-border-strong: #AAAAAA;
 
-  /* Accent — locked: orange #D9682B (editorial amber) */
+  /* Accent â€” locked: orange #D9682B (editorial amber) */
   --gc-accent: #D9682B;
   --gc-accent-hover: #8D441C;
   --gc-accent-soft: #FAEAE1;
@@ -57,7 +57,7 @@ code { font-size: 0.85em; }
   --gc-warning-soft: #FAF1DC;
   --gc-danger-soft:  #F8E5E5;
 
-  /* Sidebar — always dark, does not theme-swap */
+  /* Sidebar â€” always dark, does not theme-swap */
   --gc-sidebar-bg: #08080B;
   --gc-sidebar-divider: #1A1A22;
 
@@ -274,7 +274,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-row-item  { font-size: 13px; color: var(--gc-fg); text-wrap: pretty; }
 .gc-row-date  { font-size: 11px; font-weight: 600; color: var(--gc-accent); font-variant-numeric: tabular-nums; }
 
-/* ---------- Phase 3c.1 — Hottest chips + mention-count, empty rows ---------- */
+/* ---------- Phase 3c.1 â€” Hottest chips + mention-count, empty rows ---------- */
 .gc-row-count {
   font-size: 14px; font-weight: 600; color: var(--gc-fg);
   font-variant-numeric: tabular-nums;
@@ -300,7 +300,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   padding: 16px 4px; font-size: 12px; color: var(--gc-fg3);
 }
 
-/* Card 3 — radio-driven Hottest tabs (All / Current / Upcoming) */
+/* Card 3 â€” radio-driven Hottest tabs (All / Current / Upcoming) */
 .gc-hot-tabs { position: relative; }
 .gc-tab-input {
   position: absolute;
@@ -339,7 +339,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 
 .gc-ghost-link { background: transparent; border: none; color: var(--gc-accent); font-size: 12px; font-weight: 500; cursor: pointer; padding: 0; font-family: inherit; text-decoration: none; }
 
-/* ---------- Biggest stories — plural top-3 (3c.5) ---------- */
+/* ---------- Biggest stories â€” plural top-3 (3c.5) ---------- */
 .gc-biggest-list { display: flex; flex-direction: column; gap: 4px; }
 .gc-biggest {
   display: grid; grid-template-columns: 36px 1fr; gap: 12px;
@@ -362,7 +362,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   white-space: nowrap;
 }
 
-/* ---------- Market momentum — category chip + row (3c.5) ---------- */
+/* ---------- Market momentum â€” category chip + row (3c.5) ---------- */
 .gc-mm-category {
   display: inline-block; padding: 2px 8px; border-radius: 2px;
   font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
@@ -375,7 +375,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-mm-category--structural      { background: var(--gc-surface-alt);   color: var(--gc-fg2); }
 .gc-mm-category--people-moves    { background: var(--gc-chip);          color: var(--gc-fg3); }
 
-/* ---------- Community sentiment — narrative + heated/celebrating (3c.5) ---------- */
+/* ---------- Community sentiment â€” narrative + heated/celebrating (3c.5) ---------- */
 .gc-cs-narrative {
   font-size: 13px; color: var(--gc-fg2); line-height: 1.5;
   text-wrap: pretty; margin: 0 0 14px;
@@ -412,7 +412,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-drama-title { font-size: 13px; font-weight: 600; color: var(--gc-fg); }
 .gc-drama-recap { font-size: 12px; color: var(--gc-fg2); line-height: 1.45; text-wrap: pretty; }
 
-/* Card 5 — radio-driven Trends tabs (Games / Genres / Platforms / Live-svc / Events) */
+/* Card 5 â€” radio-driven Trends tabs (Games / Genres / Platforms / Live-svc / Events) */
 .gc-trend-tabs { position: relative; }
 #trend-tab-games:checked       ~ .gc-tab-labels label[for="trend-tab-games"],
 #trend-tab-genres:checked      ~ .gc-tab-labels label[for="trend-tab-genres"],
@@ -438,12 +438,12 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-spark { display: inline-block; vertical-align: middle; }
 
 /* =============================================================
-   Phase 3c.3 — Source drawer + Exec-summary modal
+   Phase 3c.3 â€” Source drawer + Exec-summary modal
    Radio-driven state mirrors the existing tab pattern; HTMX
    handles content swap-in, CSS handles open/close visibility.
    ============================================================= */
 
-/* Hidden state radios — siblings of the panels via direct-body placement */
+/* Hidden state radios â€” siblings of the panels via direct-body placement */
 .gc-overlay-state {
   position: absolute;
   opacity: 0;
@@ -566,7 +566,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   letter-spacing: 0.04em;
 }
 
-/* Row trigger — shared visual cue that a row opens the drawer */
+/* Row trigger â€” shared visual cue that a row opens the drawer */
 .gc-row-trigger {
   cursor: pointer;
   user-select: none;
@@ -580,7 +580,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   color: var(--gc-accent);
 }
 
-/* Phase 3c.4 — Hottest row 'reason' subline + Releases 'note' subline */
+/* Phase 3c.4 â€” Hottest row 'reason' subline + Releases 'note' subline */
 .gc-row-reason {
   font-size: 11px;
   color: var(--gc-fg2);
@@ -589,9 +589,9 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   text-wrap: pretty;
 }
 
-/* HTMX indicator (during fetch) — show a pulsing dot in drawer header */
+/* HTMX indicator (during fetch) â€” show a pulsing dot in drawer header */
 .gc-drawer-panel.htmx-request .gc-drawer-meta::after {
-  content: " · loading…";
+  content: " Â· loadingâ€¦";
   color: var(--gc-fg3);
 }
 
@@ -682,13 +682,13 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   text-wrap: pretty;
 }
 .gc-modal-card.htmx-request .gc-modal-body::before {
-  content: "Generating…";
+  content: "Generatingâ€¦";
   display: block;
   font-size: 12px; color: var(--gc-fg3);
   padding: 4px 0 12px;
 }
 
-/* Reduced motion — disable slide/fade transitions */
+/* Reduced motion â€” disable slide/fade transitions */
 @media (prefers-reduced-motion: reduce) {
   .gc-drawer-overlay,
   .gc-drawer-panel,
@@ -702,7 +702,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
    collapsed to Risks | Community only at the bottom. Export trigger now uses
    the orange accent to match `.gc-cta`. */
 
-/* Modal header packs eyebrow + title-line; Export floats top-right next to ×. */
+/* Modal header packs eyebrow + title-line; Export floats top-right next to Ã—. */
 .gc-modal-card .gc-modal-header {
   padding: 18px 140px 12px 24px;
   position: relative;
@@ -717,8 +717,8 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-onepager-titlesep   { color: var(--gc-border-strong); font-size: 13px; }
 .gc-onepager-titlerange { font-size: 12px; color: var(--gc-fg3); letter-spacing: 0.02em; }
 
-/* Export dropdown — orange button matching `.gc-cta`. Positioned absolute
-   at top:12px right:50px so it sits left of the .gc-modal-close × at right:14px. */
+/* Export dropdown â€” orange button matching `.gc-cta`. Positioned absolute
+   at top:12px right:50px so it sits left of the .gc-modal-close Ã— at right:14px. */
 .gc-onepager-export-menu {
   position: absolute; top: 12px; right: 50px;
   z-index: 2;
@@ -757,7 +757,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 
 .gc-modal-card .gc-modal-body { padding: 14px 24px 14px; }
 
-/* Stat tiles — 4 across, at-a-glance numbers above the lead paragraph. */
+/* Stat tiles â€” 4 across, at-a-glance numbers above the lead paragraph. */
 .gc-onepager-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
   margin: 0 0 14px;
@@ -785,7 +785,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Lead — wraps multiple <p> elements (sentence-split for breathing room). */
+/* Lead â€” wraps multiple <p> elements (sentence-split for breathing room). */
 .gc-onepager-lead { margin: 0 0 14px; }
 .gc-onepager-lead p {
   font-size: 13px; line-height: 1.55;
@@ -805,7 +805,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   border-bottom: 1px solid var(--gc-border);
 }
 
-/* Biggest numbered list — titles + source pills only (no deks). */
+/* Biggest numbered list â€” titles + source pills only (no deks). */
 .gc-onepager-numlist {
   list-style: decimal; padding-left: 22px; margin: 0;
   font-size: 13px; line-height: 1.45; color: var(--gc-fg);
@@ -827,7 +827,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-onepager-srcsep { color: var(--gc-border-strong); }
 
-/* Bul list — used for MM, Risks, Community. */
+/* Bul list â€” used for MM, Risks, Community. */
 .gc-onepager-buls {
   list-style: none; padding: 0; margin: 0;
   font-size: 12.5px; line-height: 1.45; color: var(--gc-fg);
@@ -839,7 +839,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-onepager-buls > li > .gc-onepager-itemtitle--clip { flex: 1 1 auto; min-width: 0; }
 
-/* Two-col strip — Risks | Community at the bottom (modal + standalone). */
+/* Two-col strip â€” Risks | Community at the bottom (modal + standalone). */
 .gc-onepager-twocol {
   display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
   margin-top: 14px;
@@ -905,7 +905,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 
 /* ---------- Standalone-export-only chrome (Phase 3c.6, A4 portrait) ----------
    Used by _report_standalone.html, NOT loaded in the live app. The doc is
-   sized as A4 portrait (210 × 297mm) so on-screen and in print look
+   sized as A4 portrait (210 Ã— 297mm) so on-screen and in print look
    identical. Slightly larger font scale inside the doc so the briefing
    reads as a real document, not a cramped modal. */
 .gc-standalone-body {
@@ -938,7 +938,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-standalone-doc .gc-onepager-titlesep   { font-size: 16px; }
 .gc-standalone-doc .gc-onepager-titlerange { font-size: 13px; }
 
-/* Bump the body type scale ~10% inside the standalone doc — more readable
+/* Bump the body type scale ~10% inside the standalone doc â€” more readable
    on a printed page than the modal's compact scale. */
 .gc-standalone-doc .gc-onepager-lead p { font-size: 14px; line-height: 1.6; margin: 0 0 10px; }
 .gc-standalone-doc .gc-onepager-sectlabel { font-size: 10.5px; margin: 0 0 8px; padding-bottom: 4px; }
@@ -985,7 +985,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 
 /* ---------- Phase 3c.7: shared chrome for Dashboard / Clusters / Sources --- */
 
-/* Header search input — lives in .gc-header-actions, sits at top-right next
+/* Header search input â€” lives in .gc-header-actions, sits at top-right next
    to the page title. HTMX live-search triggers on keyup. */
 .gc-search-input {
   height: 30px; min-width: 240px;
@@ -1003,7 +1003,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-search-input::placeholder { color: var(--gc-fg3); }
 
-/* gc-table — the row-per-record table used by Dashboard + Sources. Reads as
+/* gc-table â€” the row-per-record table used by Dashboard + Sources. Reads as
    a clean grid: 1px borders, tight padding, sticky header row, monospace
    numerics, source pill in the first cell, action chips in trailing cells. */
 .gc-table {
@@ -1067,7 +1067,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-table-chip--off { background: var(--gc-surface-alt);  color: var(--gc-fg3);     }
 .gc-table-sent-val { font-weight: 600; color: var(--gc-fg2); }
 
-/* Cluster card list — used by /clusters. Each cluster is its own card,
+/* Cluster card list â€” used by /clusters. Each cluster is its own card,
    members listed below in a flat row pattern. */
 .gc-cluster-card {
   background: var(--gc-surface);
@@ -1110,7 +1110,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   white-space: nowrap;
 }
 
-/* ---------- About page (Phase 3c.8) — visual 5-stage pipeline ---------- */
+/* ---------- About page (Phase 3c.8) â€” visual 5-stage pipeline ---------- */
 .gc-about-wrap { padding: 24px 32px 32px; max-width: 1200px; }
 .gc-about-intro {
   font-size: 13px; color: var(--gc-fg2); line-height: 1.6;
@@ -1244,7 +1244,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 .gc-pipeline-status--busy { background: var(--gc-warning-soft); color: var(--gc-warning); border-color: var(--gc-warning); }
 
-/* ---------- Clusters view toggle (Phase 3c.10) — Cluster cards | List ---------- */
+/* ---------- Clusters view toggle (Phase 3c.10) â€” Cluster cards | List ---------- */
 .gc-clusters-view { padding: 20px 32px; }
 .gc-view-radio { position: absolute; opacity: 0; pointer-events: none; }
 .gc-view-labels {
@@ -1273,7 +1273,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 #view-list:checked ~ #clusters-list .gc-clusters-cards { display: none; }
 #view-list:checked ~ #clusters-list .gc-cluster-flatlist { display: block; }
 
-/* Clusters toolbar (Phase 3c.15 fix 2026-05-19) — region tabs left, view
+/* Clusters toolbar (Phase 3c.15 fix 2026-05-19) â€” region tabs left, view
    toggle right; both rendered server-side inside #clusters-list so HTMX
    swap re-renders the active-class on each. */
 .gc-clusters-toolbar {
@@ -1364,7 +1364,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-filter-select:hover  { border-color: var(--gc-fg3); }
 .gc-filter-select:focus  { outline: none; border-color: var(--gc-accent); box-shadow: 0 0 0 2px var(--gc-accent-soft); }
 
-/* ---------- Region tabs (Phase 3c.15) — Global/Americas/Europe/Asia.
+/* ---------- Region tabs (Phase 3c.15) â€” Global/Americas/Europe/Asia.
    HTMX-driven, state lives in URL ?region=. Visually inherits the .gc-view-labels
    pill row but on <button> elements rather than radio :checked. */
 .gc-region-tabs-row {
@@ -1402,7 +1402,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 }
 
 /* ---------- HTMX loading indicator + readout region spinner (Phase 3c.16) ----- */
-/* HTMX default indicator behavior — hidden, becomes visible when the
+/* HTMX default indicator behavior â€” hidden, becomes visible when the
    element (or one of its ancestors) has the htmx-request class. */
 .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
 .htmx-request .htmx-indicator { opacity: 1; }
@@ -1451,7 +1451,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   background: var(--gc-surface-alt); color: var(--gc-fg);
   border-color: var(--gc-fg3);
 }
-/* Flatpickr accent override — use our accent color for the selected range. */
+/* Flatpickr accent override â€” use our accent color for the selected range. */
 .flatpickr-day.selected,
 .flatpickr-day.startRange,
 .flatpickr-day.endRange,
@@ -1477,7 +1477,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   box-shadow: -5px 0 0 var(--gc-accent-soft), 5px 0 0 var(--gc-accent-soft);
 }
 
-/* ---------- Phase 3c.19 — source-failure alert banner ------------------
+/* ---------- Phase 3c.19 â€” source-failure alert banner ------------------
    Sits inside .gc-main, above .gc-header. Width = main column. Dismiss-by-
    reload (no JS); the partial renders nothing when all sources are healthy. */
 .gc-alert-banner {
@@ -1495,7 +1495,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-alert-banner-icon { font-size: 14px; line-height: 1; }
 .gc-alert-banner-text { letter-spacing: 0.005em; }
 
-/* ---------- Phase 3c.20 — Trends mini-bar (WoW delta) ----------
+/* ---------- Phase 3c.20 â€” Trends mini-bar (WoW delta) ----------
    Zero-line centered bar: positive deltas grow right of the midline,
    negative grow left. Width proportional to |delta_pp|, clamped at
    12pp = 100% of the half-width by the Jinja macro. Color follows
@@ -1515,7 +1515,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-trend-bar--down-bad .gc-trend-bar-fill { background: var(--gc-danger); }
 
 /* =============================================================
-   Phase 3c.21 — Sentiment view (/sentiment)
+   Phase 3c.21 â€” Sentiment view (/sentiment)
    ============================================================= */
 .gc-sentiment-view { display: flex; flex-direction: column; gap: 16px; }
 .gc-sentiment-form { display: contents; }
@@ -1578,7 +1578,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   text-align: right;
 }
 
-/* ---------- Phase 3c.22 — Watch-list category chips ------------------
+/* ---------- Phase 3c.22 â€” Watch-list category chips ------------------
    Per-item chip rendered inline at the head of .gc-row-item on the Watch
    card. Tone-mapped to existing accent tokens; falls back to muted style
    when category is missing (old synthesis_json rows without the field). */
@@ -1597,7 +1597,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-watch-chip--community { color: var(--gc-warning);  border-color: var(--gc-warning); }
 .gc-watch-chip--event     { color: var(--gc-fg2);      border-color: var(--gc-border); }
 
-/* ---------- Phase 3c.25 — /eval split-pane scoring form -------------------
+/* ---------- Phase 3c.25 â€” /eval split-pane scoring form -------------------
    Left = the same _report_grid used by /, forced to single column.
    Right = sticky form with F/S/B pip radios + per-card note + Missing
    textarea + live aggregate footer (HTMX-swapped on each save). */
@@ -1645,7 +1645,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   font-size: 11px; font-weight: 600;
   color: var(--gc-accent);
 }
-/* Phase 3c.28 — FSB cells stack vertically (one dim per row) so the pip
+/* Phase 3c.28 â€” FSB cells stack vertically (one dim per row) so the pip
    strip never overflows the right pane and reading is left-to-right. */
 .gc-eval-cells { display: flex; flex-direction: column; gap: 4px; }
 .gc-eval-cell  { display: flex; align-items: center; gap: 10px; }
@@ -1726,7 +1726,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-eval-agg-count { font-weight: 700; }
 .gc-eval-agg-glyph { opacity: 0.7; }
 
-/* ---------- Phase 3c.26 — sidebar Eval button -----------------------------
+/* ---------- Phase 3c.26 â€” sidebar Eval button -----------------------------
    Anchored below the regular nav list as a distinct boundary'd action,
    not styled as a peer nav-item. is-active flips fill on /eval. */
 .gc-sb-eval-button {
@@ -1756,7 +1756,7 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
   width: 14px; height: 14px;
 }
 
-/* ---------- Phase 3c.27 — eval form refinements ---------------------------
+/* ---------- Phase 3c.27 â€” eval form refinements ---------------------------
    Legend block above the score rows (F/S/B + pip glyph meanings) and
    linked card-name labels that scroll the left pane to the matching card. */
 .gc-eval-legend {
@@ -1819,7 +1819,7 @@ span.gc-eval-card-name {
   margin-top: -1px;
 }
 
-/* Phase 3c.29 — stale-scores banner inside the eval form */
+/* Phase 3c.29 â€” stale-scores banner inside the eval form */
 .gc-eval-stale-banner {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
@@ -1832,7 +1832,7 @@ span.gc-eval-card-name {
 }
 .gc-eval-stale-banner i { width: 14px; height: 14px; flex-shrink: 0; }
 
-/* ---------- Phase 3c.30 — eval explainer strip ----------------------------
+/* ---------- Phase 3c.30 â€” eval explainer strip ----------------------------
    Editorial 3-step loop above the split layout. Numerals are the anchor;
    loop icon on step 3 hints at the cyclical nature. */
 .gc-eval-intro {
@@ -1928,141 +1928,227 @@ span.gc-eval-card-name {
    so the existing exec-summary radio-state machinery is untouched. */
 .gc-welcome[hidden] { display: none; }
 .gc-welcome {
-  position: fixed; inset: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px;
 }
 .gc-welcome-overlay {
   position: absolute; inset: 0;
-  background: rgba(8, 8, 11, 0.62);
+  background: rgba(15, 15, 15, 0.55);
+  backdrop-filter: blur(2px);
 }
 .gc-welcome-card {
-  position: relative;
-  width: min(960px, 100%);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
+  position: relative; z-index: 1;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
   background: var(--gc-surface);
   border: 1px solid var(--gc-border);
-  border-radius: 12px;
-  box-shadow: 0 24px 48px rgba(8, 8, 11, 0.32);
-  font-family: var(--gc-font-sans);
-  color: var(--gc-fg);
+  border-radius: 4px;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.45);
+  display: flex; flex-direction: column;
 }
 .gc-welcome-close {
-  position: absolute;
-  top: 12px; right: 14px;
-  width: 28px; height: 28px;
-  border: 1px solid var(--gc-border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--gc-fg3);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color var(--gc-dur-1) var(--gc-ease),
-              border-color var(--gc-dur-1) var(--gc-ease);
+  position: absolute; top: 14px; right: 14px;
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--gc-fg3);
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  font-size: 18px; line-height: 1; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .gc-welcome-close:hover {
-  color: var(--gc-fg);
-  border-color: var(--gc-border-strong);
+  color: var(--gc-fg); border-color: var(--gc-fg3);
+  background: var(--gc-surface-alt);
 }
 .gc-welcome-header {
-  padding: 22px 56px 14px 24px;
+  padding: 32px 36px 24px;
   border-bottom: 1px solid var(--gc-border);
 }
+.gc-welcome-eyebrow {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gc-accent);
+  margin-bottom: 14px;
+}
 .gc-welcome-title {
-  margin: 4px 0 0;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0;
+  font-family: Georgia, "Iowan Old Style", "Source Serif Pro", serif;
+  font-size: 32px; font-weight: 600; line-height: 1.12;
+  color: var(--gc-fg);
+  letter-spacing: -0.01em;
+  max-width: 780px;
+}
+.gc-welcome-title em {
+  font-style: italic;
+  color: var(--gc-accent);
+  font-weight: 500;
+}
+.gc-welcome-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.gc-welcome-col {
+  padding: 26px 28px 26px;
+  border-right: 1px dashed var(--gc-border);
+  display: flex; flex-direction: column; gap: 14px;
+  min-width: 0;
+}
+.gc-welcome-col:last-child { border-right: none; }
+.gc-welcome-col-head { display: flex; align-items: center; gap: 10px; }
+.gc-welcome-col-icon { width: 16px; height: 16px; color: var(--gc-accent); flex-shrink: 0; }
+.gc-welcome-col-label {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--gc-fg);
 }
-.gc-welcome-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  padding: 20px 24px 8px;
+.gc-welcome-col-body {
+  margin: 0;
+  font-size: 13px; line-height: 1.55;
+  color: var(--gc-fg2);
 }
-@media (max-width: 760px) {
-  .gc-welcome-grid { grid-template-columns: 1fr; }
+.gc-welcome-col-body strong { color: var(--gc-fg); font-weight: 700; }
+.gc-welcome-col-body code {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11.5px;
+  background: var(--gc-surface-alt);
+  padding: 1px 5px; border-radius: 3px;
+  color: var(--gc-accent);
 }
-.gc-welcome-section {
+.gc-welcome-viz { margin-top: auto; padding-top: 10px; }
+.gc-welcome-viz--problem {
+  display: flex; flex-wrap: wrap;
+  gap: 6px; align-items: center;
+  padding: 4px 0;
+}
+.gc-welcome-chip {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10.5px;
+  padding: 3px 8px;
   background: var(--gc-surface-alt);
   border: 1px solid var(--gc-border);
-  border-radius: 10px;
-  padding: 16px 16px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  border-radius: 3px;
+  color: var(--gc-fg3);
 }
-.gc-welcome-section-icon {
-  width: 36px; height: 36px;
-  border-radius: 8px;
+.gc-welcome-viz-arrow { color: var(--gc-fg3); font-size: 14px; margin: 0 4px; }
+.gc-welcome-viz-q {
+  font-family: Georgia, serif;
+  font-size: 30px; font-style: italic; font-weight: 600;
+  color: var(--gc-accent);
+  line-height: 1; opacity: 0.85;
+}
+.gc-welcome-viz--what {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+}
+.gc-welcome-funnel-row { display: flex; align-items: baseline; gap: 10px; }
+.gc-welcome-funnel-num {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 18px; font-weight: 600;
+  color: var(--gc-fg);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px; text-align: right;
+}
+.gc-welcome-funnel-row--target .gc-welcome-funnel-num {
+  color: var(--gc-accent); font-size: 24px; font-weight: 700;
+}
+.gc-welcome-funnel-label {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gc-fg3);
+}
+.gc-welcome-funnel-arrow {
+  color: var(--gc-border); font-size: 12px;
+  line-height: 1; height: 8px;
+}
+.gc-welcome-viz--who {
+  display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  padding-top: 12px;
+}
+.gc-welcome-loop-node {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 6px 14px;
   background: var(--gc-accent-soft);
   color: var(--gc-accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  border: 1px solid var(--gc-accent);
+  border-radius: 100px;
 }
-.gc-welcome-section-icon i {
-  width: 20px; height: 20px;
-}
-.gc-welcome-section-head {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--gc-fg);
-  line-height: 1.35;
-}
-.gc-welcome-section-body {
-  margin: 0;
-  font-size: 13px;
-  color: var(--gc-fg2);
-  line-height: 1.5;
-}
-.gc-welcome-section-body strong {
-  color: var(--gc-fg);
-  font-weight: 600;
-}
-.gc-welcome-pipeline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.gc-welcome-pipe-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--gc-surface);
-  border: 1px solid var(--gc-border);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
+.gc-welcome-loop-arrow { color: var(--gc-accent); font-size: 18px; }
+.gc-welcome-loop-caption {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10px; letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--gc-fg2);
+  color: var(--gc-fg3);
+  width: 100%; text-align: center;
+  margin-top: 4px;
 }
-.gc-welcome-pipe-step i {
-  width: 14px; height: 14px;
+.gc-welcome-loop-panel {
+  padding: 24px 36px 24px;
+  border-top: 1px solid var(--gc-border);
+  background: var(--gc-surface-alt);
+}
+.gc-welcome-loop-label {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gc-fg3);
+  margin-bottom: 14px;
+}
+.gc-welcome-loop-rows { display: flex; flex-direction: column; gap: 10px; }
+.gc-welcome-loop-row {
+  display: flex; align-items: baseline; gap: 14px;
+  font-size: 13px; line-height: 1.45;
+  color: var(--gc-fg);
+}
+.gc-welcome-loop-row code {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11.5px;
+  background: var(--gc-surface);
+  padding: 1px 5px; border-radius: 3px;
   color: var(--gc-accent);
 }
-.gc-welcome-pipe-arrow {
-  color: var(--gc-fg3);
-  font-size: 16px;
-  line-height: 1;
+.gc-welcome-day-chip {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 4px 10px;
+  background: var(--gc-accent); color: #fff;
+  border-radius: 100px;
+  min-width: 76px; text-align: center;
+  flex-shrink: 0;
+}
+.gc-welcome-day-chip--alt {
+  background: transparent; color: var(--gc-fg2);
+  border: 1px solid var(--gc-border);
 }
 .gc-welcome-footer {
-  padding: 8px 24px 20px;
-  display: flex;
-  justify-content: flex-end;
+  padding: 18px 36px 22px;
+  display: flex; justify-content: flex-end;
+  border-top: 1px solid var(--gc-border);
 }
-.gc-welcome-dismiss-btn { cursor: pointer; }
+.gc-welcome-dismiss-btn { cursor: pointer; min-width: 100px; }
+@media (max-width: 880px) {
+  .gc-welcome-cols { grid-template-columns: 1fr; }
+  .gc-welcome-col {
+    border-right: none;
+    border-bottom: 1px dashed var(--gc-border);
+  }
+  .gc-welcome-col:last-child { border-bottom: none; }
+  .gc-welcome-title { font-size: 26px; }
+  .gc-welcome-header,
+  .gc-welcome-loop-panel,
+  .gc-welcome-footer { padding-left: 24px; padding-right: 24px; }
+}
 
 
-/* ---------- Phase 3c.30 — eval feedback transparency details --------------
+/* ---------- Phase 3c.30 â€” eval feedback transparency details --------------
    Same block prepended to the next critic pass. Collapsed by default
    (semantic <details>, no JS); user opens to verify what Opus will see. */
 .gc-eval-feedback {
@@ -2083,7 +2169,7 @@ span.gc-eval-card-name {
 }
 .gc-eval-feedback summary::-webkit-details-marker { display: none; }
 .gc-eval-feedback summary::before {
-  content: "▸";
+  content: "â–¸";
   color: var(--gc-fg3);
   font-size: 10px;
   transition: transform 0.15s ease;
@@ -2101,4 +2187,46 @@ span.gc-eval-card-name {
   color: var(--gc-fg2);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Phase 3c.32 — Who-it's-for sub-roles list (replaces the prior single-reader
+   feedback-loop viz). Mirrors spec-compass's sub-role pattern. */
+.gc-welcome-roles {
+  display: flex; flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.gc-welcome-role {
+  display: flex; flex-direction: column;
+  gap: 1px;
+}
+.gc-welcome-role-label {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gc-accent);
+}
+.gc-welcome-role-body {
+  font-size: 12px;
+  color: var(--gc-fg2);
+  line-height: 1.45;
+}
+
+/* Phase 3c.32b — inline subtitle next to "The weekly loop" eyebrow */
+.gc-welcome-loop-head {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.gc-welcome-loop-head .gc-welcome-loop-label { margin-bottom: 0; }
+.gc-welcome-loop-sub {
+  font-size: 12.5px;
+  color: var(--gc-fg2);
+  line-height: 1.4;
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
 }
