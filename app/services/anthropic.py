@@ -352,6 +352,81 @@ def tag_pcgamer_releases(body_text: str) -> list[PCGamerRelease]:
     return list(data.releases or [])
 
 
+IGN_RELEASES_SYSTEM_PROMPT = """You extract upcoming video game release dates from an IGN "Upcoming Games" calendar page.
+
+Return ONLY valid JSON with one field:
+- releases: array of objects with {name, release_date}.
+
+Rules for `name`:
+- Use the canonical game name as it appears on the page (preserve casing).
+- Skip non-game entries: hardware, DLC unless standalone, expansion-only references, retrospectives.
+- Skip "+1"/"+2"/"+N" badges between entries — those are related-item counters, not games.
+- One row per distinct game. De-dup if a game appears multiple times.
+
+Rules for `release_date` — output exactly one of these formats:
+- "YYYY-MM-DD"  (specific day, e.g. "2026-07-15")
+- "YYYY-MM"     (month known but no day, e.g. "2026-08")
+- "Qn-YYYY"     (quarter only, e.g. "Q3-2026" — n in [1,2,3,4])
+- "YYYY"        (year only, e.g. "2026" — use this when the page says "TBA/YYYY")
+- "TBA"         (page says TBD/TBA with NO year)
+
+IGN-specific date phrasings — normalize:
+- "May 7, 2026" → "2026-05-07"
+- "Q3/2026" or "Q3 2026" → "Q3-2026"
+- "May 2026" (no day) → "2026-05"
+- "TBA/2026" → "2026"  (year is known even though day isn't)
+- "TBA" with no year → "TBA"
+
+Worked examples (input phrase → output):
+- "Hades II — May 7, 2026" → {name: "Hades II", release_date: "2026-05-07"}
+- "Hollow Knight: Silksong — Q3/2026" → {name: "Hollow Knight: Silksong", release_date: "Q3-2026"}
+- "Half-Life 3 — TBA/2026" → {name: "Half-Life 3", release_date: "2026"}
+- "Project X — TBA" → {name: "Project X", release_date: "TBA"}
+
+Output JSON only. No prose, no code fences. Aim for completeness — capture every game with a date on the page."""
+
+
+def tag_ign_releases(body_text: str) -> list[PCGamerRelease]:
+    """Call Anthropic Haiku 4.5 to extract (game, release_date) pairs from an
+    IGN "Upcoming Games" calendar page body. Reuses the PCGamerRelease schema
+    (shape-identical). Single call per refresh; idempotent upstream (the
+    script diffs against the game_releases table). Phase 3c.24.
+
+    Raises ValueError on transport / schema failure.
+    """
+    user_prompt = f"Page body:\n\n{body_text}"
+    try:
+        message = _get_client().messages.parse(
+            model=ANTHROPIC_ENRICH_MODEL,
+            max_tokens=8192,
+            system=[
+                {
+                    "type": "text",
+                    "text": IGN_RELEASES_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=PCGamerReleaseList,
+        )
+    except anthropic.APIError as e:
+        raise ValueError(f"anthropic tag_ign_releases API error: {e}") from e
+    except ValidationError as e:
+        raise ValueError(f"anthropic tag_ign_releases response failed schema: {e}") from e
+
+    data = getattr(message, "parsed_output", None)
+    if data is None:
+        stop = getattr(message, "stop_reason", "unknown")
+        raise ValueError(f"anthropic tag_ign_releases returned no parsed output (stop_reason={stop})")
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        log.warning(
+            "tag_ign_releases hit max_tokens — output may be truncated (got %d releases)",
+            len(data.releases or []),
+        )
+    return list(data.releases or [])
+
+
 def tag_region(tldr: str) -> list[str]:
     """Call Anthropic Haiku 4.5 to extract region_focus from a tldr.
 

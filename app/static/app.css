@@ -1367,10 +1367,14 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 /* ---------- Region tabs (Phase 3c.15) — Global/Americas/Europe/Asia.
    HTMX-driven, state lives in URL ?region=. Visually inherits the .gc-view-labels
    pill row but on <button> elements rather than radio :checked. */
+.gc-region-tabs-row {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
 .gc-region-tabs {
   display: inline-flex;
   border: 1px solid var(--gc-border); border-radius: 4px;
-  overflow: hidden; margin-bottom: 16px; background: var(--gc-surface);
+  overflow: hidden; background: var(--gc-surface);
 }
 .gc-region-tab {
   padding: 7px 16px; font-size: 12px; font-weight: 600;
@@ -1407,12 +1411,9 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-region-spinner {
   display: inline-block;
   width: 14px; height: 14px;
-  margin-left: 10px;
   border: 2px solid var(--gc-border);
   border-top-color: var(--gc-accent);
   border-radius: 50%;
-  vertical-align: middle;
-  align-self: center;
   animation: gc-spin 0.8s linear infinite;
 }
 @keyframes gc-spin {

@@ -125,21 +125,23 @@
         ('europe',   'Europe'),
         ('asia',     'Asia'),
       ] %}
-      <nav class="gc-region-tabs" aria-label="Filter by region">
-        {% for val, label in _tabs %}
-          <button type="button"
-                  class="gc-region-tab{% if (region or '') == val %} gc-region-tab--active{% endif %}"
-                  hx-get="{{ request.url_for('reports_view') }}?week={{ active_week_key }}{% if val %}&region={{ val }}{% endif %}"
-                  hx-target="#readout-main"
-                  hx-select="#readout-main"
-                  hx-swap="outerHTML"
-                  hx-indicator=".gc-region-spinner"
-                  hx-push-url="true">
-            {{ label }}
-          </button>
-        {% endfor %}
+      <div class="gc-region-tabs-row">
+        <nav class="gc-region-tabs" aria-label="Filter by region">
+          {% for val, label in _tabs %}
+            <button type="button"
+                    class="gc-region-tab{% if (region or '') == val %} gc-region-tab--active{% endif %}"
+                    hx-get="{{ request.url_for('reports_view') }}?week={{ active_week_key }}{% if val %}&region={{ val }}{% endif %}"
+                    hx-target="#readout-main"
+                    hx-select="#readout-main"
+                    hx-swap="outerHTML"
+                    hx-indicator=".gc-region-spinner"
+                    hx-push-url="true">
+              {{ label }}
+            </button>
+          {% endfor %}
+        </nav>
         <span class="htmx-indicator gc-region-spinner" role="status" aria-label="Loading region filter"></span>
-      </nav>
+      </div>
 
       {% set synth_ran = week.cards.synthesis_meta %}
       <div id="readout-body">
@@ -488,7 +490,10 @@
             {{ card_header(
                  "Release radar",
                  "Upcoming releases mentioned this week",
-                 '<a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">Calendar →</a>'|safe
+                 '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                    <a class="gc-ghost-link" href="https://www.pcgamer.com/games/new-pc-games-2026/" target="_blank" rel="noopener">PCGamer →</a>
+                    <a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">IGN →</a>
+                  </div>'|safe
                ) }}
             {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card is sourced from game release dates; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
             <div class="gc-row-list gc-row-list--scrollable">

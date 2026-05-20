@@ -71,7 +71,7 @@ class Game(SQLModel, table=True):
 class GameRelease(SQLModel, table=True):
     """Authoritative game release dates from external sources (Phase 3c.18).
 
-    Multi-source from day one — current sources: 'pcgamer'. IGN deferred.
+    Multi-source — current sources: 'pcgamer' (3c.18) + 'ign' (3c.24).
     Composite PK (game_name_lc, source) so both sources can hold rows for the
     same game; resolver picks pcgamer over ign on conflict.
 
