@@ -24,6 +24,11 @@ NAV_ITEMS_BASE = [
     {"id": "about",     "label": "About",           "icon": "info",      "route": "about"},
 ]
 
+# Phase 3c.26 — `/eval` is rendered separately at the bottom of the sidebar
+# nav (boundary'd button, not a peer of the main nav items). Listed here so
+# the boot-time route validator still catches a missing/renamed eval_view.
+EXTRA_NAV_ROUTES = ["eval_view"]
+
 # Phase 3c.19 — source-failure UI banner threshold. A source is considered
 # "erroring" once `Source.error_count > 3`; the alert banner at the top of
 # every full-page render counts these and links to /sources.

@@ -1596,3 +1596,509 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-watch-chip--business  { color: var(--gc-accent);   border-color: var(--gc-accent); }
 .gc-watch-chip--community { color: var(--gc-warning);  border-color: var(--gc-warning); }
 .gc-watch-chip--event     { color: var(--gc-fg2);      border-color: var(--gc-border); }
+
+/* ---------- Phase 3c.25 — /eval split-pane scoring form -------------------
+   Left = the same _report_grid used by /, forced to single column.
+   Right = sticky form with F/S/B pip radios + per-card note + Missing
+   textarea + live aggregate footer (HTMX-swapped on each save). */
+.gc-eval-split {
+  flex: 1;                              /* fill remaining .gc-main height */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: 0;                         /* critical for nested overflow */
+  background: var(--gc-canvas);
+}
+.gc-eval-left  {
+  min-width: 0; min-height: 0;
+  overflow-y: auto;
+  padding: 20px 28px 28px;
+}
+.gc-eval-left .gc-grid    { grid-template-columns: 1fr; }
+.gc-eval-left .gc-span-2  { grid-column: span 1; }
+
+.gc-eval-right {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 20px 28px;
+  border-left: 1px solid var(--gc-border);
+  background: var(--gc-surface);
+}
+.gc-eval-form-wrap {
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border); border-radius: 10px;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.gc-eval-form-head  { display: flex; flex-direction: column; gap: 2px; }
+.gc-eval-form-title { font-weight: 600; font-size: 14px; color: var(--gc-fg); }
+.gc-eval-form-hint  { font-size: 11px; color: var(--gc-fg3); }
+
+.gc-eval-rows { display: flex; flex-direction: column; gap: 6px; }
+.gc-eval-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--gc-border); border-radius: 6px;
+  background: var(--gc-surface);
+}
+.gc-eval-card-name {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px; font-weight: 600;
+  color: var(--gc-accent);
+}
+/* Phase 3c.28 — FSB cells stack vertically (one dim per row) so the pip
+   strip never overflows the right pane and reading is left-to-right. */
+.gc-eval-cells { display: flex; flex-direction: column; gap: 4px; }
+.gc-eval-cell  { display: flex; align-items: center; gap: 10px; }
+.gc-eval-dim {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 12px; font-weight: 700;
+  color: var(--gc-fg2);
+  width: 14px;
+  text-align: center;
+}
+.gc-eval-pips { display: flex; flex-direction: row; gap: 2px; }
+.gc-eval-pip {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  background: var(--gc-surface); color: var(--gc-fg2);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.gc-eval-pip:hover { border-color: var(--gc-fg3); }
+.gc-eval-pip input[type="radio"] {
+  position: absolute; opacity: 0; pointer-events: none;
+  width: 100%; height: 100%; margin: 0;
+}
+.gc-eval-pip.is-selected,
+.gc-eval-pip:has(input:checked) { color: #fff; }
+.gc-eval-pip--pass.is-selected,
+.gc-eval-pip--pass:has(input:checked)     { background: #2a8f4a; border-color: #2a8f4a; }
+.gc-eval-pip--concern.is-selected,
+.gc-eval-pip--concern:has(input:checked)  { background: #d9a02b; border-color: #d9a02b; }
+.gc-eval-pip--fail.is-selected,
+.gc-eval-pip--fail:has(input:checked)     { background: #c83a3a; border-color: #c83a3a; }
+.gc-eval-pip--na.is-selected,
+.gc-eval-pip--na:has(input:checked)       { background: var(--gc-fg3); border-color: var(--gc-fg3); }
+
+.gc-eval-note {
+  width: 100%; height: 26px; padding: 4px 6px;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  background: var(--gc-surface-alt); color: var(--gc-fg);
+  font-family: inherit; font-size: 11px; outline: none;
+}
+.gc-eval-note:focus { border-color: var(--gc-accent); background: var(--gc-surface); }
+
+.gc-eval-missing-block { display: flex; flex-direction: column; gap: 4px; }
+.gc-eval-missing-label { font-size: 11px; font-weight: 600; color: var(--gc-fg2); }
+.gc-eval-missing {
+  width: 100%; padding: 6px 8px;
+  border: 1px solid var(--gc-border); border-radius: 4px;
+  background: var(--gc-surface-alt); color: var(--gc-fg);
+  font-family: inherit; font-size: 12px;
+  resize: vertical; outline: none;
+}
+.gc-eval-missing:focus { border-color: var(--gc-accent); background: var(--gc-surface); }
+
+.gc-eval-agg-block {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-top: 10px; border-top: 1px solid var(--gc-border);
+}
+.gc-eval-agg-title { font-size: 11px; font-weight: 600; color: var(--gc-fg2); }
+.gc-eval-aggregate { display: flex; flex-direction: column; gap: 4px; }
+.gc-eval-agg-row {
+  display: flex; flex-direction: row; align-items: center; gap: 6px;
+  font-family: ui-monospace, "Menlo", monospace; font-size: 11px;
+}
+.gc-eval-agg-label { width: 14px; font-weight: 700; color: var(--gc-fg2); }
+.gc-eval-agg-cell {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px; border-radius: 3px;
+  background: var(--gc-surface-alt); color: var(--gc-fg2);
+}
+.gc-eval-agg-cell--pass    { background: #d8eedd; color: #2a8f4a; }
+.gc-eval-agg-cell--concern { background: #f5e6c0; color: #8e6e1a; }
+.gc-eval-agg-cell--fail    { background: #f0d2d2; color: #b03030; }
+.gc-eval-agg-cell--na      { background: var(--gc-surface-alt); }
+.gc-eval-agg-cell--blank   { background: var(--gc-surface-alt); color: var(--gc-fg3); }
+.gc-eval-agg-count { font-weight: 700; }
+.gc-eval-agg-glyph { opacity: 0.7; }
+
+/* ---------- Phase 3c.26 — sidebar Eval button -----------------------------
+   Anchored below the regular nav list as a distinct boundary'd action,
+   not styled as a peer nav-item. is-active flips fill on /eval. */
+.gc-sb-eval-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 12px 4px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--gc-accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gc-accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+.gc-sb-eval-button:hover {
+  background: var(--gc-accent-soft);
+}
+.gc-sb-eval-button.is-active {
+  background: var(--gc-accent);
+  color: #fff;
+}
+.gc-sb-eval-button i[data-lucide] {
+  width: 14px; height: 14px;
+}
+
+/* ---------- Phase 3c.27 — eval form refinements ---------------------------
+   Legend block above the score rows (F/S/B + pip glyph meanings) and
+   linked card-name labels that scroll the left pane to the matching card. */
+.gc-eval-legend {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px;
+  background: var(--gc-surface-alt);
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  font-size: 11px; color: var(--gc-fg2);
+  line-height: 1.4;
+}
+.gc-eval-legend-row { padding: 1px 0; }
+.gc-eval-legend-row strong {
+  display: inline-block; width: 16px;
+  color: var(--gc-accent);
+  font-family: ui-monospace, "Menlo", monospace;
+  font-weight: 800;
+}
+.gc-eval-legend-pips {
+  display: flex; flex-direction: row; gap: 12px;
+  padding-top: 6px; margin-top: 4px;
+  border-top: 1px dashed var(--gc-border);
+}
+.gc-eval-pip-legend {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px; font-weight: 700;
+}
+.gc-eval-pip-legend--pass    { color: #2a8f4a; }
+.gc-eval-pip-legend--concern { color: #8e6e1a; }
+.gc-eval-pip-legend--fail    { color: #b03030; }
+.gc-eval-pip-legend--na      { color: var(--gc-fg3); }
+.gc-eval-legend-hint {
+  font-size: 10px; color: var(--gc-fg3);
+  padding-top: 4px; margin-top: 2px;
+  border-top: 1px dashed var(--gc-border);
+  font-style: italic;
+}
+
+/* Card row head: linked label + small technical-name sub */
+.gc-eval-card-head {
+  display: flex; flex-direction: column; gap: 0;
+}
+a.gc-eval-card-name {
+  font-family: inherit;
+  font-size: 12px; font-weight: 700;
+  color: var(--gc-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+a.gc-eval-card-name:hover { text-decoration: underline; }
+span.gc-eval-card-name {
+  font-family: inherit;
+  font-size: 12px; font-weight: 700;
+  color: var(--gc-accent);
+}
+.gc-eval-card-sub {
+  font-size: 9px; color: var(--gc-fg3);
+  font-family: ui-monospace, "Menlo", monospace;
+  letter-spacing: 0.03em;
+  margin-top: -1px;
+}
+
+/* Phase 3c.29 — stale-scores banner inside the eval form */
+.gc-eval-stale-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--gc-warning-soft);
+  color: var(--gc-warning);
+  border: 1px solid var(--gc-warning);
+  border-radius: 6px;
+  font-size: 11px; font-weight: 600;
+  line-height: 1.35;
+}
+.gc-eval-stale-banner i { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ---------- Phase 3c.30 — eval explainer strip ----------------------------
+   Editorial 3-step loop above the split layout. Numerals are the anchor;
+   loop icon on step 3 hints at the cyclical nature. */
+.gc-eval-intro {
+  padding: 20px 28px 16px;
+  background: var(--gc-surface);
+  border-bottom: 1px solid var(--gc-border);
+  position: relative;
+}
+.gc-eval-intro::before {
+  content: "";
+  position: absolute;
+  left: 28px; right: 28px;
+  top: 50%;
+  height: 1px;
+  background: var(--gc-border);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.gc-eval-intro-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  position: relative;
+  z-index: 1;
+}
+.gc-eval-intro-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 4px 28px 4px 0;
+  background: var(--gc-surface);
+}
+.gc-eval-intro-step + .gc-eval-intro-step {
+  padding-left: 28px;
+  border-left: 1px dashed var(--gc-border);
+}
+.gc-eval-intro-num {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 0.95;
+  color: var(--gc-accent);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.gc-eval-intro-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.gc-eval-intro-title {
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gc-fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.gc-eval-intro-text {
+  font-size: 12px;
+  color: var(--gc-fg2);
+  line-height: 1.5;
+}
+.gc-eval-intro-loop-icon {
+  width: 12px; height: 12px;
+  color: var(--gc-accent);
+  opacity: 0.9;
+}
+.gc-eval-intro-step--loop .gc-eval-intro-num { position: relative; }
+.gc-eval-intro-step--loop .gc-eval-intro-num::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 10%;
+  bottom: -4px;
+  height: 2px;
+  background: var(--gc-accent);
+  opacity: 0.4;
+}
+
+/* ===== Welcome modal =====
+   Session-once orientation overlay on `/` only. Wrapper is `hidden` by default;
+   inline script in reports.html removes the attribute when
+   sessionStorage.gc_welcome_seen is unset. Separate class set from .gc-modal-*
+   so the existing exec-summary radio-state machinery is untouched. */
+.gc-welcome[hidden] { display: none; }
+.gc-welcome {
+  position: fixed; inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.gc-welcome-overlay {
+  position: absolute; inset: 0;
+  background: rgba(8, 8, 11, 0.62);
+}
+.gc-welcome-card {
+  position: relative;
+  width: min(960px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(8, 8, 11, 0.32);
+  font-family: var(--gc-font-sans);
+  color: var(--gc-fg);
+}
+.gc-welcome-close {
+  position: absolute;
+  top: 12px; right: 14px;
+  width: 28px; height: 28px;
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gc-fg3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--gc-dur-1) var(--gc-ease),
+              border-color var(--gc-dur-1) var(--gc-ease);
+}
+.gc-welcome-close:hover {
+  color: var(--gc-fg);
+  border-color: var(--gc-border-strong);
+}
+.gc-welcome-header {
+  padding: 22px 56px 14px 24px;
+  border-bottom: 1px solid var(--gc-border);
+}
+.gc-welcome-title {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--gc-fg);
+}
+.gc-welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  padding: 20px 24px 8px;
+}
+@media (max-width: 760px) {
+  .gc-welcome-grid { grid-template-columns: 1fr; }
+}
+.gc-welcome-section {
+  background: var(--gc-surface-alt);
+  border: 1px solid var(--gc-border);
+  border-radius: 10px;
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gc-welcome-section-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--gc-accent-soft);
+  color: var(--gc-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gc-welcome-section-icon i {
+  width: 20px; height: 20px;
+}
+.gc-welcome-section-head {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gc-fg);
+  line-height: 1.35;
+}
+.gc-welcome-section-body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gc-fg2);
+  line-height: 1.5;
+}
+.gc-welcome-section-body strong {
+  color: var(--gc-fg);
+  font-weight: 600;
+}
+.gc-welcome-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.gc-welcome-pipe-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--gc-surface);
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gc-fg2);
+}
+.gc-welcome-pipe-step i {
+  width: 14px; height: 14px;
+  color: var(--gc-accent);
+}
+.gc-welcome-pipe-arrow {
+  color: var(--gc-fg3);
+  font-size: 16px;
+  line-height: 1;
+}
+.gc-welcome-footer {
+  padding: 8px 24px 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+.gc-welcome-dismiss-btn { cursor: pointer; }
+
+
+/* ---------- Phase 3c.30 — eval feedback transparency details --------------
+   Same block prepended to the next critic pass. Collapsed by default
+   (semantic <details>, no JS); user opens to verify what Opus will see. */
+.gc-eval-feedback {
+  border: 1px solid var(--gc-border);
+  border-radius: 6px;
+  background: var(--gc-surface-alt);
+  font-size: 11px;
+}
+.gc-eval-feedback summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gc-fg2);
+  font-weight: 600;
+  list-style: none;
+}
+.gc-eval-feedback summary::-webkit-details-marker { display: none; }
+.gc-eval-feedback summary::before {
+  content: "▸";
+  color: var(--gc-fg3);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+.gc-eval-feedback[open] summary::before { transform: rotate(90deg); }
+.gc-eval-feedback-icon { width: 14px; height: 14px; color: var(--gc-accent); flex-shrink: 0; }
+.gc-eval-feedback-block {
+  margin: 0;
+  padding: 10px 12px 12px;
+  border-top: 1px dashed var(--gc-border);
+  font-family: ui-monospace, "Menlo", monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--gc-fg2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

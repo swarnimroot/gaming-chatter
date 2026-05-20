@@ -31,4 +31,15 @@
     {% endfor %}
   </div>
 
+  {# Phase 3c.26 — Eval anchored below the nav list as a distinct boundary'd
+     button, not a peer nav item. is-active = current page is /eval.
+     `app.url_path_for` returns the bare path (no root_path), matching what
+     starlette puts in request.url.path; `request.url_for` is used for href
+     so it survives proxy root_path mounting. #}
+  {%- set _eval_href = request.url_for('eval_view') -%}
+  {%- set _eval_path = request.app.url_path_for('eval_view') -%}
+  <a href="{{ _eval_href }}" class="gc-sb-eval-button{% if request.url.path == _eval_path %} is-active{% endif %}">
+    <i data-lucide="clipboard-check"></i>Eval
+  </a>
+
 </aside>

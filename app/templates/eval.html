@@ -1,0 +1,265 @@
+{# eval.html — Phase 3c.25
+   Standalone page (mirrors reports.html). Left = the same _report_grid
+   used by /, scoped down with .gc-eval-left to force single-column.
+   Right = sticky form with per-card F/S/B radios + note + Missing
+   textarea + live aggregate footer. #}
+{% from "_components.html" import card_header %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gaming Chatter — Eval</title>
+  <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='img/alienware-head-light.svg') }}">
+  <link rel="stylesheet" href="{{ request.url_for('static', path='app.css') }}">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+</head>
+<body class="gc-shell-body">
+
+{# Source drawer state radios — kept here so cluster-row drill-ins on the
+   left pane still work (the partial uses `for="drawer-open"`). #}
+<input type="radio" name="drawer-state" id="drawer-closed" class="gc-overlay-state" checked>
+<input type="radio" name="drawer-state" id="drawer-open"   class="gc-overlay-state">
+
+<div class="gc-shell">
+
+  {# ===== Sidebar ===== #}
+  <aside class="gc-sidebar">
+    <div class="gc-sb-logo">
+      <img src="{{ request.url_for('static', path='img/alienware-head-light.svg') }}" alt="">
+      <div class="gc-sb-logo-name">Gaming Chatter</div>
+    </div>
+    <div class="gc-sb-tagline">Personal news intelligence</div>
+
+    <div class="gc-sb-section-label">Score week</div>
+    <div class="gc-sb-week-list">
+      {% for w in weeks_index %}
+        <a href="?week={{ w.key }}" class="gc-sb-week{% if w.is_active %} is-active{% endif %}">
+          <span class="gc-sb-week-label">{{ w.label }}</span>
+          <span class="gc-sb-week-range">{{ w.range }}</span>
+        </a>
+      {% endfor %}
+    </div>
+
+    <div class="gc-sb-divider"></div>
+    <div class="gc-sb-section-label">Navigate</div>
+    <div class="gc-sb-nav">
+      {% for n in nav_items %}
+        <a href="{{ n.href }}" class="gc-sb-nav-item{% if n.is_active %} is-active{% endif %}">
+          <i data-lucide="{{ n.icon }}"></i>{{ n.label }}
+        </a>
+      {% endfor %}
+    </div>
+
+    {# Phase 3c.26 — Eval anchored below the nav list as a distinct boundary'd
+       button, not a peer nav item. Path-only comparison so root_path-mounted
+       deployments don't mismatch. #}
+    {%- set _eval_href = request.url_for('eval_view') -%}
+    {%- set _eval_path = request.app.url_path_for('eval_view') -%}
+    <a href="{{ _eval_href }}" class="gc-sb-eval-button{% if request.url.path == _eval_path %} is-active{% endif %}">
+      <i data-lucide="clipboard-check"></i>Eval
+    </a>
+  </aside>
+
+  {# ===== Main column ===== #}
+  <div class="gc-main">
+
+    {% include "_alert_banner.html" %}
+
+    <header class="gc-header">
+      <div>
+        <div class="gc-header-eyebrow">Synthesis eval</div>
+        <h1 class="gc-header-title">{% if week %}{{ week.label }}{% else %}No weeks to score{% endif %}</h1>
+        <div class="gc-header-meta">
+          {% if week %}{{ week.range }} &middot; score F/S/B per card → live aggregate at bottom right{% else %}Run the pipeline at least once to generate a weekly synthesis.{% endif %}
+        </div>
+      </div>
+      <div class="gc-header-actions">
+        <div class="gc-meta-tags">
+          <span class="gc-meta-tag" title="Factuality / Signal / Brevity. ✓ pass · ~ concern · ✗ fail · — n/a.">
+            <span class="gc-meta-tag-label">Rubric</span>
+            <span class="gc-meta-tag-value">F / S / B · ✓ ~ ✗ —</span>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    {% if week %}
+
+    {# Phase 3c.30 — editorial 3-step explainer above the split. Sets context
+       in <10s for someone walking up cold. #}
+    <div class="gc-eval-intro" role="region" aria-label="How eval works">
+      <ol class="gc-eval-intro-steps">
+        <li class="gc-eval-intro-step">
+          <span class="gc-eval-intro-num">01</span>
+          <div class="gc-eval-intro-meta">
+            <span class="gc-eval-intro-title">Read</span>
+            <span class="gc-eval-intro-text">This week's synthesis sits on the left — biggest stories, hottest games, all 9 cards.</span>
+          </div>
+        </li>
+        <li class="gc-eval-intro-step">
+          <span class="gc-eval-intro-num">02</span>
+          <div class="gc-eval-intro-meta">
+            <span class="gc-eval-intro-title">Score</span>
+            <span class="gc-eval-intro-text">Click F/S/B pips per card on the right. Jot a one-line note when something's off. Saves on click.</span>
+          </div>
+        </li>
+        <li class="gc-eval-intro-step gc-eval-intro-step--loop">
+          <span class="gc-eval-intro-num">03</span>
+          <div class="gc-eval-intro-meta">
+            <span class="gc-eval-intro-title">
+              Compound
+              <i data-lucide="refresh-cw" class="gc-eval-intro-loop-icon" aria-hidden="true"></i>
+            </span>
+            <span class="gc-eval-intro-text">Recurring notes auto-feed next week's critic. Your taste shapes the report — no code editing.</span>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="gc-eval-split">
+
+      {# ----- Left: the weekly report cards ----- #}
+      <div class="gc-eval-left">
+        {% include "_report_grid.html" %}
+      </div>
+
+      {# ----- Right: sticky scoring form ----- #}
+      <aside class="gc-eval-right">
+        <div class="gc-eval-form-wrap">
+
+          {% if feedback_block %}
+          {# Phase 3c.30 — same block prepended to next synth's critic prompt.
+             Open to see exactly what the AI is being told. #}
+          <details class="gc-eval-feedback">
+            <summary>
+              <i data-lucide="git-branch" class="gc-eval-feedback-icon" aria-hidden="true"></i>
+              <span>Critic feedback active — {{ feedback_count }} pattern{{ 's' if feedback_count != 1 else '' }} from your past notes</span>
+            </summary>
+            <pre class="gc-eval-feedback-block">{{ feedback_block }}</pre>
+          </details>
+          {% endif %}
+
+          {% if stale_info.stale %}
+          <div class="gc-eval-stale-banner">
+            <i data-lucide="alert-triangle"></i>
+            <span>Synthesis re-ran after your last score on this week. Re-check the cards.</span>
+          </div>
+          {% endif %}
+
+          <div class="gc-eval-form-head">
+            <div class="gc-eval-form-title">Score cards</div>
+            <div class="gc-eval-legend">
+              <div class="gc-eval-legend-row"><strong>F</strong> <b>Factuality</b> — is every claim true?</div>
+              <div class="gc-eval-legend-row"><strong>S</strong> <b>Signal</b> — does it actually matter?</div>
+              <div class="gc-eval-legend-row"><strong>B</strong> <b>Brevity</b> — is it tight, not padded?</div>
+              <div class="gc-eval-legend-pips">
+                <span class="gc-eval-pip-legend gc-eval-pip-legend--pass">✓ pass</span>
+                <span class="gc-eval-pip-legend gc-eval-pip-legend--concern">~ concern</span>
+                <span class="gc-eval-pip-legend gc-eval-pip-legend--fail">✗ fail</span>
+                <span class="gc-eval-pip-legend gc-eval-pip-legend--na">— n/a</span>
+              </div>
+              <div class="gc-eval-legend-hint">Click a card name to jump the left pane to that card. Pips save on click.</div>
+            </div>
+          </div>
+
+          <div class="gc-eval-rows">
+            {% for card in cards_order %}
+            {%- set _d = card_display[card] -%}
+            <div class="gc-eval-row">
+              <div class="gc-eval-card-head">
+                {%- if _d.anchor -%}
+                <a class="gc-eval-card-name" href="#{{ _d.anchor }}">{{ _d.label }}</a>
+                {%- else -%}
+                <span class="gc-eval-card-name">{{ _d.label }}</span>
+                {%- endif -%}
+                <span class="gc-eval-card-sub">{{ card }}</span>
+              </div>
+              <div class="gc-eval-cells">
+                {% for dim in ["F", "S", "B"] %}
+                <div class="gc-eval-cell">
+                  <span class="gc-eval-dim">{{ dim }}</span>
+                  <div class="gc-eval-pips">
+                    {% for s in scores_order %}
+                    <label class="gc-eval-pip gc-eval-pip--{{ s }}{% if scores[card][dim] == s %} is-selected{% endif %}" title="{{ s }}">
+                      <input type="radio"
+                             name="{{ card }}_{{ dim }}"
+                             value="{{ s }}"
+                             {% if scores[card][dim] == s %}checked{% endif %}
+                             hx-post="{{ request.url_for('eval_save_score') }}"
+                             hx-vals='{"week_id": "{{ active_week_key }}", "card": "{{ card }}", "dim": "{{ dim }}", "score": "{{ s }}"}'
+                             hx-target="#gc-eval-aggregate"
+                             hx-swap="outerHTML">
+                      <span class="gc-eval-pip-glyph">{{ pip_glyphs[s] }}</span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              <input type="text"
+                     class="gc-eval-note"
+                     name="note"
+                     value="{{ scores[card].note or '' }}"
+                     placeholder="why ~ or ✗"
+                     hx-post="{{ request.url_for('eval_save_note') }}"
+                     hx-vals='{"week_id": "{{ active_week_key }}", "card": "{{ card }}"}'
+                     hx-trigger="change"
+                     hx-swap="none">
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="gc-eval-missing-block">
+            <div class="gc-eval-missing-label">Missing — anything you'd expect that wasn't there</div>
+            <textarea name="missing"
+                      class="gc-eval-missing"
+                      rows="3"
+                      placeholder="Free text. Empty is fine."
+                      hx-post="{{ request.url_for('eval_save_missing') }}"
+                      hx-vals='{"week_id": "{{ active_week_key }}"}'
+                      hx-trigger="change"
+                      hx-swap="none">{{ missing }}</textarea>
+          </div>
+
+          <div class="gc-eval-agg-block">
+            <div class="gc-eval-agg-title">Aggregate</div>
+            {% include "_eval_aggregate.html" %}
+          </div>
+
+        </div>
+      </aside>
+
+    </div>{# /gc-eval-split #}
+    {% else %}
+    <div class="gc-scroll">
+      <div class="gc-row-empty" style="margin: 60px auto; max-width: 600px;">
+        Run the full pipeline at least once (Run pipeline on /) to generate a
+        weekly synthesis, then come back here to score it.
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /gc-main #}
+</div>{# /gc-shell #}
+
+{# Source drawer panel — left-pane cluster rows fire hx-get into it. #}
+<label class="gc-drawer-overlay" for="drawer-closed" aria-label="Close drawer"></label>
+<aside class="gc-drawer-panel" id="source-drawer" aria-label="Source drawer">
+  <label class="gc-drawer-close" for="drawer-closed" title="Close" aria-label="Close drawer">×</label>
+  <div id="source-drawer-body" class="gc-drawer-body-wrap">
+    <div class="gc-drawer-header">
+      <div class="gc-eyebrow">Source drawer</div>
+      <div class="gc-drawer-title">Click a row on the left to drill in</div>
+      <div class="gc-drawer-meta">Same drawer as the weekly read-out</div>
+    </div>
+    <div class="gc-drawer-body">
+      <div class="gc-row-empty">Pick a game, genre, platform, event, or release to see the articles behind it.</div>
+    </div>
+  </div>
+</aside>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

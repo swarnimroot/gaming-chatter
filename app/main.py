@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.config import STATIC_DIR
 from app.db.init import init_db
-from app.routers import about, clusters, dashboard, enrich, pipeline, reports, sentiment, sources
+from app.routers import about, clusters, dashboard, enrich, eval as eval_router, pipeline, reports, sentiment, sources
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -18,17 +18,22 @@ async def lifespan(app_: FastAPI):
     # Fail-fast nav validator: every route name in NAV_ITEMS_BASE must resolve,
     # so renaming a router function without updating chrome.py crashes at boot
     # rather than 500-ing later at first nav render.
-    from app.services.chrome import NAV_ITEMS_BASE
+    from app.services.chrome import EXTRA_NAV_ROUTES, NAV_ITEMS_BASE
     missing = []
     for item in NAV_ITEMS_BASE:
         try:
             app_.url_path_for(item["route"])
         except Exception:
             missing.append(item["route"])
+    for route in EXTRA_NAV_ROUTES:
+        try:
+            app_.url_path_for(route)
+        except Exception:
+            missing.append(route)
     if missing:
         raise RuntimeError(
             f"Nav routes not registered: {missing!r}. "
-            f"Check NAV_ITEMS_BASE in app/services/chrome.py vs router function names."
+            f"Check NAV_ITEMS_BASE / EXTRA_NAV_ROUTES in app/services/chrome.py vs router function names."
         )
     yield
 
@@ -67,3 +72,4 @@ app.include_router(reports.router)
 app.include_router(about.router)
 app.include_router(pipeline.router)
 app.include_router(sentiment.router)
+app.include_router(eval_router.router)

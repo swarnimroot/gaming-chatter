@@ -1,0 +1,48 @@
+{# Welcome modal — outside-viewer orientation, session-once.
+   Visibility is gated client-side: the wrapper starts hidden, then the
+   inline script in the parent template (reports.html) toggles it on first
+   load per session and writes sessionStorage.gc_welcome_seen on dismiss.
+   Lives only on / (Weekly read-out), so in-app navigation can't re-fire it. #}
+<div id="gc-welcome" class="gc-welcome" role="dialog" aria-labelledby="gc-welcome-title" aria-modal="true" hidden>
+  <div class="gc-welcome-overlay" data-gc-welcome-dismiss></div>
+  <div class="gc-welcome-card">
+    <button type="button" class="gc-welcome-close" data-gc-welcome-dismiss aria-label="Close">&times;</button>
+
+    <div class="gc-welcome-header">
+      <div class="gc-eyebrow">gaming-chatter</div>
+      <h2 class="gc-welcome-title" id="gc-welcome-title">A weekly read on what mattered.</h2>
+    </div>
+
+    <div class="gc-welcome-grid">
+
+      <section class="gc-welcome-section">
+        <div class="gc-welcome-section-icon"><i data-lucide="rss"></i></div>
+        <div class="gc-welcome-section-head">30+ feeds, low signal.</div>
+        <p class="gc-welcome-section-body">RSS dumps everything. Weekly roundups go generic and miss what you actually care about.</p>
+      </section>
+
+      <section class="gc-welcome-section">
+        <div class="gc-welcome-pipeline" aria-label="Ingest, cluster, synthesize">
+          <span class="gc-welcome-pipe-step"><i data-lucide="download"></i><span>Ingest</span></span>
+          <span class="gc-welcome-pipe-arrow" aria-hidden="true">&rsaquo;</span>
+          <span class="gc-welcome-pipe-step"><i data-lucide="shapes"></i><span>Cluster</span></span>
+          <span class="gc-welcome-pipe-arrow" aria-hidden="true">&rsaquo;</span>
+          <span class="gc-welcome-pipe-step"><i data-lucide="sparkles"></i><span>Synthesize</span></span>
+        </div>
+        <div class="gc-welcome-section-head">A curated Monday-morning digest, running on a laptop.</div>
+        <p class="gc-welcome-section-body">Daily ingest from 15 news sites &middot; 10 subreddits &middot; 6 YouTube channels &rarr; cluster the week &rarr; LLM-synthesized read-out with WoW/MoM trends.</p>
+      </section>
+
+      <section class="gc-welcome-section">
+        <div class="gc-welcome-section-icon"><i data-lucide="compass"></i></div>
+        <div class="gc-welcome-section-head">How to read this.</div>
+        <p class="gc-welcome-section-body">You&rsquo;re on the <strong>Weekly read-out</strong> &mdash; Monday digest. <strong>Stories</strong> = live feed. <strong>Clusters</strong> = raw groupings behind each digest. Filter any by region (Americas / Europe / Asia).</p>
+      </section>
+
+    </div>
+
+    <div class="gc-welcome-footer">
+      <button type="button" class="gc-cta gc-welcome-dismiss-btn" data-gc-welcome-dismiss>Got it</button>
+    </div>
+  </div>
+</div>

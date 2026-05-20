@@ -1,0 +1,20 @@
+{# _eval_aggregate.html — Phase 3c.25
+   Aggregate tallies per dim. Re-rendered and swapped via HTMX after each
+   score save (target #gc-eval-aggregate, outerHTML). #}
+<div id="gc-eval-aggregate" class="gc-eval-aggregate">
+  {% for dim in ["F", "S", "B"] %}
+  <div class="gc-eval-agg-row">
+    <span class="gc-eval-agg-label">{{ dim }}</span>
+    {% for s in scores_order %}
+      <span class="gc-eval-agg-cell gc-eval-agg-cell--{{ s }}" title="{{ s }}">
+        <span class="gc-eval-agg-count">{{ aggregate[dim][s] }}</span>
+        <span class="gc-eval-agg-glyph">{{ pip_glyphs[s] }}</span>
+      </span>
+    {% endfor %}
+    <span class="gc-eval-agg-cell gc-eval-agg-cell--blank" title="not yet scored">
+      <span class="gc-eval-agg-count">{{ aggregate[dim].blank }}</span>
+      <span class="gc-eval-agg-glyph">∅</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>

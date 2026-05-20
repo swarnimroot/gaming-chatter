@@ -128,3 +128,29 @@ class RunLog(SQLModel, table=True):
     status: str
     items_processed: int = 0
     error: Optional[str] = None
+
+
+class EvalCardScore(SQLModel, table=True):
+    """In-app synthesis-quality scores per (week, card). Phase 3c.25.
+
+    Three dimensions stored as separate columns so the row is the unit a
+    human fills in while reading the report: F (Factuality), S (Signal),
+    B (Brevity). Composite PK (week_id, card) — one row per card-eval.
+    """
+    __tablename__ = "eval_card_scores"
+    week_id: str = Field(primary_key=True)           # ISO week "2026-W20"
+    card: str = Field(primary_key=True)              # "biggest" | "watch" | "exec_paragraph" | ...
+    f_score: Optional[str] = None                    # "pass" | "concern" | "fail" | "na" | NULL
+    s_score: Optional[str] = None
+    b_score: Optional[str] = None
+    note: Optional[str] = Field(default=None, sa_column=Column(Text))
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EvalMeta(SQLModel, table=True):
+    """Per-week eval metadata — currently just the free-text 'Missing' field.
+    Phase 3c.25."""
+    __tablename__ = "eval_meta"
+    week_id: str = Field(primary_key=True)
+    missing: Optional[str] = Field(default=None, sa_column=Column(Text))
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

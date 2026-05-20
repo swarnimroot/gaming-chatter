@@ -627,9 +627,20 @@ def synthesize_week(session: Session, week_id: str, force: bool = False) -> dict
     )
 
     # Pass 2 — critic
+    # Phase 3c.30: prepend recurring past concerns from /eval scoring so the
+    # critic enforces the user's accumulated editorial taste, not just the
+    # static rules in _CRITIC_SYSTEM_PROMPT. Empty when fewer than 2 fails on
+    # any (card, dim) in the last 4 weeks → no prepend, no behavior change.
+    from app.services.eval_feedback import format_critic_block, gather_recent_failures
+    past_failures = gather_recent_failures(session, week_id)
+    past_concerns = format_critic_block(past_failures)
+    if past_concerns:
+        log.info("critic: injecting %d past-concern pattern(s) from recent eval scoring", len(past_failures))
+
     critic_user = (
-        f"=== ORIGINAL SOURCE INPUT ===\n\n{user_text}\n\n"
-        f"=== SYNTHESIS TO REVIEW ===\n\n{synth_pass.model_dump_json(indent=2)}"
+        (past_concerns + "\n\n" if past_concerns else "")
+        + f"=== ORIGINAL SOURCE INPUT ===\n\n{user_text}\n\n"
+        + f"=== SYNTHESIS TO REVIEW ===\n\n{synth_pass.model_dump_json(indent=2)}"
     )
     log.info("calling Opus critic pass…")
     revised = _call_opus(_CRITIC_SYSTEM_PROMPT, critic_user)

@@ -1,12 +1,6 @@
 {# Standalone — does NOT extend base.html. The design has its own shell. #}
 {% from "_components.html" import eyebrow, source_pill, source_row, delta, card_header %}
 
-{# Phase 3c.10 — per-card "See all clusters" footer link. Goes to /clusters
-   with the active week pre-filtered (no section filter) so the user can browse
-   the full topic list and see which clusters landed in which editorial card. #}
-{%- macro seeall_footer(week_key) -%}
-<a class="gc-card-seeall" href="{{ request.url_for('clusters_view') }}?week_id={{ week_key }}">See all stories this week →</a>
-{%- endmacro -%}
 <!doctype html>
 <html lang="en">
 <head>
@@ -56,6 +50,15 @@
         </a>
       {% endfor %}
     </div>
+
+    {# Phase 3c.26 — Eval anchored below the nav list as a distinct boundary'd
+       button, not a peer nav item. Path-only comparison so root_path-mounted
+       deployments don't mismatch. #}
+    {%- set _eval_href = request.url_for('eval_view') -%}
+    {%- set _eval_path = request.app.url_path_for('eval_view') -%}
+    <a href="{{ _eval_href }}" class="gc-sb-eval-button{% if request.url.path == _eval_path %} is-active{% endif %}">
+      <i data-lucide="clipboard-check"></i>Eval
+    </a>
 
   </aside>
 
@@ -143,411 +146,8 @@
         <span class="htmx-indicator gc-region-spinner" role="status" aria-label="Loading region filter"></span>
       </div>
 
-      {% set synth_ran = week.cards.synthesis_meta %}
       <div id="readout-body">
-      <div class="gc-grid">
-
-        {# 2. Biggest stories (spans 2) — Phase 3c.5: plural top-3,
-             each row click → cluster drawer. #}
-        {% set biggest = week.cards.biggest %}
-        <div class="gc-span-2">
-          <div class="gc-card">
-            {{ card_header("Biggest stories", "Top 3 this week") }}
-            {% if biggest %}
-            <div class="gc-biggest-list">
-              {% for b in biggest %}
-              <label class="gc-biggest gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ b.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <span class="gc-rank-badge">#{{ loop.index }}</span>
-                <div class="gc-biggest-body">
-                  <div class="gc-biggest-title">{{ b.title }}</div>
-                  <div class="gc-biggest-dek">{{ b.dek }}</div>
-                  {% if b.sources or b.mention_count %}
-                  <div class="gc-biggest-sources">
-                    {% if b.sources %}{{ source_row(b.sources, sources_meta) }}{% endif %}
-                    {% if b.mention_count %}<span class="gc-mention-badge" title="Items in this cluster">{{ b.mention_count }} mention{{ 's' if b.mention_count != 1 else '' }}</span>{% endif %}
-                  </div>
-                  {% endif %}
-                </div>
-              </label>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# 3. Hottest games — Phase 3c.1: title + chips + mention count, 3 tabs #}
-        {% set hot = week.cards.hottest %}
-        {%- macro hot_rows(rows) -%}
-          {% for g in rows %}
-          <label class="gc-row gc-row--hottest gc-row-trigger" for="drawer-open"
-                 hx-get="{{ request.url_for('reports_drawer') }}?kind=game&value={{ g.name|urlencode }}&week={{ active_week_key }}"
-                 hx-target="#source-drawer-body" hx-swap="innerHTML">
-            <span class="gc-row-rank">{{ "%02d"|format(loop.index) }}</span>
-            <div>
-              <div class="gc-row-title">{{ g.name }}</div>
-              <div class="gc-chip-row">
-                {% for p in g.platforms %}<span class="gc-chip gc-chip--platform">{{ p }}</span>{% endfor %}
-                {% if g.lifecycle == 'upcoming' %}<span class="gc-chip gc-chip--lifecycle-upcoming">upcoming</span>{% endif %}
-                {% if g.live_service %}<span class="gc-chip gc-chip--service">live-service</span>{% endif %}
-              </div>
-              {% if g.reason %}<div class="gc-row-reason">{{ g.reason }}</div>{% endif %}
-            </div>
-            <span class="gc-row-count" title="{{ g.count }} item{{ 's' if g.count != 1 else '' }} mentioned this game">{{ g.count }}</span>
-          </label>
-          {% endfor %}
-          {% if not rows %}<div class="gc-row-empty">No matching mentions this week.</div>{% endif %}
-        {%- endmacro -%}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Hottest games", "By mention count this week", hot.all|length ~ " tracked") }}
-            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card aggregates by game name; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
-            <div class="gc-hot-tabs">
-              <input type="radio" name="hot-tab" id="hot-tab-all" class="gc-tab-input" checked>
-              <input type="radio" name="hot-tab" id="hot-tab-current" class="gc-tab-input">
-              <input type="radio" name="hot-tab" id="hot-tab-upcoming" class="gc-tab-input">
-              <div class="gc-tab-labels">
-                <label for="hot-tab-all" class="gc-tab-label">All</label>
-                <label for="hot-tab-current" class="gc-tab-label">Current</label>
-                <label for="hot-tab-upcoming" class="gc-tab-label">Upcoming</label>
-              </div>
-              <div class="gc-tab-panes">
-                <div class="gc-tab-pane gc-tab-pane--all"><div class="gc-row-list">{{ hot_rows(hot.all) }}</div></div>
-                <div class="gc-tab-pane gc-tab-pane--current"><div class="gc-row-list">{{ hot_rows(hot.current) }}</div></div>
-                <div class="gc-tab-pane gc-tab-pane--upcoming"><div class="gc-row-list">{{ hot_rows(hot.upcoming) }}</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {# 4. Market momentum — Phase 3c.5: row list (acquisitions / funds /
-             platform-policy / structural / people-moves). Absorbs the dropped
-             Studio watch + Storefronts cards. #}
-        {% set mm = week.cards.market_momentum %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Market momentum", "Acquisitions · funds · policy · structural · people") }}
-            {% if mm %}
-            <div class="gc-row-list">
-              {% for m in mm %}
-              <label class="gc-row gc-row--mm gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ m.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <span class="gc-mm-category gc-mm-category--{{ m.category }}">{{ m.category }}</span>
-                <div>
-                  <div class="gc-row-title">{{ m.title }}</div>
-                  <div class="gc-row-note">{{ m.note }}</div>
-                </div>
-              </label>
-              {% endfor %}
-            </div>
-            {% elif synth_ran %}
-            <div class="gc-row-empty">No market-momentum stories in this week's corpus.</div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# 5. Trends — Phase 3c.2: 5-tab WoW mention-rate delta (CSS-only radios) #}
-        {% set tr = week.cards.trends %}
-        {# Phase 3c.20 — inline mini-bar for WoW delta. Bar is anchored to a
-           zero line at the midpoint of the bar track: positive deltas grow
-           right, negative grow left. Magnitude clamped to 12pp = 100% of
-           half-width so a runaway outlier doesn't blow out the layout. #}
-        {%- macro trend_bar(delta_pp, tone) -%}
-        {%- set max_pp = 12.0 -%}
-        {%- set mag = delta_pp if delta_pp >= 0 else -delta_pp -%}
-        {%- set pct = (mag / max_pp * 100) -%}
-        {%- if pct > 100 -%}{%- set pct = 100 -%}{%- endif -%}
-        <span class="gc-trend-bar gc-trend-bar--{{ tone }}" aria-hidden="true">
-          <span class="gc-trend-bar-axis"></span>
-          {%- if delta_pp >= 0 -%}
-          <span class="gc-trend-bar-fill gc-trend-bar-fill--pos" style="width: {{ (pct / 2)|round(2) }}%"></span>
-          {%- else -%}
-          <span class="gc-trend-bar-fill gc-trend-bar-fill--neg" style="width: {{ (pct / 2)|round(2) }}%"></span>
-          {%- endif -%}
-        </span>
-        {%- endmacro -%}
-        {%- macro trend_rows(rows, kind) -%}
-          {% for r in rows %}
-          <label class="gc-row gc-row--trend gc-row-trigger" for="drawer-open"
-                 hx-get="{{ request.url_for('reports_drawer') }}?kind={{ kind }}&value={{ r.name|urlencode }}&week={{ active_week_key }}"
-                 hx-target="#source-drawer-body" hx-swap="innerHTML">
-            <span class="gc-trend-name" title="{{ r.count }} this week · {{ r.prev_count }} prior">{{ r.name }}</span>
-            {{ trend_bar(r.delta_pp, r.tone) }}
-            {{ delta(r.delta_display, r.tone) }}
-          </label>
-          {% endfor %}
-          {% if not rows %}<div class="gc-row-empty">No movement this week.</div>{% endif %}
-        {%- endmacro -%}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Trends", "WoW mention-rate delta") }}
-            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card aggregates by entity name; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
-            {% if not tr.has_prior %}
-              <div class="gc-row-empty">Need 2 weeks of data to compute WoW deltas.</div>
-            {% else %}
-            <div class="gc-trend-tabs">
-              <input type="radio" name="trend-tab" id="trend-tab-games" class="gc-tab-input" checked>
-              <input type="radio" name="trend-tab" id="trend-tab-genres" class="gc-tab-input">
-              <input type="radio" name="trend-tab" id="trend-tab-platforms" class="gc-tab-input">
-              <input type="radio" name="trend-tab" id="trend-tab-liveservice" class="gc-tab-input">
-              <input type="radio" name="trend-tab" id="trend-tab-events" class="gc-tab-input">
-              <div class="gc-tab-labels">
-                <label for="trend-tab-games" class="gc-tab-label">Games</label>
-                <label for="trend-tab-genres" class="gc-tab-label">Genres</label>
-                <label for="trend-tab-platforms" class="gc-tab-label">Platforms</label>
-                <label for="trend-tab-liveservice" class="gc-tab-label">Live-service</label>
-                <label for="trend-tab-events" class="gc-tab-label">Events</label>
-              </div>
-              {# Phase 3c.23 — each tab now shows two subsections: Rising +
-                 Declining. The Games tab collapsed current/upcoming into a
-                 single combined view (lifecycle=None). #}
-              <div class="gc-tab-panes">
-                <div class="gc-tab-pane gc-tab-pane--games">
-                  <div class="gc-trend-subhead">Rising</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.games.rising, "game") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.games.declining, "game") }}</div>
-                </div>
-                <div class="gc-tab-pane gc-tab-pane--genres">
-                  <div class="gc-trend-subhead">Rising</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.genres.rising, "genre") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.genres.declining, "genre") }}</div>
-                </div>
-                <div class="gc-tab-pane gc-tab-pane--platforms">
-                  <div class="gc-trend-subhead">Rising</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.platforms.rising, "platform") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.platforms.declining, "platform") }}</div>
-                </div>
-                <div class="gc-tab-pane gc-tab-pane--liveservice">
-                  <div class="gc-trend-subhead">Rising</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.live_service.rising, "game") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.live_service.declining, "game") }}</div>
-                </div>
-                <div class="gc-tab-pane gc-tab-pane--events">
-                  <div class="gc-trend-subhead">Rising</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.events.rising, "event") }}</div>
-                  <div class="gc-trend-subhead gc-trend-subhead--second">Declining</div>
-                  <div class="gc-row-list">{{ trend_rows(tr.events.declining, "event") }}</div>
-                </div>
-              </div>
-            </div>
-            {% endif %}
-          </div>
-        </div>
-
-        {# 6. Community sentiment — Phase 3c.5: narrative on top + two per-cluster
-             polarized lists (heated / celebrating). Each row → cluster drawer. #}
-        {% set co = week.cards.community %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Community sentiment", "Reddit pulse, per-cluster") }}
-            {% if co.narrative or co.heated_about or co.celebrating %}
-              {% if co.narrative %}
-              <p class="gc-cs-narrative">{{ co.narrative }}</p>
-              {% endif %}
-              {% if co.heated_about %}
-              {{ eyebrow("Reddit is heated about") }}
-              <div class="gc-row-list">
-                {% for c in co.heated_about %}
-                <label class="gc-row gc-row--cs gc-row--cs-heated gc-row-trigger" for="drawer-open"
-                       hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
-                       hx-target="#source-drawer-body" hx-swap="innerHTML">
-                  <span class="gc-cs-dot gc-cs-dot--neg"></span>
-                  <div>
-                    <div class="gc-row-title">{{ c.title }}</div>
-                    <div class="gc-row-note">{{ c.note }}</div>
-                  </div>
-                </label>
-                {% endfor %}
-              </div>
-              {% endif %}
-              {% if co.celebrating %}
-              <div class="gc-cs-divider"></div>
-              {{ eyebrow("Reddit is celebrating") }}
-              <div class="gc-row-list">
-                {% for c in co.celebrating %}
-                <label class="gc-row gc-row--cs gc-row--cs-positive gc-row-trigger" for="drawer-open"
-                       hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ c.cluster_id }}&week={{ active_week_key }}"
-                       hx-target="#source-drawer-body" hx-swap="innerHTML">
-                  <span class="gc-cs-dot gc-cs-dot--pos"></span>
-                  <div>
-                    <div class="gc-row-title">{{ c.title }}</div>
-                    <div class="gc-row-note">{{ c.note }}</div>
-                  </div>
-                </label>
-                {% endfor %}
-              </div>
-              {% endif %}
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# 7. Industry risks — Phase 3c.5: trend chip dropped; rows → cluster drawer #}
-        {% set risks = week.cards.risks %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Industry risks", "Layoffs · regulation · legal") }}
-            {% if risks %}
-            <div class="gc-risks">
-              {% for r in risks %}
-              <label class="gc-risk gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ r.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div class="gc-risk-bar gc-risk-bar--{{ r.level }}"></div>
-                <div class="gc-risk-body">
-                  <div class="gc-risk-head">
-                    <span class="gc-risk-title">{{ r.title }}</span>
-                    <span class="gc-sev-badge gc-sev-badge--{{ r.level }}">{{ r.level }}</span>
-                  </div>
-                  <div class="gc-risk-note">{{ r.note }}</div>
-                </div>
-              </label>
-              {% endfor %}
-            </div>
-            {% elif synth_ran %}
-            <div class="gc-row-empty">No layoff / regulation / legal stories in this week's corpus.</div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# Drama / Controversy tracker — moved up per Phase 3c.8 reorder
-             (risks → drama → esports → release → watch). #}
-        {% set drama = week.cards.drama %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Controversy tracker", "Exec / PR blunders · studio feuds") }}
-            {% if drama %}
-            <div class="gc-drama-list">
-              {% for d in drama %}
-              <label class="gc-drama gc-drama--{{ d.severity }} gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ d.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div class="gc-drama-head">
-                  <span class="gc-drama-sev gc-drama-sev--{{ d.severity }}">● {{ d.severity }}</span>
-                  <span class="gc-drama-title">{{ d.title }}</span>
-                </div>
-                <div class="gc-drama-recap">{{ d.recap }}</div>
-              </label>
-              {% endfor %}
-            </div>
-            {% elif synth_ran %}
-            <div class="gc-row-empty">No exec / PR drama in this week's corpus.</div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# Esports & streaming — Phase 3c.5: row list of corpus-anchored clusters #}
-        {% set es = week.cards.esports %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Esports & streaming", "Stories present in this week's corpus") }}
-            {% if es %}
-            <div class="gc-row-list">
-              {% for e in es %}
-              <label class="gc-row gc-row--esports gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ e.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div>
-                  <div class="gc-row-title">{{ e.title }}</div>
-                  <div class="gc-row-note">{{ e.note }}</div>
-                </div>
-              </label>
-              {% endfor %}
-            </div>
-            {% elif synth_ran %}
-            <div class="gc-row-empty">No esports / streaming stories in this week's corpus.</div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-        {# Release radar — Phase 3c.8: top-6 visible, scroll within card #}
-        {% set releases = week.cards.releases %}
-        <div>
-          <div class="gc-card">
-            {{ card_header(
-                 "Release radar",
-                 "Upcoming releases mentioned this week",
-                 '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-                    <a class="gc-ghost-link" href="https://www.pcgamer.com/games/new-pc-games-2026/" target="_blank" rel="noopener">PCGamer →</a>
-                    <a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">IGN →</a>
-                  </div>'|safe
-               ) }}
-            {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card is sourced from game release dates; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
-            <div class="gc-row-list gc-row-list--scrollable">
-              {% for r in releases %}
-              <label class="gc-row gc-row--release gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=game&value={{ r.name|urlencode }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <div class="gc-row-date">{{ r.display_date }}</div>
-                <div>
-                  <div class="gc-row-title">{{ r.name }}</div>
-                  {% if r.note %}<div class="gc-row-reason">{{ r.note }}</div>{% endif %}
-                </div>
-              </label>
-              {% endfor %}
-              {% if not releases %}
-              <div class="gc-row-empty">No upcoming releases mentioned this week.</div>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-
-        {# Watch next week — rows → cluster drawer when cluster_id present. #}
-        {% set watch = week.cards.watch %}
-        <div>
-          <div class="gc-card">
-            {{ card_header("Watch next week", "Things to track") }}
-            {% if watch %}
-            <div class="gc-row-list">
-              {% for w in watch %}
-              {% if w.cluster_id %}
-              <label class="gc-row gc-row--watch gc-row-trigger" for="drawer-open"
-                     hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ w.cluster_id }}&week={{ active_week_key }}"
-                     hx-target="#source-drawer-body" hx-swap="innerHTML">
-                <span class="gc-row-day">{{ w.day }}</span>
-                <span class="gc-row-item">{% if w.category %}<span class="gc-watch-chip gc-watch-chip--{{ w.category }}">{{ w.category }}</span>{% endif %}{{ w.item }}</span>
-                <span></span>
-              </label>
-              {% else %}
-              <div class="gc-row gc-row--watch">
-                <span class="gc-row-day">{{ w.day }}</span>
-                <span class="gc-row-item">{% if w.category %}<span class="gc-watch-chip gc-watch-chip--{{ w.category }}">{{ w.category }}</span>{% endif %}{{ w.item }}</span>
-                <span></span>
-              </div>
-              {% endif %}
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
-            {% endif %}
-            {{ seeall_footer(active_week_key) }}
-          </div>
-        </div>
-
-      </div>{# /gc-grid #}
+        {% include "_report_grid.html" %}
       </div>{# /readout-body #}
 
     </div>{# /gc-scroll #}
@@ -586,6 +186,32 @@
   </div>
 </div>
 
+{# Welcome modal — outside-viewer orientation, session-once. Lives only on
+   '/' so in-app navigation can't re-fire it. #}
+{% include "_welcome_modal.html" %}
+
 <script>lucide.createIcons();</script>
+<script>
+  (function () {
+    var KEY = 'gc_welcome_seen';
+    var el = document.getElementById('gc-welcome');
+    if (!el) return;
+    try {
+      if (!sessionStorage.getItem(KEY)) {
+        el.hidden = false;
+      }
+    } catch (e) { /* sessionStorage unavailable — leave modal hidden */ }
+    function dismiss() {
+      el.hidden = true;
+      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+    }
+    el.querySelectorAll('[data-gc-welcome-dismiss]').forEach(function (b) {
+      b.addEventListener('click', dismiss);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !el.hidden) dismiss();
+    });
+  })();
+</script>
 </body>
 </html>
