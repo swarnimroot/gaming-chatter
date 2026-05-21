@@ -297,6 +297,34 @@ Three items in one session — one UI polish bug on `/`, one carry-over from 3c.
 - [x] Dry-run + real-run verified — body 34,616 chars; 953 TBA stripped → 9,370 chars; Haiku parsed 299 valid entries / 0 invalid / ~46 s wall. 299 inserted into `game_releases`; **2 games dim rows synced** (sample: *Yoshi and the Mysterious Book* → 2026-05-21 → `lifecycle='upcoming'`). 29-game overlap with pcgamer; all dates agree on the May overlap. — **Done 2026-05-20.**
 - [x] Release Radar dual-link verified live — server boot on `:8021` → GET `/` 200 → regex-extracted ghost-link labels returned `PCGamer →` + `IGN →` in order. — **Done 2026-05-20.**
 
+### Phase 3c.33 (shipped 2026-05-21) — YT resolver bypass + synth Trends-shape fix + 2 new RSS sources
+
+Investigation session triggered by an empty W21 dashboard. The empty dashboard was caused by a silent synthesis crash (Phase 3c.23 Trends reshape regression); investigating that surfaced a separate silent YT mislabeling bug — for 5/6 YT sources, the `@handle → channel_id` HTML resolver had been picking wrong-but-real channel IDs for weeks. Both fixed. 2 new RSS sources added (GamingBible at non-standard `/index.rss`, Game Rant at standard `/feed/`). Sets up a staged YT-verification test + corpus wipe planned for next session. Spend ~$0.35 (W21 Opus re-synth + ~6 free httpx probes). See SESSION_LOG.md 2026-05-21 + DECISIONS.md 2026-05-21 + CHANGELOG.md.
+
+- [x] **YT resolver bypass** — verified the 6 canonical channel IDs via each Atom feed's `<title>` matching the publisher name; hardcoded full feed URLs in `sources.yaml` + DB (UPDATE rows 25-30 + clear error state). `resolve_youtube_feed`'s pass-through at `scrapers.py:32` short-circuits the regex path. No code change to scrapers.py. — **Done 2026-05-21.**
+- [x] **Synth Trends-shape fix** in `app/services/synthesis.py:516-533` — adapt `_format_input_for_prompt` to the Phase 3c.23 `{rising:[...], declining:[...]}` per-tab shape + dropped `games_current`/`games_upcoming` split. Inline comment explains the 3c.23 reshape. — **Done 2026-05-21.**
+- [x] **W21 synthesis re-run** via `scripts/run_synthesis.py 2026-W21 --force` after both fixes — row id=5 / model=claude-opus-4-7 / synthesis_json=8418 chars / exec_summary=964 chars. Real editorial output across Biggest / Market momentum / Risks / Community / Watch. — **Done 2026-05-21.**
+- [x] **GamingBible + Game Rant RSS sources** added after TheGamer in `sources.yaml`; seeded into DB via `seed_sources()`. Total enabled: 26 RSS + 6 YT = 32. Header comment + counts updated. — **Done 2026-05-21.**
+
+### Phase 3c.34 (planned, next session) — Staged YT verification + corpus wipe
+
+Gated 4-step plan agreed in the 2026-05-21 session. Wipe permanently loses W17-W20 historical read-outs (RSS feeds expose only ~15-30 recent entries per source — anything older is gone). **Decision gate at step 2:** if YT enrich pass-rate is poor (~<50%), Phase 3d (transcripts) becomes prerequisite before any wipe.
+
+- [ ] **Step 1 — YT-only smoke ingest.** Touch only the 6 YT sources; verify (a) all 6 return 200 / no resolver-bug recurrence, (b) titles match expected publishers, (c) inspect distribution of `length(body_text)` on the new YT rows. Cost ~$0; time ~10s.
+- [ ] **Step 2 — Enrich pass-rate.** Run `enrich_pending` on the new YT items; measure ratio of `enrichments.status='ok'` vs `'skipped'` (skipped = below `ENRICH_BODY_CHAR_MIN=200`). **Decision gate:** if pass-rate is poor, Phase 3d (YT transcript fetching) becomes prerequisite; do not proceed to step 3.
+- [ ] **Step 3 — Full pipeline + synthesis cite-check.** If step 2 passes, run full pipeline (ingest → enrich → embed → cluster → synthesize) and confirm the Opus output cites at least some clusters containing YT-source items. Concrete proof YT TLDRs reached synthesis.
+- [ ] **Step 4 — Corpus wipe + fresh pull.** Drop `items`, `raw_items`, `enrichments`, `clusters`, `weekly_reports`, `run_log`, `eval_card_scores`, `eval_meta`. Keep `sources`, `games`, `game_releases`. Trigger fresh full pipeline for current ISO week. Caveat user accepted: W17-W20 historical synthesized read-outs disappear permanently.
+
+### Phase 3d (deferred) — YT transcript-fetching for richer enrichment signal
+
+Activation gated on Phase 3c.34 step 2. Architecture intent locked in 2026-05-21 ultrathink discussion: use `scrapers-lib`'s existing `tier1.youtube.fetch_youtube_transcript(video_url)` per new YT item to populate `body_text` with the transcript; existing enrich step then handles verbal content like any article (single-call map step, optional prompt tweak for verbal vs written style). No new dedicated "video-summarize" step until empirical quality issue surfaces. Map-reduce architecture matches the codebase's per-article enrich → per-week synthesis pattern.
+
+- [ ] Decide activation (depends on Phase 3c.34 step 2 outcome).
+- [ ] Pipeline-step ordering — between ingest and enrich: for each new YT item, call `fetch_youtube_transcript(item.url, audio_fallback=True)` and concatenate the resulting chunks into `body_text`; if both caption + audio-fallback fail, leave the RSS description as `body_text` (existing enrich step decides skip-or-not).
+- [ ] Audio-fallback handling — POT-gating affects ~half of requests; whisper-CPU at ~60-90s/video (yt-dlp + faster-whisper `small.en` already installed under `[youtube-audio]` extras since Phase 3c.14).
+- [ ] Cost/latency target — ~$1-2/month at expected volume; per-run latency adds ~30-40 min (mostly bound by audio-fallback compute).
+- [ ] Prompt tweak (single-call hybrid) — if quality issues emerge with the article-tuned enrich prompt processing verbal content, switch the enrich-call prompt to a verbal-content-aware version (single call, filter + summarize in one pass). Avoid two-call (filter then summarize) until empirically justified.
+
 ## Phase 4 — Automation
 
 - [ ] APScheduler jobs: daily ingest, Monday synthesis

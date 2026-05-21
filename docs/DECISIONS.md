@@ -4,6 +4,47 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-21 — YouTube channels stored as hardcoded Atom feed URLs (not @handles) (Phase 3c.33)
+
+**Decision:** YT sources in `sources.yaml` store the full Atom feed URL (`https://www.youtube.com/feeds/videos.xml?channel_id=UC…`), not the `@handle`. `resolve_youtube_feed`'s existing `"feeds/videos.xml" in handle_or_url` pass-through (`app/services/scrapers.py:32`) short-circuits the regex-based HTML scrape entirely. Adding a new YT source now requires a one-time channel_id lookup; the manual procedure is documented below.
+
+**Why:**
+
+The previous approach scraped `https://www.youtube.com/@Name` HTML and matched `_CHANNEL_ID_RE = r'"channelId":"(UC[\w-]+)"'` (primary) then `_CHANNEL_PATH_RE = r"channel/(UC[\w-]+)"` (fallback) against the page bytes. Two compounding problems made this silently unreliable:
+
+1. **YouTube removed `"channelId":"UC..."` from @-handle page HTML** at some point between 2026-05-07 (initial verification) and 2026-05-21 (today's failure). Re-probing each @-handle page returned **zero** matches for the primary regex. Fall-through hit `_CHANNEL_PATH_RE`.
+2. **The fallback regex picks the *first* `/channel/UC…` URL anywhere in the 2.3 MB page**, not specifically the canonical channel link. On modern YouTube that first occurrence is often a recommended-channel sidebar entry, not the @handle's own canonical channel.
+
+Verified 2026-05-21: of the 6 YT sources, only @IGN's resolved channel_id matched its current canonical (lucky — IGN's canonical link happens to be the first `/channel/UC…` URL in its page). The other 5 (@GameSpot / @gameinformer / @YongYea / @PCGamer / @GameranxTV) all resolved to *different real channels* — we'd been silently ingesting videos from unrelated channels under those publisher labels for an unknown number of weeks (the regression landed when YouTube last reshuffled the @handle page HTML, presumably between 2026-05-07 and 2026-05-21).
+
+**Alternatives rejected:**
+
+- **Patch the regex to prefer `<link rel="canonical" href="https://www.youtube.com/channel/UC…">`.** Would have worked today, but the underlying brittleness — depending on YouTube's HTML layout staying stable — remains. The canonical-link pattern is more durable than the existing regexes but still failable on the next YouTube reshuffle.
+- **Add yt-dlp as a dep for `--print id @handle`.** Robust mechanically, but adds a heavyweight subprocess + dep we don't otherwise need (yt-dlp is already pulled in via the `[youtube-audio]` extra from Phase 3c.14, but invoking it as a subprocess for ID resolution is a different code path from the import-time usage in `tier1.youtube`).
+- **Use the YouTube Data API (`channels.list?forHandle=`).** Authoritative + permanent, but requires API key + quota awareness, which punctures the "no credentials" stance.
+- **LLM call (Haiku) to resolve `@handle → channel_id` with verification step.** Works as a one-time lookup helper for new sources but doesn't address the existing wrong-channel data, and risks hallucinated IDs without verification. Defer if/when frictionless source-adding becomes a recurring goal.
+- **Drop YouTube entirely.** Loses 6 source feeds and the cross-source YT/Reddit/RSS clustering coverage they'd contribute.
+
+The hardcode approach trades a 30-second one-time channel_id lookup per new YT source for elimination of an entire silent-failure class. Channel IDs are YouTube's permanent primary key (handles are mutable nicknames per YouTube's own docs). Remaining failure modes that could invalidate a stored ID: channel deletion, channel suspension, ownership transfer (Game Informer's 2024 GameStop-to-new-owner transfer did NOT change the channel_id; verified 2026-05-21). All of these would surface immediately as empty feeds — operationally rarer than the silent wrong-channel resolution we just eliminated.
+
+**Implementation:**
+
+- `sources.yaml` — 6 YT entries' `handle:` field changed from `@Name` to the full feed URL. Header comment updated. Block-level comment above the YT section explains the rationale for future maintainers.
+- DB `sources` table — direct UPDATE on rows 25-30 to set `url_or_handle` to the full feed URLs + clear `last_error` / reset `error_count`. The seeder (`app/utils/yaml_loader.py`) is insert-only on `(type, url_or_handle)` — it doesn't reconcile existing rows when the yaml changes, so the DB had to be updated separately.
+- No code change to `app/services/scrapers.py` — the `"feeds/videos.xml" in handle_or_url: return handle_or_url` pass-through at line 32 handles this case as-is.
+
+**Manual verification procedure** (carry forward when adding new YT sources):
+
+For each `@handle`, fetch `https://www.youtube.com/@Name`, extract the canonical channel ID from `<link rel="canonical" href="https://www.youtube.com/channel/UC...">`, then fetch that channel's Atom feed and confirm the `<title>` matches the expected publisher name. Bare-minimum manual procedure; could be formalized into a small helper script if YT source additions become frequent.
+
+**Honest caveats:**
+
+- Wrong-channel items already in the corpus (sources 26-30, ingested between roughly mid-May and 2026-05-21) are not cleaned up by this decision. Slated for the corpus wipe in the next session (Phase 3c.34), gated on a 4-step verification that the YT ingest + enrich + synth end-to-end chain works as intended with the corrected URLs.
+- Channel IDs are permanent on YouTube's side but not immune to operational events (deletion, suspension, rebrand→new channel). Defensive habit: re-verify every few months by fetching each Atom feed and confirming `<title>` still matches expectations. Drift is loud (empty feed or wrong publisher name), not silent.
+- Adding a 7th YT source now requires a manual channel_id lookup. Acceptable friction given the failure class this eliminates. A future LLM-with-verification helper could automate the lookup if the friction starts mattering.
+
+---
+
 ## 2026-05-20 — Eval scores feed back into the critic prompt (Phase 3c.30)
 
 **Decision:** When `synthesize_week()` runs its Pass 2 (critic), prepend a `=== PAST HUMAN CONCERNS ===` block to the critic's user message. The block is built from recurring (card, dim) failure patterns in `eval_card_scores` over the last 4 weeks. The same block is rendered on `/eval` in a collapsible `<details>` panel for transparency — what the user sees is what the critic gets.
