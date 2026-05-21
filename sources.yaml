@@ -4,20 +4,22 @@
 #   name:     human label (shown in UI)
 #   type:     rss | reddit | youtube
 #   url:      full URL          (required for type: rss)
-#   handle:   short identifier  (required for type: reddit | youtube)
+#   handle:   identifier        (required for type: reddit | youtube)
 #               - reddit:  subreddit name without "r/"        e.g. "Games"
-#               - youtube: channel handle with "@" or channel ID e.g. "@SkillUp"
+#               - youtube: full Atom feed URL with channel_id e.g.
+#                          "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
+#                          (NOT @handle — see YouTube section comment below)
 #   enabled:  true | false      (false = listed in UI but skipped during ingest)
 #
 # Notes:
 # - All 13 news-site RSS feeds verified working against scrapers-lib's
 #   tier1.rss module on 2026-05-07 (~635 entries fetched in aggregate).
+#   GamingBible + Game Rant added 2026-05-21 and verified the same day.
 # - All 11 subreddits ingest via Reddit's public RSS endpoint (no PRAW —
 #   API application was rejected; see DECISIONS.md 2026-05-07). Verified
 #   working on 2026-05-07 (~263 aggregate entries).
-# - YouTube channels (6) NOT yet verified — Phase 1 task.
-# - Phase 1 smoke test should still re-verify all feeds before locking in.
-# - Counts: 24 RSS (13 news + 11 reddit) · 6 youtube  (= 30 sources)
+# - YouTube channels (6) verified 2026-05-21 — see channel-section comment.
+# - Counts: 26 RSS (15 news + 11 reddit) · 6 youtube  (= 32 sources)
 
 sources:
   # ───── News sites (RSS) — 13 ─────
@@ -90,6 +92,18 @@ sources:
     url: "https://www.thegamer.com/feed/"
     enabled: true
 
+  - name: "GamingBible"
+    type: rss
+    url: "https://www.gamingbible.com/index.rss"
+    enabled: true
+    # Non-standard path (/index.rss, not /feed). Advertised via the homepage's
+    # <link rel="alternate" type="application/rss+xml"> tag. Atom-style entries.
+
+  - name: "Game Rant"
+    type: rss
+    url: "https://gamerant.com/feed/"
+    enabled: true
+
   # ───── Subreddits — 11 (via Reddit RSS, not PRAW; see DECISIONS.md 2026-05-07) ─────
   - name: "r/Games"
     type: rss
@@ -149,32 +163,40 @@ sources:
     enabled: true
 
   # ───── YouTube channels — 6 ─────
+  # NOTE: handle is the full Atom feed URL (with channel_id), NOT @handle.
+  # Resolving @handle → channel_id by scraping youtube.com/@Name HTML proved
+  # brittle (YouTube reshuffles page markup; first /channel/UC... in the page
+  # is often a recommended-channel sidebar entry, not the @handle's actual
+  # channel). Each channel_id below was verified on 2026-05-21 by fetching
+  # the canonical Atom feed and confirming feed_title matches the publisher
+  # name. Channel IDs are permanent primary keys on YouTube's side; @handles
+  # are mutable nicknames. See DECISIONS.md 2026-05-21.
   - name: "IGN (YouTube)"
     type: youtube
-    handle: "@IGN"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCKy1dAqELo0zrOtPkf0eTMw"
     enabled: true
 
   - name: "GameSpot (YouTube)"
     type: youtube
-    handle: "@GameSpot"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCbu2SsF-Or3Rsn3NxqODImw"
     enabled: true
 
   - name: "Game Informer (YouTube)"
     type: youtube
-    handle: "@gameinformer"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCK-65DO2oOxxMwphl2tYtcw"
     enabled: true
 
   - name: "YongYea (YouTube)"
     type: youtube
-    handle: "@YongYea"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCT6iAerLNE-0J1S_E97UAuQ"
     enabled: true
 
   - name: "PC Gamer (YouTube)"
     type: youtube
-    handle: "@PCGamer"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCgaPRP68bbyHnfkPhWWBrNw"
     enabled: true
 
   - name: "Gameranx (YouTube)"
     type: youtube
-    handle: "@GameranxTV"
+    handle: "https://www.youtube.com/feeds/videos.xml?channel_id=UCNvzD7Z-g64bPXxGzaQaa4g"
     enabled: true

@@ -515,16 +515,20 @@ def _format_input_for_prompt(data: dict) -> str:
 
     trends = data["trends"]
     if trends.get("has_prior"):
+        # Phase 3c.23 reshaped trends_for_week: each tab now holds
+        # {"rising": [...], "declining": [...]} rather than a flat list,
+        # and games_current/games_upcoming collapsed into a single "games" key.
+        # The rising sub-list is already filtered to positive delta_pp and
+        # sorted DESC, so we just take the first 3.
         for tab_key, label in [
-            ("games_current", "Games (current) WoW risers"),
-            ("games_upcoming", "Games (upcoming) WoW risers"),
+            ("games", "Games WoW risers"),
             ("genres", "Genre WoW risers"),
             ("platforms", "Platform WoW risers"),
             ("live_service", "Live-service WoW risers"),
             ("events", "Event WoW risers"),
         ]:
-            rows = trends.get(tab_key) or []
-            ups = [r for r in rows if r["tone"] == "up"][:3]
+            tab = trends.get(tab_key) or {}
+            ups = (tab.get("rising") or [])[:3]
             if ups:
                 bits = ", ".join(f"{r['name']} {r['delta_display']}" for r in ups)
                 parts.append(f"\n{label.upper()}: {bits}")
