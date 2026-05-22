@@ -4,7 +4,7 @@ Personal gaming-news aggregator. Daily ingest from 15 news sites + 10 subreddits
 
 ## Status
 
-Latest shipped: **Phase 3c.32 (2026-05-20)**. Corpus: 1597 items / 1412 Haiku-enriched + embedded / 184 games / 247 per-ISO-week clusters / 4 synthesized `weekly_reports` rows (W17–W20). For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
+Latest shipped: **Phase 3c.34 (2026-05-21)**. Corpus was wiped + rebuilt fresh in 3c.34 — only the current ISO week is fully covered. Corpus: 1023 items / 866 Haiku-enriched ok (152 skipped, 5 failed) / 184 games / 50 W21 clusters / 1 synthesized `weekly_reports` row (W21). W17–W20 history was permanently lost in the wipe (RSS feeds expose only ~15–100 recent entries per source). For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
 
 ## Read first
 - `docs/PRD.md` — what we're building and why

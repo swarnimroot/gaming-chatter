@@ -306,24 +306,28 @@ Investigation session triggered by an empty W21 dashboard. The empty dashboard w
 - [x] **W21 synthesis re-run** via `scripts/run_synthesis.py 2026-W21 --force` after both fixes — row id=5 / model=claude-opus-4-7 / synthesis_json=8418 chars / exec_summary=964 chars. Real editorial output across Biggest / Market momentum / Risks / Community / Watch. — **Done 2026-05-21.**
 - [x] **GamingBible + Game Rant RSS sources** added after TheGamer in `sources.yaml`; seeded into DB via `seed_sources()`. Total enabled: 26 RSS + 6 YT = 32. Header comment + counts updated. — **Done 2026-05-21.**
 
-### Phase 3c.34 (planned, next session) — Staged YT verification + corpus wipe
+### Phase 3c.34 (shipped 2026-05-21) — Staged YT verification + Haiku pre-screen + corpus wipe/rebuild
 
-Gated 4-step plan agreed in the 2026-05-21 session. Wipe permanently loses W17-W20 historical read-outs (RSS feeds expose only ~15-30 recent entries per source — anything older is gone). **Decision gate at step 2:** if YT enrich pass-rate is poor (~<50%), Phase 3d (transcripts) becomes prerequisite before any wipe.
+4-step staged plan executed. **Step 2 rescoped mid-session:** the original description-only enrich-pass-rate test was discarded as uninformative once it surfaced that `_body_for_enrichment` has fetched YT transcripts at enrich-time since Phase 3c.14 (`fetch_youtube_transcript(audio_fallback=True)`) — the SESSION_LOG 3c.33 note "No YT transcript-fetching yet" was stale. A captions-only probe confirmed YouTube captions are 100% POT-gated; whisper-CPU audio fallback (local, free, ~60–90s/item) is the only working transcript path. A new Haiku pre-screen gate was added to skip non-gaming YT videos before paying whisper cost. Corpus wiped + rebuilt fresh. Spend ~$5–6. See DECISIONS.md 2026-05-21 (two entries) + SESSION_LOG.md 2026-05-21 (Phase 3c.34) + CHANGELOG.md.
 
-- [ ] **Step 1 — YT-only smoke ingest.** Touch only the 6 YT sources; verify (a) all 6 return 200 / no resolver-bug recurrence, (b) titles match expected publishers, (c) inspect distribution of `length(body_text)` on the new YT rows. Cost ~$0; time ~10s.
-- [ ] **Step 2 — Enrich pass-rate.** Run `enrich_pending` on the new YT items; measure ratio of `enrichments.status='ok'` vs `'skipped'` (skipped = below `ENRICH_BODY_CHAR_MIN=200`). **Decision gate:** if pass-rate is poor, Phase 3d (YT transcript fetching) becomes prerequisite; do not proceed to step 3.
-- [ ] **Step 3 — Full pipeline + synthesis cite-check.** If step 2 passes, run full pipeline (ingest → enrich → embed → cluster → synthesize) and confirm the Opus output cites at least some clusters containing YT-source items. Concrete proof YT TLDRs reached synthesis.
-- [ ] **Step 4 — Corpus wipe + fresh pull.** Drop `items`, `raw_items`, `enrichments`, `clusters`, `weekly_reports`, `run_log`, `eval_card_scores`, `eval_meta`. Keep `sources`, `games`, `game_releases`. Trigger fresh full pipeline for current ISO week. Caveat user accepted: W17-W20 historical synthesized read-outs disappear permanently.
+- [x] **Step 1 — YT-only smoke ingest.** All 6 YT channels 200 / 0 errors (3c.33 fix holds); 90 post-fix YT items; ~96% above the 200-char body floor. — **Done 2026-05-21.**
+- [x] **Step 2 (rescoped) — transcript path verified.** Captions-only probe 0/12 (POT-gated); audio-fallback whisper produces transcript-rich TLDRs. Original pass-rate gate discarded as uninformative. — **Done 2026-05-21.**
+- [x] **NEW — Haiku YT pre-screen.** `prescreen_yt_relevance()` + `YTPrescreenData` in `app/services/anthropic.py`; `_body_for_enrichment` returns 3-tuple `(body, label, prescreen_skip_reason)`; `enrich_pending` persists `status='skipped'` reason `yt prescreen: not gaming-related (...)`. Production callers `rerun_enrichment.py` + `sample_haiku_enrichment.py` updated. Smoke-tested 7 items (6 pass / 1 reject). — **Done 2026-05-21.**
+- [x] **Step 3 — full pipeline + synthesis cite-check.** Re-cluster W21 (151 clusters, 11 carry YT members); re-synth W21 → 9 referenced clusters, 2 with YT members. GREEN. — **Done 2026-05-21.**
+- [x] **Step 4 — corpus wipe + rebuild.** Wiped 7,446 rows across 8 tables; kept `sources`/`games`/`game_releases`; reset per-source counters. Full rebuild ~3h19m. Fresh corpus: 1,023 items / 866 ok / 152 skipped / 5 failed / 50 W21 clusters / 1 W21 synthesis. Final verify: 10 referenced clusters, 4 with YT members (7 YT items reach Opus). GREEN. W17–W20 history permanently lost (accepted). — **Done 2026-05-21.**
 
-### Phase 3d (deferred) — YT transcript-fetching for richer enrichment signal
+### Phase 3c.34 follow-ups (open)
 
-Activation gated on Phase 3c.34 step 2. Architecture intent locked in 2026-05-21 ultrathink discussion: use `scrapers-lib`'s existing `tier1.youtube.fetch_youtube_transcript(video_url)` per new YT item to populate `body_text` with the transcript; existing enrich step then handles verbal content like any article (single-call map step, optional prompt tweak for verbal vs written style). No new dedicated "video-summarize" step until empirical quality issue surfaces. Map-reduce architecture matches the codebase's per-article enrich → per-week synthesis pattern.
+- [ ] **`category` enum too narrow.** Haiku emits `preview` / `guide` / `gameplay` / `interview` for YT content types → those items hard-fail (`ValueError: category '<X>' not in allowed set`); 5 failures in the rebuild. Fix: widen `_ALLOWED_CATEGORIES` in `app/services/ollama.py` or add a coercion validator (like the Phase 3c.22 `WatchItem.category` normalizer).
+- [ ] **No length cap on whisper audio transcription.** A 2h04m video took ~11 min of whisper-CPU; long-form YongYea/Game Informer videos dominated the ~3hr rebuild. Skip-or-flag videos over N minutes. (Pre-existing OPEN_QUESTIONS item from Phase 3c.15, now confirmed material.)
+- [ ] **Phase 3c.35 backfill — scoped to W19–W21 (3 weeks)** per user. W19 currently has only ~53 items; making it usable needs yt-dlp YT backfill (Path A) + per-site sitemap RSS recovery (Path B). Reddit's 25-item feed cap is a hard accepted gap. See OPEN_QUESTIONS.md.
 
-- [ ] Decide activation (depends on Phase 3c.34 step 2 outcome).
-- [ ] Pipeline-step ordering — between ingest and enrich: for each new YT item, call `fetch_youtube_transcript(item.url, audio_fallback=True)` and concatenate the resulting chunks into `body_text`; if both caption + audio-fallback fail, leave the RSS description as `body_text` (existing enrich step decides skip-or-not).
-- [ ] Audio-fallback handling — POT-gating affects ~half of requests; whisper-CPU at ~60-90s/video (yt-dlp + faster-whisper `small.en` already installed under `[youtube-audio]` extras since Phase 3c.14).
-- [ ] Cost/latency target — ~$1-2/month at expected volume; per-run latency adds ~30-40 min (mostly bound by audio-fallback compute).
-- [ ] Prompt tweak (single-call hybrid) — if quality issues emerge with the article-tuned enrich prompt processing verbal content, switch the enrich-call prompt to a verbal-content-aware version (single call, filter + summarize in one pass). Avoid two-call (filter then summarize) until empirically justified.
+### Phase 3d — YT transcript-fetching *(resolved 2026-05-21 — already shipped in 3c.14)*
+
+Phase 3c.34's verification found YT transcript-fetching has been live since Phase 3c.14: `_body_for_enrichment` calls `fetch_youtube_transcript(vid, audio_fallback=True)` at enrich-time and uses the transcript as the body passed to Haiku. No separate Phase 3d work was needed. The one remaining design-intent item (persist transcript to `items.body_text` at ingest-time so re-enriches are idempotent / don't re-pay whisper cost) is deferred — see DECISIONS.md 2026-05-21 "YT transcripts already wired".
+
+- [x] Transcript fetch at enrich-time — already wired (3c.14).
+- [ ] *(deferred)* Persist transcript to `body_text` at ingest-time for idempotency — see DECISIONS.md 2026-05-21.
 
 ## Phase 4 — Automation
 

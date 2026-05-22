@@ -4,6 +4,40 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-21 (Phase 3c.34) — Staged YT verification + Haiku pre-screen + corpus wipe/rebuild
+
+**What shipped.** The 4-step staged plan from Phase 3c.33 was executed end-to-end. Along the way Step 2 was rescoped, a new Haiku pre-screen gate was built, and the corpus was wiped + rebuilt from scratch. Total spend ~$5–6 (full-corpus Haiku re-enrich ~$3.40 + Sonnet cluster labels ~$0.28 + Opus W21 synthesis ~$1.60 + probe/pre-screen Haiku calls). Whisper-CPU transcription — the ~3hr rebuild bottleneck — is local and free.
+
+**Step 1 — YT-only smoke ingest.** All 6 YT channels returned 200, 0 errors — the Phase 3c.33 hardcoded-feed-URL fix holds under real ingest. 90 post-fix YT items in the DB (APScheduler-less; the items were already pulled by an earlier manual ingest that day). Body-length distribution: min 125 / p50 648 / p90 1422 / max 2007; only 4/90 below the `ENRICH_BODY_CHAR_MIN=200` floor. Titles read as genuine publisher content — no wrong-channel artifacts.
+
+**Step 2 — rescoped.** The original plan's "description-only enrich pass-rate" gate was discarded mid-session as uninformative. Reason: inspecting existing YT TLDRs showed them citing specific in-video content ("$50M and a year added to Borderlands' dev", "Olivia in Lone Echo to Jack Baker in RE7") that a 238–1345-char Atom description cannot produce. Code check confirmed `app/services/enrich.py::_body_for_enrichment` (lines 38–44) has **always** called `fetch_youtube_transcript(vid, audio_fallback=True)` at enrich-time and used the transcript as the body — wired since Phase 3c.14. The SESSION_LOG 3c.33 note "No YT transcript-fetching yet" was stale/incorrect. A captions-only probe (`audio_fallback=False`) on 12 items returned **0/12** — YouTube captions are 100% POT-gated for this environment; the whisper-CPU audio fallback (~60–90s/item, local, free) is the only working transcript path. The expensive bottleneck is wall-time, not API cost.
+
+**NEW — Haiku YT pre-screen** (user-directed addition, not in the original plan). To avoid paying whisper-CPU on non-gaming YT videos, a Haiku pre-screen was added: `prescreen_yt_relevance(title, description) -> YTPrescreenData(relevant, reason)` in `app/services/anthropic.py` (cached system prompt, ~$0.0005/call, fails-open on API error). `_body_for_enrichment` return shape changed `(body, label)` → `(body, label, prescreen_skip_reason)`; when the pre-screen rejects, `enrich_pending` persists `status='skipped'` with reason `yt prescreen: not gaming-related (...)` and skips transcript fetch entirely. Production callers `scripts/rerun_enrichment.py` + `scripts/sample_haiku_enrichment.py` updated for the new tuple. Smoke-tested on 7 items: 6 gaming → relevant, 1 Brendan Fraser movie trailer → correctly rejected. In the full rebuild it rejected 4 videos (2 movie trailers, 2 AI-news).
+
+**Step 3 — full pipeline + synthesis cite-check.** Discovered the existing W21 clusters were stale (generated before the post-fix YT items were enriched) — 0/21 referenced clusters had YT members. Re-clustered W21 (151 clusters, 11 carrying YT members) and re-synthesized; the new W21 synthesis referenced 9 clusters, 2 with YT members. GREEN.
+
+**Step 4 — corpus wipe + rebuild.** Wiped 7,446 rows across 8 tables (`items` / `raw_items` / `enrichments` / `clusters` / `weekly_reports` / `run_log` / `eval_card_scores` / `eval_meta`); kept `sources` / `games` / `game_releases`; reset per-source `last_fetched_at` / `last_error` / `error_count`. Full rebuild (ingest → enrich → embed → cluster → synthesize) ran 11,951s (~3h19m), dominated by whisper-CPU on long-form YT videos (one 2h04m video alone ≈11 min). Fresh corpus: **1,023 items / 866 ok / 152 skipped / 5 failed / 50 W21 clusters / 1 W21 synthesis**. Final verification: the W21 synthesis references 10 clusters, 4 with YT members (7 YT items reach Opus). GREEN.
+
+**Locked decisions** (DECISIONS.md 2026-05-21 — two new entries):
+1. **YT transcripts already wired at enrich-time via whisper-CPU audio fallback.** Documentation-drift correction. Captions POT-gated; audio fallback is the real path. The "persist transcript to body_text at ingest-time for idempotency" intent is deferred.
+2. **Haiku pre-screen gates whisper-CPU on YT items.** Title+description → Haiku relevance check before transcript fetch; non-gaming videos skip whisper entirely.
+
+**Honest caveats.**
+- **`category` enum too narrow.** Haiku emits `preview` / `guide` / `gameplay` / `interview` for YT content types and those items hard-fail (`ValueError: category '<X>' not in allowed set`) — 5 failures in the rebuild. Open follow-up.
+- **No length cap on whisper transcription.** The pre-existing Phase 3c.15 OPEN_QUESTIONS item is now confirmed material — long-form YongYea/Game Informer videos (one 2h04m, one 1h59m, a 1h05m podcast) dominated the rebuild runtime.
+- **W17–W20 history permanently lost.** Post-wipe only W21 (618 items) is fully covered; W20 has ~219, W19 ~53, earlier weeks negligible. RSS feeds expose only ~15–100 recent entries per source. User accepted this.
+- **There is no APScheduler running.** Verified `app/main.py` — the lifespan hook starts no scheduler. Automation (Phase 4) is genuinely unbuilt; the full pipeline only runs via `POST /pipeline/run-full` or the standalone scripts. Earlier session-log references to "APScheduler's hourly ingest" were inaccurate.
+- During this session several stray long-running Python processes (likely a leftover `uvicorn` instance) were killed to stop a parallel-enrich race that caused 21 transient Anthropic connection-error failures. The web app must be restarted (`uvicorn app.main:app`) to get the UI back — there is no scheduler to "resume."
+
+**Where we left off.** Phase 3c.34 fully shipped + verified GREEN. Fresh corpus is W21-only. The web UI is down (uvicorn killed) — restart it to browse `/`, `/stories`, `/clusters`. One-off helper scripts (`scripts/_phase34_*.py`, `scripts/_probe_*.py`) created during this session were deleted at session close.
+
+**Next session.**
+1. **Phase 3c.35 — backfill, scoped to W19–W21 (3 weeks)** per user decision. W19 has only ~53 items; making it usable needs Path A (yt-dlp YT backfill, ~150–250 extra YT items) + Path B (per-site sitemap RSS recovery for the ~8 high-volume sources). Reddit's 25-item RSS cap is a hard accepted gap (PRAW still rejected). ~half-day work + multi-hour whisper.
+2. **`category` enum widening** — small fix; prevents the recurring hard-fail corpus loss.
+3. **Whisper length cap** — skip/flag videos over N minutes so a podcast pivot can't blow up pipeline runtime.
+
+---
+
 ## 2026-05-21 (Phase 3c.33) — YT resolver bypass + synth Trends-shape fix + 2 new RSS sources
 
 **What shipped.** Three bug-fix items + 2 new sources, gating a planned next-session corpus wipe. (1) The YT @handle resolver had been silently picking wrong channels for 5/6 sources because `_CHANNEL_PATH_RE = r"channel/(UC[\w-]+)"` matches *any* `/channel/UC…` URL in the @handle page HTML — often a recommended-channel sidebar entry instead of the @handle's own canonical channel. Hardcoded all 6 channel feed URLs in sources.yaml + DB to bypass the resolver entirely. (2) `_format_input_for_prompt` in synthesis.py was crashing on the Phase 3c.23 Trends reshape (per-tab payload became `{rising:[...], declining:[...]}` instead of a flat list, and `games_current`/`games_upcoming` collapsed into a single `games` key); the old code iterated the new dict's string keys and `r["tone"]` raised `TypeError: string indices must be integers`. Fixed; W21 synthesis now renders. (3) Added GamingBible (non-standard `/index.rss`) + Game Rant (`/feed/`) as new RSS sources. Total enabled: 26 RSS + 6 YT = 32. Spend ~$0.35 (W21 Opus re-synth + ~6 free httpx probes).

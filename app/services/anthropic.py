@@ -171,6 +171,61 @@ def label_cluster(titles: list[str], tldrs: list[str]) -> str:
     return label
 
 
+YT_PRESCREEN_SYSTEM_PROMPT = """You decide whether a YouTube video is relevant to a gaming-news weekly brief.
+
+Relevant: video games, gaming hardware, the games industry (companies, layoffs, business deals), gaming culture / community, esports, streamers/creators-as-news, game-adjacent tech (engines, controllers).
+
+Not relevant: movies, TV shows, anime, music, sports, politics, lifestyle, vlogs, sponsored non-gaming content, unrelated tech reviews (laptops/phones not for gaming).
+
+You receive only the title and the YouTube description. Decide on those alone — do NOT speculate about what might be in the video.
+
+When in doubt (description is too short or ambiguous), prefer relevant=true (we'd rather analyze and discard later than miss a relevant item).
+
+Return: {relevant: bool, reason: short string explaining why — one sentence max}."""
+
+
+class YTPrescreenData(BaseModel):
+    relevant: bool = Field(..., description="True if the video is gaming-related and worth deeper analysis.")
+    reason: str = Field("", description="One-sentence explanation of the decision.")
+
+
+def prescreen_yt_relevance(title: str, description: str) -> YTPrescreenData:
+    """Cheap Haiku call: is this YouTube item gaming-relevant per title+description?
+
+    Used to gate whisper-CPU transcript fetching. If relevant=False, the caller
+    persists status='skipped' with a reason and skips transcript work entirely.
+
+    Fails-open: on API/transport error the caller treats it as relevant=True
+    rather than losing items to API hiccups.
+    """
+    user_prompt = f"Title: {title.strip() or '(no title)'}\n\nDescription:\n{(description or '').strip()[:2000] or '(no description)'}"
+
+    try:
+        message = _get_client().messages.parse(
+            model=ANTHROPIC_ENRICH_MODEL,
+            max_tokens=256,
+            system=[
+                {
+                    "type": "text",
+                    "text": YT_PRESCREEN_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_prompt}],
+            output_format=YTPrescreenData,
+        )
+    except anthropic.APIError as e:
+        raise ValueError(f"anthropic prescreen API error: {e}") from e
+    except ValidationError as e:
+        raise ValueError(f"anthropic prescreen response failed schema: {e}") from e
+
+    data = getattr(message, "parsed_output", None)
+    if data is None:
+        stop = getattr(message, "stop_reason", "unknown")
+        raise ValueError(f"anthropic prescreen returned no parsed output (stop_reason={stop})")
+    return data
+
+
 def tag_game(game_name: str) -> GameTagData:
     """Call Anthropic Haiku 4.5 to tag a game with lifecycle + live_service.
 

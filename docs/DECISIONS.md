@@ -4,6 +4,69 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-21 — Haiku pre-screen gates whisper-CPU on YT items (Phase 3c.34)
+
+**Decision:** Before any YT item's transcript is fetched, run a cheap Haiku call on the item's title + Atom description to decide whether the video is gaming-relevant. Non-gaming videos (movie/TV trailers, AI-news, sponsored non-gaming content) are persisted `status='skipped'` with reason `yt prescreen: not gaming-related (<reason>)` and never reach the whisper-CPU transcript step.
+
+**Implementation:**
+
+- `prescreen_yt_relevance(title, description) -> YTPrescreenData` in `app/services/anthropic.py`. Haiku 4.5, cached system prompt, `max_tokens=256`. Returns `{relevant: bool, reason: str}`.
+- `app/services/enrich.py::_body_for_enrichment` return shape changed from `(body, label)` to `(body, label, prescreen_skip_reason)`. For YT items it calls the pre-screen first; on rejection it returns `("", label, "yt prescreen: not gaming-related (...)")`.
+- `enrich_pending` checks the third tuple element before the body-min gate and persists `status='skipped'` with the reason.
+- Two production callers updated for the new tuple: `scripts/rerun_enrichment.py`, `scripts/sample_haiku_enrichment.py`.
+
+**Why:**
+
+Whisper-CPU transcription costs ~60–90s of local CPU per YT item (the only working transcript path — captions are POT-gated, see the companion entry below). A non-gaming video pays that full cost only to produce a TLDR that synthesis discards anyway. The pre-screen costs ~$0.0005 and ~1s per item and removes that waste. On the Phase 3c.34 rebuild it correctly rejected 4 of ~90 YT videos (2 movie trailers, 2 AI-news) — a modest hit rate, but the wall-time saved on a full-corpus rebuild is real and the dollar cost is negligible.
+
+**Design choices:**
+
+- **Haiku, not a regex heuristic.** A keyword/regex filter is free but ~70% accurate and brittle on cross-promotional / TV-crossover edge cases; Haiku is ~95% accurate and won't discard a niche-but-relevant video. $0.04 per full rebuild is below noise.
+- **At enrich-time, not ingest-time.** Rejected items still get an `enrichments` row (`status='skipped'` + reason) — an audit trail. Filtering at ingest would mean rejected items never appear in the DB at all.
+- **Fails open.** On any Haiku API error the pre-screen returns "treat as relevant" and the item proceeds to the transcript path — a transient API blip must not silently drop items.
+- **Narrow criterion.** The prompt scopes "relevant" to video games / the games industry / gaming hardware / gaming culture / esports; it explicitly excludes movies, TV, music, sports, general tech. When the description is too thin to judge, it prefers `relevant=true` (analyze-and-discard beats miss).
+
+**Alternatives rejected:** regex/keyword heuristic (accuracy); enrich-from-description-first then transcript-on-demand-if-low-confidence (doubles the Haiku call count, harder to get a clean signal from); ingest-time filtering (no audit trail).
+
+**Honest caveat:** the pre-screen judges from the Atom description, which YouTube channels write with varying care. A misleadingly-titled gaming video with a sparse description could be wrongly rejected — mitigated by the fail-toward-relevant tie-break, but not eliminated. Worth spot-checking `status='skipped'` rows with `yt prescreen:` reasons periodically.
+
+---
+
+## 2026-05-21 — YT transcripts already wired at enrich-time via whisper-CPU audio fallback (Phase 3c.34)
+
+**Decision (clarification, not a code change):** Phase 3c.34's verification confirmed that `app/services/enrich.py::_body_for_enrichment` (lines 38–44) already calls `fetch_youtube_transcript(vid, audio_fallback=True)` on every YT item at enrich-time, and uses that transcript as the body passed to Haiku. The TLDR signal for YT items in the existing corpus is transcript-derived, not description-derived. The Phase 3c.33 SESSION_LOG note "No YT transcript-fetching yet" was stale/incorrect — the code has been doing this since at least Phase 3c.14 (when the `[youtube-audio]` extras were added). No code change in 3c.34; this entry corrects the documentation drift.
+
+**Empirical reach (probe 2026-05-21 on 12 post-fix YT items, 2 per channel):**
+
+- **Captions-only path (`audio_fallback=False`): 0 / 12 returned non-empty.** YouTube's caption endpoint is now 100% POT-gated for our environment. The free / fast path no longer works.
+- **Audio-fallback path (`audio_fallback=True`, whisper-CPU): 4 / 5 sampled produced usable transcripts before the 10-min probe timeout cut off.** The 1 failure was a trailer with no spoken content (10-char transcript = "PEGI 7 you" → fell below `ENRICH_BODY_CHAR_MIN=200` → correctly `status=skipped`).
+- **Wall time per item (whisper-CPU):**
+  - Short trailers: ~15–20s
+  - Short reviews / shorts (~3 min video): ~10s
+  - Long reviews (~10 min video): ~95s
+  - Long-form podcasts (~1 hour video): ~620s (~10 min)
+  - Estimated median across mixed feed: 60–90s
+- **Transcript length distribution (audio-fallback path):** 10 / 1,122 / 741 / 10,061 / 61,281 chars in the 5 items that completed before the probe timed out.
+
+**Why this matters for the corpus wipe:**
+
+A full re-ingest of all 6 YT channels (~15 items each = ~90 items per cycle) at median ~60–90s whisper-CPU each = roughly **1.5–2.5 hours of local CPU** just for YT transcripts in the post-wipe rebuild. Acceptable for a one-time rebuild; would block APScheduler's hourly cycle if it landed in the middle of one. Hourly steady-state cost is lower because the per-source dedup key `(source_id, mention_id)` keeps re-ingest count down to whatever's actually new each hour (typically 0–3 items).
+
+**Alternatives rejected:**
+
+- **Persist transcripts to `items.body_text` at ingest-time** (the Phase 3d parking-note design). Cleaner architecturally — would make enrichment idempotent on re-run instead of paying whisper cost every time `_body_for_enrichment` is called. Deferred to a future phase. The current enrich-time fetch is not idempotent across re-enriches, but in practice enrich runs once per item and the result is durable in `enrichments.tldr`, so the re-run cost is a hypothetical we don't pay.
+- **Cache transcripts locally between runs.** Same effect as the previous bullet via a different mechanism (separate transcript-cache table). Same deferral.
+- **Drop audio fallback and accept that YT only contributes when the rare item has captions.** Would silently drop ~all YT signal under current POT-gating. Defeats the purpose of YT sources.
+
+**Honest caveats:**
+
+- `_body_for_enrichment` calls `audio_fallback=True` *every time* it's invoked for a YT item. If the same item is re-enriched (e.g., via `enrich_pending(force=True)` or `retry_failed=True`), whisper-CPU runs again. Mitigation today: don't re-enrich YT items casually. Real fix: ingest-time persistence (deferred).
+- Whisper-CPU output quality depends on local audio decoding — speech-to-text accuracy on heavily-edited gameplay audio or low-quality podcast captures could mangle proper nouns (game titles, dev studio names). Spot-checked TLDRs from the existing post-fix cohort look clean (specific game titles correct: "Borderlands", "DoW IV", "Zoum", "Disco Elysium", "Olivia in Lone Echo", "Jack Baker in Resident Evil 7"), so quality is acceptable in practice. Worth re-checking after a few weeks of steady-state data.
+- The 1 long-form podcast item (Game Informer, 1hr+ video) took ~10 min of whisper-CPU on its own. If a YT channel pivots heavily toward podcasts, the wall-time math degrades. Currently most of the 6 channels publish short-form content (reviews / news shorts / trailers).
+- Captions may un-gate in the future if YouTube changes its POT enforcement. The captions-first path in `tier1.youtube.fetch_youtube_transcript` continues to try captions before falling back to audio — no code change needed if/when that happens.
+
+---
+
 ## 2026-05-21 — YouTube channels stored as hardcoded Atom feed URLs (not @handles) (Phase 3c.33)
 
 **Decision:** YT sources in `sources.yaml` store the full Atom feed URL (`https://www.youtube.com/feeds/videos.xml?channel_id=UC…`), not the `@handle`. `resolve_youtube_feed`'s existing `"feeds/videos.xml" in handle_or_url` pass-through (`app/services/scrapers.py:32`) short-circuits the regex-based HTML scrape entirely. Adding a new YT source now requires a one-time channel_id lookup; the manual procedure is documented below.

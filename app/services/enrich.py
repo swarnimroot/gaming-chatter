@@ -16,7 +16,7 @@ from sqlmodel import Session, col, select
 from app.config import ENRICH_BODY_CHAR_MIN
 from app.db.models import Enrichment, Item, RunLog, Source
 from app.db.session import engine
-from app.services.anthropic import enrich_item
+from app.services.anthropic import enrich_item, prescreen_yt_relevance
 from app.services.ollama import (
     EnrichmentData,
     embed_text,
@@ -27,22 +27,37 @@ from app.services.ollama import (
 log = logging.getLogger(__name__)
 
 
-def _body_for_enrichment(session: Session, item: Item) -> tuple[str, str]:
-    """Return (body_text, source_label) for the prompt.
+def _body_for_enrichment(session: Session, item: Item) -> tuple[str, str, Optional[str]]:
+    """Return (body_text, source_label, prescreen_skip_reason).
 
-    YouTube items: pull transcript on-demand. If unavailable, fall back to
-    whatever body_text was captured at ingest (usually title/description).
+    YouTube items: first run a Haiku pre-screen on title+description; if the
+    video is judged non-gaming-relevant, return ("", label, reason) so the
+    caller can persist `status='skipped'` without paying whisper-CPU cost.
+
+    Otherwise pull transcript on-demand. If unavailable, fall back to whatever
+    body_text was captured at ingest (usually title/description).
+
+    The prescreen fails-open on API errors (returns relevant=True) so we don't
+    lose items to transient Anthropic hiccups.
     """
     source = session.get(Source, item.source_id)
     label = source.name if source else "unknown"
     if source and source.type == "youtube":
+        try:
+            decision = prescreen_yt_relevance(item.title or "", item.body_text or "")
+        except Exception as e:  # noqa: BLE001
+            log.warning("yt prescreen failed for item=%s; proceeding as relevant: %s", item.id, e)
+            decision = None
+        if decision is not None and not decision.relevant:
+            return "", label, f"yt prescreen: not gaming-related ({decision.reason})"
+
         vid = extract_video_id(item.url)
         if vid:
             transcript = fetch_youtube_transcript(vid)
             if transcript:
-                return transcript, label
+                return transcript, label, None
         log.info("youtube transcript empty for item=%s; falling back to title/body", item.id)
-    return (item.body_text or ""), label
+    return (item.body_text or ""), label, None
 
 
 def _persist_ok(session: Session, item_id: int, data: EnrichmentData) -> None:
@@ -135,7 +150,12 @@ def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False, forc
 
         for item in items:
             totals["attempted"] += 1
-            body, label = _body_for_enrichment(session, item)
+            body, label, prescreen_skip = _body_for_enrichment(session, item)
+            if prescreen_skip:
+                _persist_skipped(session, item.id, prescreen_skip)
+                totals["skipped"] += 1
+                session.commit()
+                continue
             if len(body or "") < ENRICH_BODY_CHAR_MIN:
                 _persist_skipped(session, item.id, f"body too short ({len(body or '')} chars)")
                 totals["skipped"] += 1

@@ -126,7 +126,11 @@ def _rerun_targeted_ids(item_ids: list[int]) -> dict:
                 log.warning("item id=%s not found; skipping", iid)
                 totals["missing"] += 1
                 continue
-            body, label = _body_for_enrichment(session, item)
+            body, label, prescreen_skip = _body_for_enrichment(session, item)
+            if prescreen_skip:
+                log.info("item=%s %s; skipping", iid, prescreen_skip)
+                totals["skipped"] += 1
+                continue
             if len(body or "") < ENRICH_BODY_CHAR_MIN:
                 log.info("item=%s body too short (%d chars); skipping", iid, len(body or ""))
                 totals["skipped"] += 1

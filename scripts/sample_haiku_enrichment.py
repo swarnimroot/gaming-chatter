@@ -151,7 +151,7 @@ def main():
             src_name = source.name if source else "?"
 
             log.info("[%d/%d] %s — %s", idx, len(items), src_name, (item.title or "")[:80])
-            body, label = _body_for_enrichment(session, item)
+            body, label, _prescreen_skip = _body_for_enrichment(session, item)
 
             try:
                 data = enrich_item(item.title, body, label)
