@@ -91,7 +91,12 @@ def _run_per_week() -> int:
 def _run_single(week_id: str) -> int:
     t0 = time.time()
     log.info("=== cluster_window start (week_id=%s) ===", week_id)
-    totals = cluster_window(week_id=week_id)
+    if week_id == "all":
+        totals = cluster_window(week_id=week_id)
+    else:
+        from app.services.reports import iso_week_bounds
+        start, end = iso_week_bounds(week_id)
+        totals = cluster_window(start=start, end=end, week_id=week_id)
     log.info("cluster_window done in %.1fs: %s", time.time() - t0, totals)
     return 0
 

@@ -4,6 +4,165 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-05-27 — Precompute the dashboard payload at synthesis time (Phase 3c.35)
+
+**Decision:** When `synthesize_week()` finishes persisting synthesis_json, it also computes + persists the default-region `/reports` payload to a new `weekly_reports.dashboard_payload_json TEXT` column. The `/` route reads the cached payload (~6ms) and applies a region filter in-process; only weeks without a cached payload fall through to live compute.
+
+**Why:** At 7× corpus growth, the live `_build_week_payload` chain was taking 5–15s per click on synthesized weeks even after the Bucket 6 query-plan fix (which got it to 2.5–3.4s). The user's framing was "durable" — wanted a persisted artifact, not an in-process LRU. Precompute makes Monday-morning read-out clicks feel instant; the cache lives in the DB so an app restart doesn't lose it.
+
+**Rationale:**
+
+- **Durable beats in-memory.** Caches that don't survive restart get re-hit on every cold boot, which on a personal-local app means every time the user reboots the laptop. A real column on `weekly_reports` is durable and visible (you can `SELECT length(dashboard_payload_json) FROM weekly_reports` to debug).
+- **At synthesis time, not on first read.** Synthesis already runs at known intervals (Monday + on-demand). Tying the precompute to the synthesis hook means the cache always exists when the page wants to render. First-read-builds-cache would mean the first Monday morning click pays the 2.5–3s compute cost, then subsequent clicks are fast — the worst user moment to pay the cost.
+- **Default region only, in-process region filter for others.** The 4 region tabs all serve from the same cached payload via `_filter_cards_by_region()` (~6ms). Storing 4 payloads per week would 4× the disk cost for marginal speedup.
+- **Current week (W22) deliberately not precomputed.** The current week is mid-ingest — its synthesis hasn't run yet, so there's no cached payload, so `/` falls through to live compute. Acceptable: the per-click cost on a still-growing week is the price for honest data. Revisit if live compute on the current week becomes visibly slow.
+
+**Implementation surface:** new `app/services/dashboard.py` (extracted from `routers/reports.py`); new column via additive ALTER + idempotent `init_db()` migration; synthesis hook is wrapped in non-fatal try/except (a precompute crash must not block the synthesis commit); read path in `/` route logs a soft warning when payload missing and falls through to live compute. Backfill script `scripts/rebuild_dashboard_payloads.py` (`--force` flag) is idempotent for ops use.
+
+**Alternatives rejected:**
+
+- **In-process LRU on `_build_week_payload`.** Not durable; restart-cold; doesn't help if the laptop closes overnight.
+- **Materialized view / second table.** SQLite materialized views are emulated; second table costs a JOIN on every read. Single TEXT column is the cleanest shape.
+- **Compute all 4 regions and cache each.** 4× disk cost; `_filter_cards_by_region` is fast enough that storing only the default is the right tradeoff.
+- **Pre-Phase-4 just-rebuild-on-Monday-cron.** Phase 4 isn't active yet; until it is, synthesis runs are manual. Hooking precompute to the synthesis call rather than a cron means the cache stays consistent with synthesis regardless of automation state.
+
+**Honest caveats:**
+
+- The precompute call captures the synthesis output as it existed at synthesis time. If `_build_week_payload`'s downstream queries (e.g., `top_games_for_week`, `trends_for_week`) start returning different numbers later because more items get ingested into the same week's bin, the cached payload will go stale. Mitigation: re-run synthesis (which re-computes the cache) or use `scripts/rebuild_dashboard_payloads.py --force`. Acceptable for weeks that are "done" (past their ISO window); current-week behavior is already live-compute by design.
+- The synthesis hook silently swallows precompute errors via `log.exception` → continues. This is intentional (a busted precompute must not block a successful synthesis commit), but means a regression in `_build_week_payload` could silently degrade Monday clicks. Worth checking the logs if /reports starts feeling slow on a fresh synth.
+
+---
+
+## 2026-05-27 — Force query-plan via `INDEXED BY` on the per-week aggregates (Phase 3c.35)
+
+**Decision:** `_build_week_payload`-adjacent queries in `app/services/reports.py` now carry explicit `INDEXED BY ix_items_published_at` hints to force items-first joins instead of letting SQLite's planner choose. Also added a stable `(delta_pp, name)` tiebreaker inside `_merge_wow` to deterministic-ize previously hash-seed-dependent set unions.
+
+**Why:** At 7× corpus growth (1,023 → 6,958 items) SQLite's planner started choosing games-first joins, scanning ~7,000 enrichments per game on the WoW aggregates. End-to-end `_build_week_payload` regressed from sub-second to 25–33s per call. Pinning the plan to items-first restored linear-in-items behavior; observed end-to-end runtime 25–33s → 2.5–3.4s (~10× speedup).
+
+**Rationale:**
+
+- **Planner drift is a known SQLite gotcha at this scale.** When `ANALYZE` statistics get stale or the cardinality curves cross a threshold, the planner can flip between two physically-different join orders. The drift was bidirectional in our smoke runs (some queries flipped back to items-first under different sample sizes). `INDEXED BY` makes the decision explicit and stable.
+- **Determinism matters for the cache + the eval harness.** Without the `(delta_pp, name)` tiebreaker in `_merge_wow`, the same input set could produce a different top-5 ordering across runs because `set() | set()` Python ordering depends on the hash seed. HTML byte-identical across before/after for W19 + W21; W20 had one tied-pair swap (Saros ↔ Star Fox 64 in `live_service.rising`) — now deterministic.
+
+**Alternatives rejected:**
+
+- **Add more indexes.** SQLite would still need to choose between them. The hint is cheaper.
+- **Force the plan via subquery / CTE rewrite.** Works but harder to read; the `INDEXED BY` annotation sits inline with the FROM clause and is self-documenting.
+- **`ANALYZE` cron.** Would help in steady-state but doesn't address the drift between planner runs on the same statistics. Plus we don't have a cron infrastructure for it yet (Phase 4 is inert).
+
+**Honest caveats:** `INDEXED BY` is a SQLite-specific clause that errors out if the named index is dropped (intentional — fail loud rather than silently degrade). A future schema migration that renames `ix_items_published_at` would need to update these hints; flagged in `docs/OPEN_QUESTIONS.md` as a small future-maintenance item.
+
+---
+
+## 2026-05-27 — Phase 4 automation locked to single-process APScheduler with daily 07:00 / weekly Mon 07:30 / startup catch-up (Phase 3c.35)
+
+**Decision:** Phase 4 automation, when activated via `SCHEDULER_ENABLED=1`, runs a single `BackgroundScheduler` inside the same uvicorn process. Daily pipeline at 07:00 local, weekly extension at Monday 07:30 local (chained after daily). Catch-up on startup: daily overdue if >24h since last `started_at` (or crashed mid-flight); weekly overdue if today is Mon/Tue/Wed AND >8 days since last weekly run. `max_instances=1`, `coalesce=True`. A single `threading.RLock` in `app/services/jobs.py` serializes all paths (cron-fired, /runs-Run-now, startup catch-up); lock-miss persists `status='skipped'`.
+
+**Why:** Same-process scheduler is what the project's hard architectural constraints already lock in — no worker queue, no separate service, no Docker. APScheduler ships an in-process `BackgroundScheduler` that fits exactly. The 07:00 / 07:30 timing pair gives the daily ingest 30 minutes to land before the Monday-morning synthesis fires on top of fresh data. Catch-up on startup handles the "laptop was off all weekend" case without manual intervention.
+
+**Rationale:**
+
+- **Single-process is the locked stack.** No new architectural surface area. APScheduler is already a dep (`pyproject.toml`) — wiring it up doesn't add anything to the install footprint.
+- **07:00 local daily / 07:30 Monday weekly chained.** Daily is small (incremental ingest + enrich + cluster). Weekly is large (synthesis). 30 minutes of buffer between them is enough headroom for the daily to complete on a normal Monday; if daily is still running when weekly fires, the lock holds weekly until daily finishes (then weekly fires immediately — `coalesce=True` consolidates the queued runs).
+- **Catch-up windows 24h / 8 days.** Daily's 24h matches "we expect this to fire every day"; the >8 day weekly window allows one full skipped Monday and still catches up on Tuesday or Wednesday morning the next time the app boots. Mon/Tue/Wed gating on weekly catch-up prevents triggering a stale synthesis on, say, Friday evening when the user opens the app for a different reason.
+- **`status='skipped'` for lock-miss, not error.** A skipped run is informational ("the system was already busy"); persisting it as `error` would noise up the `/runs` page.
+
+**Implementation surface:**
+
+- `JobRun` SQLModel + `job_runs` table — orchestrator-level. Distinct from the pre-existing `RunLog` / `run_log` which is per-step.
+- `app/services/jobs.py` — `run_daily_pipeline` / `run_weekly_extension` / `run_release_refresh` / `run_startup_catchup` orchestrators; granular `run_ingest_only` / `run_enrich_only` / `run_cluster_only` / `run_synthesis_only` for the /runs Run-now panel.
+- `app/routers/runs.py` + `runs.html` — `/runs` page surfacing `job_runs` history + Run-now panel + HTMX expand-row for `details_json`. **Not added to sidebar nav** (deliberate scope cut to avoid the `chrome.py` edit + nav-validator dance); direct URL only.
+- `app/main.py` lifespan — env-gated; default off. Activates only when `SCHEDULER_ENABLED=1` is present in `.env`.
+- 3 scripts (`backfill_region.py` / `refresh_pcgamer_releases.py` / `refresh_ign_releases.py`) refactored to expose a `run(...)` callable so orchestrators can invoke them in-process. CLI behavior unchanged.
+
+**Alternatives rejected:**
+
+- **Separate scheduler service / cron / systemd timer.** Splits the process model. Disallowed by the locked architecture.
+- **Per-job lock (not single RLock).** Two cron jobs could collide if granular jobs (e.g., a manual "Run enrich only" from /runs) overlap with a scheduled daily. Single lock is the safe default.
+- **Always-on, no env gate.** The user wants explicit activation. Inert-by-default means a `git pull` of this code doesn't surprise-trigger jobs.
+- **Run synthesis directly from APScheduler without orchestrator wrapping.** Loses the `job_runs` audit trail. The orchestrator wrapper is what makes /runs informative.
+
+**Honest caveats:**
+
+- **API failure surface during weekly auto-run.** Already-known from Phase 3c.0.5 — per-item enrichment now requires Anthropic API + key + non-rate-limit state. A Monday-morning outage will halt the weekly run. The orchestrator catches and persists `status='error'` + `message`; the user finds out via `/runs` rather than email/Discord (push delivery is deferred to "Later"). Acceptable for personal-local; revisit if it bites.
+- **Catch-up logic uses `started_at` not `finished_at`.** A crashed-mid-flight daily counts as "ran" for the 24h window. Right call for "did we attempt today?", wrong call if you want "did we successfully complete today?". The `JobRun.status` column lets a future enhancement distinguish if needed.
+- **`/runs` is direct-URL-only.** Anyone who doesn't know the URL won't find the page. Acceptable for a personal-local single-user tool; flagged as Task #9 (cosmetic styling) + a future nav-add when chrome.py is touched anyway.
+
+---
+
+## 2026-05-27 — Coerce out-of-taxonomy `category` values rather than failing the enrichment (Phase 3c.35)
+
+**Decision:** `app/services/ollama.py::EnrichmentData._coerce_category` is now a `field_validator(mode='before')` that maps Haiku's YT-flavored category emissions (`preview`/`guide`/`gameplay` → `news`, `interview` → `industry`) instead of raising `ValueError`. The dead post-parse `_ALLOWED_CATEGORIES` enum checks in `ollama.py` and `anthropic.py` (+ the now-unused import in `anthropic.py`) have been removed.
+
+**Why:** The recurring hard-fail loss documented in `docs/OPEN_QUESTIONS.md` ("category enum too narrow") was bleeding 5+ items per full corpus run since Phase 3c.0.5 — Haiku reliably emits YT-content-type words for video items, and the strict enum was raising and persisting them as `status='failed'`. Coercion preserves the item, applies a reasonable mapping, and follows the same Pydantic-validator pattern that's already in production for `WatchItem.category` (Phase 3c.22).
+
+**Rationale:**
+
+- **Coercion has precedent.** `WatchItem.category` already coerces unrecognized values to `event`. Adopting the same pattern keeps the codebase consistent.
+- **Mapping over default-bucket.** A `preview` is closer to `news` than to any other locked value; an `interview` is closer to `industry`. Defaulting everything unrecognized to `news` would over-broaden that category. The explicit mapping is editorial.
+- **Removing dead enum checks now (not later).** The pre-validator catches everything; the post-parse `if val not in _ALLOWED_CATEGORIES` was now unreachable. Dead code in a validator path is the worst kind — it suggests defensiveness that doesn't actually defend.
+
+**Alternatives rejected:**
+
+- **Widen `_ALLOWED_CATEGORIES`** (option (a) from the OQ entry). Would broaden the taxonomy lock without an editorial reason to do so. Downstream code (e.g., the `/sentiment` GROUP BY, the Trends Events tab) would have to learn about more values.
+- **Tighten the Haiku prompt to never emit those words.** Already tried via prompt engineering; Haiku still emits content-type-specific values for clearly-content-type-specific items. The prompt isn't the right lever.
+- **Drop YT items that get content-type categories.** Defeats the purpose of YT being a source.
+
+**Implementation surface:** `app/services/ollama.py::EnrichmentData._coerce_category` (mode='before' validator); removed `_ALLOWED_CATEGORIES` post-parse check in `ollama.py` and `anthropic.py`; removed the now-unused `_ALLOWED_CATEGORIES` import in `anthropic.py`. Re-ran the 5 historical failures (IDs 15, 626, 630, 921, 979) — all flipped to `status='ok'`.
+
+**Honest caveats:** The coercion is a one-way information loss — once `preview` becomes `news`, downstream can't tell which items were originally `preview`. Acceptable today (we don't expose category in any UI surface in a way that would benefit from preview-vs-news disambiguation). If a future feature wants that distinction, it would need a separate `content_type` or `video_subtype` field, not a re-broadening of `category`.
+
+---
+
+## 2026-05-27 — No whisper-duration cap on YT audio transcription (Phase 3c.35)
+
+**Decision:** The Phase 3c.34 OPEN_QUESTIONS proposal to gate whisper-CPU transcription on a video-duration threshold is **rejected**. All YT items continue to be whisper-transcribed in full regardless of duration. Pre-screen (Haiku gaming-relevance check) remains the only filter in front of whisper.
+
+**Why:** User explicitly rejected the gate. Quote: *"don't want to put any whisper duration gate, that would mean less data ingestion and possibility of missing some data."* A 2-hour podcast episode that turns out to contain a 30-minute studio-shutdown discussion would be lost under a 60-minute cap; that's exactly the kind of signal the synthesis is meant to surface.
+
+**Rationale:**
+
+- **Honest-data preference holds.** Capping is a data-loss heuristic; the user's stated preference is "ingest everything, let synthesis decide what matters."
+- **Wall-time cost is paid once, by an automation job.** Phase 4 daily 07:00 fires while the laptop is presumably idle; a 3hr rebuild is acceptable for the initial backfill (one-time) and individual long videos in steady state add ~10min each (rare on the current channel mix; not zero, but bounded).
+- **Pre-screen already handles the obvious-waste case.** Non-gaming videos (movie trailers, AI-news) are filtered upstream by the Haiku pre-screen at ~$0.0005/call; whisper never runs on them. The remaining whisper cost is on actually-gaming videos, which is the cost you want to pay.
+
+**Alternatives rejected:**
+
+- **Skip videos over N minutes.** Bleeds signal.
+- **Cap the audio actually transcribed (first N minutes).** Bleeds signal mid-video.
+- **Feature-flag audio fallback off for sources flagged as long-form.** Same as the cap — bleeds signal.
+
+**Honest caveats:**
+
+- Long-form podcast channels added in the future will inflate whisper runtime linearly. If/when a single source becomes responsible for, say, 4+ hours of whisper per daily run, the math may need re-examining. Not blocking today.
+- The Phase 4 scheduler's `max_instances=1` ensures a still-running daily ingest can't trigger a second one on top of itself. If daily ever exceeds 24h, the next day's run would be queued by `coalesce=True` and fire as one. Worst case observable today: a daily that runs ~3h once a quarter when a backlog of long videos catches up. Acceptable.
+
+---
+
+## 2026-05-27 — Path A (yt-dlp) + Path B (sitemap recipes) shipped in parallel, not sequenced (Phase 3c.35)
+
+**Decision:** The Phase 3c.35 backfill for W19–W21 was executed with `scripts/backfill_youtube.py` (Path A) and `scripts/backfill_news.py` (Path B) run in parallel (overlapping wall-time), not sequentially. Both fed into the same enrich+cluster+synth pipeline after the items landed.
+
+**Why:** The two paths share no contention surface (different scrapers, different per-source rate limits, different DB tables initially via `raw_items`, eventual common `items`/`enrichments`). Sequencing them would have doubled wall-time without quality benefit.
+
+**Rationale:**
+
+- **Independent scrape paths.** Path A talks to YouTube via yt-dlp; Path B talks to news sites via per-site sitemap recipes. No shared upstream.
+- **DB contention is low.** Both write to `raw_items` and `items` with the existing `(source_id, mention_id)` dedup. SQLite's WAL mode handles parallel writers acceptably at this scale.
+- **Enrichment serializes naturally downstream.** Both paths leave items in `status='pending'` enrichment state; a single `enrich_pending(...)` call drains both pools together — no need to gate by source.
+
+**Implementation surface:** Two separate scripts, run in two terminal windows. Each persists its own progress log. The shared `enrich_pending` + clustering + synthesis pass ran once at the end, against the combined pool.
+
+**Alternatives rejected:**
+
+- **Sequential A → B.** ~2× wall-time.
+- **One unified backfill script with a `--source-kind={yt|news}` flag.** Tried briefly; the per-site recipe state in Path B is too different from yt-dlp's channel-enumeration state to share a sensible code path. Two scripts is the right shape.
+- **Skip Path A and rely on the existing daily Atom feed.** Atom caps at ~15 items per channel; W19 + W20 needed older items.
+
+**Honest caveats:** Running in parallel made the SESSION_LOG harder to write linearly — events from both paths interleave in time. Acceptable cost.
+
+---
+
 ## 2026-05-21 — Haiku pre-screen gates whisper-CPU on YT items (Phase 3c.34)
 
 **Decision:** Before any YT item's transcript is fetched, run a cheap Haiku call on the item's title + Atom description to decide whether the video is gaming-relevant. Non-gaming videos (movie/TV trailers, AI-news, sponsored non-gaming content) are persisted `status='skipped'` with reason `yt prescreen: not gaming-related (<reason>)` and never reach the whisper-CPU transcript step.

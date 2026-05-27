@@ -114,6 +114,11 @@ class WeeklyReport(SQLModel, table=True):
     synthesis_json: Optional[str] = Field(default=None, sa_column=Column(Text))
     synthesis_model: Optional[str] = None
     synthesis_generated_at: Optional[datetime] = None
+    # Phase 3c.35 — precomputed `_build_week_payload(region="")` cache.
+    # Populated by the synthesis hook and by scripts/rebuild_dashboard_payloads.py.
+    # `/reports` reads this on hit and applies the cheap region filter in-memory,
+    # short-circuiting the ~2.5s live aggregation.
+    dashboard_payload_json: Optional[str] = Field(default=None, sa_column=Column(Text))
     generated_at: Optional[datetime] = None
     status: str = "pending"
 
@@ -154,3 +159,26 @@ class EvalMeta(SQLModel, table=True):
     week_id: str = Field(primary_key=True)
     missing: Optional[str] = Field(default=None, sa_column=Column(Text))
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class JobRun(SQLModel, table=True):
+    """Higher-level orchestrator run log (Phase 4 automation).
+
+    Distinct from the granular per-step `RunLog`/`run_log` table that
+    ingest/enrich/embed/cluster/article_fetch already populate. A `JobRun`
+    row tracks one orchestrator invocation (`daily_pipeline`,
+    `weekly_extension`, `release_refresh`, or a granular manual trigger).
+    Per-step details for the daily pipeline are encoded in `details_json`
+    rather than as separate rows so the /runs UI can show one parent row
+    per scheduled invocation.
+    """
+    __tablename__ = "job_runs"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_name: str = Field(index=True)           # 'daily_pipeline' | 'weekly_extension' | 'release_refresh' | granular job name
+    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = None
+    status: str = Field(default="running", index=True)  # 'running' | 'ok' | 'failed' | 'skipped'
+    duration_seconds: Optional[float] = None
+    message: Optional[str] = Field(default=None, sa_column=Column(Text))    # short summary or error
+    details_json: Optional[str] = Field(default=None, sa_column=Column(Text))  # per-step counts
+    triggered_by: str = Field(default="scheduler")      # 'scheduler' | 'manual' | 'startup_catchup'

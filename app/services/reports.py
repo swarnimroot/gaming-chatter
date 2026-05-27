@@ -199,6 +199,12 @@ def top_games_for_week(
     # "Mixtape" / "MIXTAPE") onto a single row. Display name is the canonical
     # name from the games dim when available, falling back to the article's
     # casing for games that never made it into the dim (<2 mentions originally).
+    # `INDEXED BY ix_items_published_at` forces SQLite to drive the join from
+    # the items date range (small, indexed) instead of starting at the games
+    # dim (Phase 3c.34 perf regression — at 7× corpus the default plan scans
+    # 184 games × all 'ok' enrichments per game). Output is identical; only
+    # the join order changes. Skipped on the lifecycle=None branch because
+    # the LEFT JOIN forces an items-first plan already.
     if lifecycle is None:
         sql = """
             SELECT
@@ -218,7 +224,7 @@ def top_games_for_week(
     else:
         sql = """
             SELECT g.name AS game, COUNT(DISTINCT i.id) AS n
-            FROM items i
+            FROM items i INDEXED BY ix_items_published_at
             JOIN enrichments e ON e.item_id = i.id
             JOIN json_each(e.entities, '$.games') je ON e.status = 'ok'
             JOIN games g ON LOWER(g.name) = LOWER(TRIM(je.value)) AND g.lifecycle = :lc
@@ -424,9 +430,10 @@ def _game_counts_for_week(
         """
         bind = {"s": start, "e": end}
     else:
+        # `INDEXED BY` — see top_games_for_week comment. Same join-order fix.
         sql = f"""
             SELECT g.name AS game, COUNT(DISTINCT i.id) AS n
-            FROM items i
+            FROM items i INDEXED BY ix_items_published_at
             JOIN enrichments e ON e.item_id = i.id
             JOIN json_each(e.entities, '$.games') je ON e.status = 'ok'
             JOIN games g ON LOWER(g.name) = LOWER(TRIM(je.value)){extra_sql}
@@ -518,13 +525,18 @@ def _merge_wow(
             "delta_display": delta_display,
             "tone": tone,
         })
+    # Tiebreaker by name keeps the ordering stable across runs / SQL plan
+    # changes — the pre-3c.34 code relied on `set(...) | set(...)` iteration
+    # which is hash-seed-dependent, so tied rows could swap places between
+    # processes. Phase 3c.34 perf rewrite touched the underlying SQL join
+    # order; we lock the tiebreaker here so output is repeatable.
     rising = sorted(
         [r for r in rows if r["delta_pp"] > 0],
-        key=lambda r: r["delta_pp"], reverse=True,
+        key=lambda r: (-r["delta_pp"], r["name"]),
     )[:limit]
     declining = sorted(
         [r for r in rows if r["delta_pp"] < 0],
-        key=lambda r: r["delta_pp"],
+        key=lambda r: (r["delta_pp"], r["name"]),
     )[:limit]
     return {"rising": rising, "declining": declining}
 
@@ -826,9 +838,10 @@ def upcoming_releases(session: Session, week_id: str, limit: int = 12) -> list[d
     pills (sources that covered the game in this week).
     """
     start, end = iso_week_bounds(week_id)
+    # `INDEXED BY` — see top_games_for_week comment. Forces items-first scan.
     rows = session.exec(text("""
         SELECT g.name AS game, g.release_date, COUNT(DISTINCT i.id) AS n
-        FROM items i
+        FROM items i INDEXED BY ix_items_published_at
         JOIN enrichments e ON e.item_id = i.id
         JOIN json_each(e.entities, '$.games') je ON e.status = 'ok'
         JOIN games g ON LOWER(g.name) = LOWER(TRIM(je.value))

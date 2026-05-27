@@ -49,4 +49,6 @@ One: me. Local, no auth, no sharing (initial scope).
 
 ## Cost target
 
-LLM API spend: $1–5 / month. Ollama local does the volume work; Anthropic only does the weekly synthesis pass.
+LLM API spend: ~$1–3 / month steady-state. Backfills or corpus rebuilds add ~$5–10 each.
+
+Reflects the locked split (DECISIONS 2026-05-12 override): per-item enrichment + game tagging + region tagging + YT pre-screen run on Anthropic Haiku 4.5 (the volume work, but Haiku tokens are cheap); cluster labels on Sonnet 4.6; weekly synthesis + critic on Opus 4.7. Ollama (local, free) does embeddings (`nomic-embed-text`, 768-dim). The pre-2026-05-12 PRD target ($1–5/month with Ollama doing volume) is obsolete — the qwen2.5:7b structured-output trial exposed quality issues that justified moving per-item enrichment to Haiku, accepting ~3–5× monthly spend in return.

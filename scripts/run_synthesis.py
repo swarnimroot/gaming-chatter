@@ -21,6 +21,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Windows cp1252 stdout can't encode non-Latin characters that appear in
+# synthesis output (e.g., Japanese names with macrons). Reconfigure to utf-8
+# so the post-run print loop doesn't crash AFTER successful persistence.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",

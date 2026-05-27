@@ -1,0 +1,109 @@
+{% extends "shell_base.html" %}
+{% block title %}Job runs — Gaming Chatter{% endblock %}
+{% block eyebrow %}Automation{% endblock %}
+{% block heading %}Job runs{% endblock %}
+{% block header_meta %}
+  {% if scheduler_enabled %}
+    <span class="gc-table-chip gc-table-chip--ok">Scheduler: enabled</span>
+  {% else %}
+    <span class="gc-table-chip gc-table-chip--off">Scheduler: disabled</span>
+    <span class="gc-header-hint">Set <code>SCHEDULER_ENABLED=1</code> and restart to enable daily + weekly cron.</span>
+  {% endif %}
+{% endblock %}
+
+{% block main_content %}
+
+<section class="gc-run-panel">
+  <div class="gc-run-panel-title">Run now</div>
+  <div class="gc-run-panel-hint">
+    Manual triggers run regardless of the scheduler flag. Each click queues the job as a FastAPI BackgroundTask;
+    only one orchestrator can run at a time, so a queued job that arrives while another is mid-flight is recorded
+    with <code>status=skipped</code>.
+  </div>
+
+  <div id="run-status" class="gc-run-status">Ready.</div>
+
+  <div class="gc-run-buttons">
+    {% for job in trigger_jobs %}
+      {% if job.accepts_week %}
+        <form class="gc-run-button-form"
+              hx-post="{{ request.url_for('runs_trigger', job_name=job.slug) }}"
+              hx-target="#run-status" hx-swap="outerHTML">
+          <button type="submit" class="gc-run-button">{{ job.label }}</button>
+          <input type="text" name="week_id" class="gc-run-week-input"
+                 placeholder="2026-W21" autocomplete="off">
+        </form>
+      {% else %}
+        <form class="gc-run-button-form"
+              hx-post="{{ request.url_for('runs_trigger', job_name=job.slug) }}"
+              hx-target="#run-status" hx-swap="outerHTML">
+          <button type="submit" class="gc-run-button">{{ job.label }}</button>
+        </form>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<section class="gc-run-history">
+  <div class="gc-run-history-title">Recent runs</div>
+
+  {% if rows %}
+    <table class="gc-table gc-run-table">
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Job</th>
+          <th class="gc-table-cat">Triggered by</th>
+          <th class="gc-table-cat">Status</th>
+          <th>Duration</th>
+          <th>Message</th>
+          <th class="gc-table-cat">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr class="gc-run-row gc-run-row--{{ r.status }}">
+            <td class="gc-table-when">{{ r.started_at }}</td>
+            <td><code class="gc-table-mono">{{ r.job_name }}</code></td>
+            <td class="gc-table-cat">
+              <span class="gc-table-chip">{{ r.triggered_by }}</span>
+            </td>
+            <td class="gc-table-cat">
+              {% if r.status == 'ok' %}
+                <span class="gc-table-chip gc-table-chip--ok">ok</span>
+              {% elif r.status == 'failed' %}
+                <span class="gc-table-chip gc-table-chip--bad">failed</span>
+              {% elif r.status == 'running' %}
+                <span class="gc-table-chip">running</span>
+              {% elif r.status == 'skipped' %}
+                <span class="gc-table-chip gc-table-chip--off">skipped</span>
+              {% else %}
+                <span class="gc-table-chip">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ r.duration }}</td>
+            <td>{{ r.message or '—' }}</td>
+            <td class="gc-table-cat">
+              {% if r.has_details %}
+                <button type="button" class="gc-run-details-toggle"
+                        hx-get="{{ request.url_for('runs_details', run_id=r.id) }}"
+                        hx-target="#run-details-{{ r.id }}" hx-swap="innerHTML">
+                  Expand
+                </button>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% if r.has_details %}
+          <tr class="gc-run-details-row">
+            <td colspan="7"><div id="run-details-{{ r.id }}"></div></td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="gc-row-empty">No job runs recorded yet. Trigger one above to populate.</div>
+  {% endif %}
+</section>
+
+{% endblock %}

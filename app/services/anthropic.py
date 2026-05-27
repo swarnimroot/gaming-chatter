@@ -24,7 +24,6 @@ from app.config import (
     ENRICH_BODY_CHAR_CAP,
 )
 from app.services.ollama import (
-    _ALLOWED_CATEGORIES,
     GAME_TAG_SYSTEM_PROMPT,
     GameTagData,
     REGIONS,
@@ -93,8 +92,6 @@ def enrich_item(title: str, body: str, source_label: str) -> EnrichmentData:
         stop = getattr(message, "stop_reason", "unknown")
         raise ValueError(f"anthropic returned no parsed output (stop_reason={stop})")
 
-    if data.category not in _ALLOWED_CATEGORIES:
-        raise ValueError(f"category '{data.category}' not in allowed set")
     if not -1.0 <= data.sentiment_score <= 1.0:
         raise ValueError(f"sentiment_score out of range: {data.sentiment_score}")
 

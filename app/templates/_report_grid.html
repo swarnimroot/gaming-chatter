@@ -91,6 +91,8 @@
         </label>
         {% endfor %}
       </div>
+      {% elif synth_ran %}
+      <div class="gc-row-empty">{% if region_active %}No biggest-story coverage in this region this week.{% else %}No biggest-story coverage in this week's corpus.{% endif %}</div>
       {% else %}
       <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
       {% endif %}
@@ -257,6 +259,8 @@
           {% endfor %}
         </div>
         {% endif %}
+      {% elif synth_ran %}
+      <div class="gc-row-empty">{% if region_active %}No community sentiment captured for this region this week.{% else %}No community sentiment captured in this week's corpus.{% endif %}</div>
       {% else %}
       <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
       {% endif %}
@@ -408,6 +412,8 @@
         {% endif %}
         {% endfor %}
       </div>
+      {% elif synth_ran %}
+      <div class="gc-row-empty">{% if region_active %}No "watch next week" items tagged for this region.{% else %}Nothing flagged for next week in this synthesis pass.{% endif %}</div>
       {% else %}
       <div class="gc-row-empty">Awaiting synthesis. Run <code>scripts/run_synthesis.py {{ active_week_key }}</code>.</div>
       {% endif %}

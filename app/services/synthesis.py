@@ -686,6 +686,20 @@ def synthesize_week(session: Session, week_id: str, force: bool = False) -> dict
     session.commit()
 
     log.info("synthesis persisted for %s (%d chars JSON)", week_id, len(json_blob))
+
+    # Phase 3c.35 — precompute the dashboard payload now that synthesis_json
+    # is on disk. The /reports route reads this cache instead of recomputing
+    # `_build_week_payload` on every click. Failure here is non-fatal — log
+    # and continue; the route will just fall through to live compute.
+    try:
+        from app.services import dashboard as dashboard_svc
+        dashboard_svc.compute_and_cache_payload(session, week_id)
+        session.commit()
+        log.info("dashboard payload cached for %s", week_id)
+    except Exception as e:  # noqa: BLE001 — cache failure must not break synthesis
+        log.warning("failed to cache dashboard payload for %s: %s", week_id, e)
+        session.rollback()
+
     return {
         "synthesis": payload,
         "model": ANTHROPIC_SYNTHESIS_MODEL,

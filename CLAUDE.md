@@ -4,7 +4,7 @@ Personal gaming-news aggregator. Daily ingest from 15 news sites + 10 subreddits
 
 ## Status
 
-Latest shipped: **Phase 3c.34 (2026-05-21)**. Corpus was wiped + rebuilt fresh in 3c.34 — only the current ISO week is fully covered. Corpus: 1023 items / 866 Haiku-enriched ok (152 skipped, 5 failed) / 184 games / 50 W21 clusters / 1 synthesized `weekly_reports` row (W21). W17–W20 history was permanently lost in the wipe (RSS feeds expose only ~15–100 recent entries per source). For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
+Latest shipped: **Phase 3c.35 (2026-05-27)**. W19–W21 backfill via two new scripts (`scripts/backfill_youtube.py` + `scripts/backfill_news.py`) grew the corpus 1,023 → 6,958 items; per-click `/reports` collapsed 5–15s → 210–240ms via SQL query-plan hints + cached dashboard payloads. Phase 4 automation infrastructure (single APScheduler + `JobRun` table + `/runs` page) shipped INERT under `SCHEDULER_ENABLED` env gate. Corpus: **6,958 items / 6,695 Haiku-enriched ok (262 skipped, 1 failed) / 1,044 region-tagged / 184+187+189 W19/W20/W21 clusters / 3 synthesized `weekly_reports` rows (W19/W20/W21)**. Pre-3c.35 history (W17/W18, pre-wipe) remains permanently lost from the 3c.34 corpus wipe. For phase-by-phase history and rationale, see `docs/SESSION_LOG.md`, `docs/DECISIONS.md`, and `CHANGELOG.md`.
 
 ## Read first
 - `docs/PRD.md` — what we're building and why

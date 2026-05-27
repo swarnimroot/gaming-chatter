@@ -79,6 +79,10 @@ def _migrate_weekly_reports_columns() -> None:
         if "synthesis_generated_at" not in cols:
             conn.execute(text("ALTER TABLE weekly_reports ADD COLUMN synthesis_generated_at TIMESTAMP"))
             log.info("migrated weekly_reports: added synthesis_generated_at column")
+        if "dashboard_payload_json" not in cols:
+            # Phase 3c.35 — precomputed `_build_week_payload(region='')` cache.
+            conn.execute(text("ALTER TABLE weekly_reports ADD COLUMN dashboard_payload_json TEXT"))
+            log.info("migrated weekly_reports: added dashboard_payload_json column")
 
 
 def _migrate_clusters_columns() -> None:

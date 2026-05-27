@@ -64,6 +64,18 @@ class EnrichmentData(BaseModel):
     event: Optional[str] = None
     region_focus: list[str] = Field(default_factory=list)
 
+    @field_validator("category", mode="before")
+    @classmethod
+    def _coerce_category(cls, v):
+        # Haiku drifts on YouTube content (emits preview/guide/gameplay/etc.).
+        # Coerce to the locked taxonomy instead of hard-failing the item.
+        if not isinstance(v, str):
+            return "news"
+        c = v.strip().lower()
+        if c in _ALLOWED_CATEGORIES:
+            return c
+        return "industry" if c == "interview" else "news"
+
     @field_validator("genres", mode="before")
     @classmethod
     def _filter_genres(cls, v):
@@ -258,8 +270,6 @@ def enrich_item(title: str, body: str, source_label: str) -> EnrichmentData:
     except ValidationError as e:
         raise ValueError(f"ollama JSON failed schema: {e}") from e
 
-    if data.category not in _ALLOWED_CATEGORIES:
-        raise ValueError(f"category '{data.category}' not in allowed set")
     if not -1.0 <= data.sentiment_score <= 1.0:
         raise ValueError(f"sentiment_score out of range: {data.sentiment_score}")
 

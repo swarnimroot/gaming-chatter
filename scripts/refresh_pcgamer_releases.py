@@ -76,30 +76,19 @@ def _existing_by_name(session: Session) -> dict[str, GameRelease]:
     return {r.game_name_lc: r for r in rows}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--url", type=str, default=DEFAULT_URL, help="PC Gamer article URL")
-    ap.add_argument("--limit", type=int, default=None, help="Cap parsed entries (smoke-test)")
-    ap.add_argument("--dry-run", action="store_true", help="Parse + report only, no DB writes")
-    args = ap.parse_args()
+def run(url: str = DEFAULT_URL, limit: int | None = None, dry_run: bool = False) -> dict:
+    """Importable orchestrator entry. Phase 4 jobs.py calls this.
 
+    Returns the totals dict; raises RuntimeError on fetch/parse failure.
+    """
     t0 = time.time()
-    log.info("=== refresh_pcgamer_releases start (dry_run=%s) ===", args.dry_run)
+    log.info("=== refresh_pcgamer_releases start (dry_run=%s) ===", dry_run)
 
-    try:
-        body = _fetch_body(args.url)
-    except Exception as e:  # noqa: BLE001
-        log.error("fetch failed: %s", e)
-        return 2
+    body = _fetch_body(url)
+    parsed = tag_pcgamer_releases(body)
 
-    try:
-        parsed = tag_pcgamer_releases(body)
-    except Exception as e:  # noqa: BLE001
-        log.error("Haiku parse failed: %s", e)
-        return 3
-
-    if args.limit:
-        parsed = parsed[: args.limit]
+    if limit:
+        parsed = parsed[:limit]
     log.info("Haiku returned %d parsed entries", len(parsed))
 
     # Filter to valid format (defense in depth — Haiku should already comply).
@@ -125,7 +114,7 @@ def main() -> int:
         "games_synced": 0,
     }
 
-    if args.dry_run:
+    if dry_run:
         log.info("--dry-run set; would-write preview:")
         with Session(engine) as session:
             existing = _existing_by_name(session)
@@ -141,7 +130,7 @@ def main() -> int:
                 else:
                     totals["unchanged"] += 1
         _print_summary(totals, time.time() - t0)
-        return 0
+        return totals
 
     # Real write path.
     now = datetime.utcnow()
@@ -183,6 +172,24 @@ def main() -> int:
         session.commit()
 
     _print_summary(totals, time.time() - t0)
+    return totals
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--url", type=str, default=DEFAULT_URL, help="PC Gamer article URL")
+    ap.add_argument("--limit", type=int, default=None, help="Cap parsed entries (smoke-test)")
+    ap.add_argument("--dry-run", action="store_true", help="Parse + report only, no DB writes")
+    args = ap.parse_args()
+
+    try:
+        run(url=args.url, limit=args.limit, dry_run=args.dry_run)
+    except RuntimeError as e:
+        log.error("fetch failed: %s", e)
+        return 2
+    except Exception as e:  # noqa: BLE001
+        log.error("Haiku parse failed: %s", e)
+        return 3
     return 0
 
 

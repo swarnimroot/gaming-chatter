@@ -115,35 +115,25 @@ def _existing_by_name(session: Session) -> dict[str, GameRelease]:
     return {r.game_name_lc: r for r in rows}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--url", type=str, default=DEFAULT_URL, help="IGN page URL")
-    ap.add_argument("--limit", type=int, default=None, help="Cap parsed entries (smoke-test)")
-    ap.add_argument("--dry-run", action="store_true", help="Parse + report only, no DB writes")
-    ap.add_argument("--keep-tba", action="store_true", help="Skip the TBA-line preprocessor")
-    args = ap.parse_args()
+def run(url: str = DEFAULT_URL, limit: int | None = None, dry_run: bool = False,
+        keep_tba: bool = False) -> dict:
+    """Importable orchestrator entry. Phase 4 jobs.py calls this.
 
+    Returns the totals dict; raises RuntimeError on fetch/parse failure.
+    """
     t0 = time.time()
-    log.info("=== refresh_ign_releases start (dry_run=%s) ===", args.dry_run)
+    log.info("=== refresh_ign_releases start (dry_run=%s) ===", dry_run)
 
-    try:
-        body = _fetch_body(args.url)
-    except Exception as e:  # noqa: BLE001
-        log.error("fetch failed: %s", e)
-        return 2
+    body = _fetch_body(url)
 
-    if not args.keep_tba:
+    if not keep_tba:
         body, dropped = _strip_tba_year_lines(body)
         log.info("stripped %d TBA/<year> entries; body now %d chars", dropped, len(body))
 
-    try:
-        parsed = tag_ign_releases(body)
-    except Exception as e:  # noqa: BLE001
-        log.error("Haiku parse failed: %s", e)
-        return 3
+    parsed = tag_ign_releases(body)
 
-    if args.limit:
-        parsed = parsed[: args.limit]
+    if limit:
+        parsed = parsed[:limit]
     log.info("Haiku returned %d parsed entries", len(parsed))
 
     # Filter to valid format (defense in depth — Haiku should already comply).
@@ -169,7 +159,7 @@ def main() -> int:
         "games_synced": 0,
     }
 
-    if args.dry_run:
+    if dry_run:
         log.info("--dry-run set; would-write preview:")
         with Session(engine) as session:
             existing = _existing_by_name(session)
@@ -185,7 +175,7 @@ def main() -> int:
                 else:
                     totals["unchanged"] += 1
         _print_summary(totals, time.time() - t0)
-        return 0
+        return totals
 
     # Real write path.
     now = datetime.utcnow()
@@ -226,6 +216,25 @@ def main() -> int:
         session.commit()
 
     _print_summary(totals, time.time() - t0)
+    return totals
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--url", type=str, default=DEFAULT_URL, help="IGN page URL")
+    ap.add_argument("--limit", type=int, default=None, help="Cap parsed entries (smoke-test)")
+    ap.add_argument("--dry-run", action="store_true", help="Parse + report only, no DB writes")
+    ap.add_argument("--keep-tba", action="store_true", help="Skip the TBA-line preprocessor")
+    args = ap.parse_args()
+
+    try:
+        run(url=args.url, limit=args.limit, dry_run=args.dry_run, keep_tba=args.keep_tba)
+    except RuntimeError as e:
+        log.error("fetch failed: %s", e)
+        return 2
+    except Exception as e:  # noqa: BLE001
+        log.error("Haiku parse failed: %s", e)
+        return 3
     return 0
 
 

@@ -29,38 +29,32 @@ from fastapi.responses import Response
 
 from app.config import TEMPLATES_DIR
 from app.db.session import engine
+from app.services import dashboard as dashboard_svc
 from app.services import exec_summary as exec_summary_svc
 from app.services import export as export_svc
 from app.services import reports as report_q
 from app.services.chrome import failing_sources_count, nav_items_for
+# Phase 3c.35 — the payload builder + its helpers were extracted to
+# `app/services/dashboard.py` so the synthesis hook can compute them without a
+# router -> service backward import. Re-export under the historical names so
+# tests / other modules that imported them from here keep working.
+from app.services.dashboard import (  # noqa: F401
+    REGION_ALLOWED as _REGION_ALLOWED,
+    _apply_synthesis,
+    _build_week_payload,
+    _empty_cards,
+    _filter_cards_by_region,
+    _load_synthesis,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 log = logging.getLogger(__name__)
 
-# Phase 3c.16 — region filter (mirrors clusters.py / dashboard.py constants).
-_REGION_ALLOWED = {"americas", "europe", "asia"}
-
 
 # ---------- Static chrome (sidebar nav) -------------------------------------
 # Phase 3c.7: nav moved into `app/services/chrome.py` so Dashboard / Clusters /
 # Sources can share it. `nav_items_for("weekly")` keeps this route's is_active.
-
-
-# ---------- Empty-state card shape ------------------------------------------
-
-def _empty_cards() -> dict:
-    """Default per-week card shape — used both for the empty-corpus fallback
-    and as the base into which `_apply_synthesis` writes real data."""
-    return {
-        "biggest": [],
-        "market_momentum": [],
-        "community": {"narrative": None, "heated_about": [], "celebrating": []},
-        "risks": [],
-        "esports": [],
-        "drama": [],
-        "watch": [],
-    }
 
 
 # ---------- Per-request helpers --------------------------------------------
@@ -123,280 +117,6 @@ def _latest_workflow_dt(session: Session) -> datetime | None:
     return _parse_dt(row[0] if row else None)
 
 
-def _load_synthesis(session: Session, week_id: str) -> dict | None:
-    """Load the weekly_reports.synthesis_json row for the week, or None."""
-    try:
-        week_start, _ = report_q.iso_week_bounds(week_id)
-    except (ValueError, IndexError):
-        return None
-    row = session.exec(_sqltext(
-        "SELECT synthesis_json, synthesis_model, synthesis_generated_at "
-        "FROM weekly_reports WHERE week_start = :s"
-    ).bindparams(s=week_start)).first()
-    if not row or not row[0]:
-        return None
-    try:
-        payload = json.loads(row[0])
-    except (TypeError, ValueError):
-        return None
-    return {
-        "data": payload,
-        "model": row[1],
-        "generated_at": row[2],
-    }
-
-
-def _apply_synthesis(session: Session, cards: dict, synth: dict) -> None:
-    """Overlay synthesis JSON onto the per-week card dict in place.
-
-    Writes directly to first-class keys (no `*_synth` stash — that was the
-    3c.4 transition shape). Biggest rows get source pills derived from
-    cluster members so the template can render them without a second query.
-    """
-    data = synth["data"]
-
-    # Biggest stories — plural top-3, each with source pills + mention count
-    # derived from cluster members so the template doesn't need a second query.
-    if data.get("biggest"):
-        cluster_ids = [int(b["cluster_id"]) for b in data["biggest"]]
-        pills = report_q.source_pills_for_clusters(session, cluster_ids)
-        ids_csv = ",".join(str(cid) for cid in cluster_ids)
-        member_rows = session.exec(_sqltext(
-            f"SELECT id, member_item_ids FROM clusters WHERE id IN ({ids_csv})"
-        )).all()
-        counts: dict[int, int] = {}
-        for cid, mids_json in member_rows:
-            try:
-                counts[int(cid)] = len(json.loads(mids_json)) if mids_json else 0
-            except (TypeError, ValueError):
-                counts[int(cid)] = 0
-        cards["biggest"] = [
-            {
-                "cluster_id": b["cluster_id"],
-                "title": b["title"],
-                "dek": b["dek"],
-                "sources": pills.get(int(b["cluster_id"]), []),
-                "mention_count": counts.get(int(b["cluster_id"]), 0),
-            }
-            for b in data["biggest"]
-        ]
-
-    # Market momentum — row list (acquisitions / funds / platform-policy /
-    # structural / people-moves).
-    cards["market_momentum"] = [
-        {
-            "cluster_id": m["cluster_id"],
-            "title": m["title"],
-            "note": m["note"],
-            "category": m["category"],
-        }
-        for m in data.get("market_momentum", [])
-    ]
-
-    # Community sentiment — narrative + heated/celebrating clusters.
-    cs = data.get("community_sentiment")
-    if cs:
-        cards["community"] = {
-            "narrative": cs.get("narrative"),
-            "heated_about": [
-                {"cluster_id": c["cluster_id"], "title": c["title"], "note": c["note"]}
-                for c in cs.get("heated_about", [])
-            ],
-            "celebrating": [
-                {"cluster_id": c["cluster_id"], "title": c["title"], "note": c["note"]}
-                for c in cs.get("celebrating", [])
-            ],
-        }
-
-    # Risks — severity bar + title + level badge + note; trend chip dropped.
-    cards["risks"] = [
-        {
-            "cluster_id": r["cluster_id"],
-            "title": r["title"],
-            "level": r["severity"],
-            "note": r["note"],
-        }
-        for r in data.get("risks", [])
-    ]
-
-    # Esports — row list of cluster-anchored items.
-    cards["esports"] = [
-        {
-            "cluster_id": e["cluster_id"],
-            "title": e["title"],
-            "note": e["note"],
-        }
-        for e in data.get("esports", [])
-    ]
-
-    # Drama — narrow scope (exec/PR + studio feuds).
-    cards["drama"] = [
-        {
-            "cluster_id": d["cluster_id"],
-            "title": d["title"],
-            "severity": d["severity"],
-            "recap": d["recap"],
-        }
-        for d in data.get("drama", [])
-    ]
-
-    # Watch next week.
-    cards["watch"] = [
-        {
-            "day": w["day"],
-            "item": w["item"],
-            "cluster_id": w.get("cluster_id"),
-            "category": w.get("category"),
-        }
-        for w in data.get("watch", [])
-    ]
-
-    # Hottest games — overlay synthesis 1-line reasons by game-name match.
-    if data.get("hottest_reasons"):
-        reason_by_name = {r["game_name"].lower(): r["reason"] for r in data["hottest_reasons"]}
-        for bucket in ("all", "current", "upcoming"):
-            for game in cards["hottest"][bucket]:
-                game["reason"] = reason_by_name.get(game["name"].lower())
-
-    # Releases — overlay synthesis 1-line notes by game-name match.
-    if data.get("release_notes"):
-        note_by_name = {r["game_name"].lower(): r["note"] for r in data["release_notes"]}
-        for r in cards["releases"]:
-            r["note"] = note_by_name.get(r["name"].lower())
-
-    cards["synthesis_meta"] = {
-        "model": synth["model"],
-        "generated_at": synth["generated_at"],
-    }
-
-
-def _filter_cards_by_region(session: Session, cards: dict, region: str) -> None:
-    """Drop entries from every cluster-keyed card list whose cluster doesn't
-    carry the requested region tag. Phase 3c.16.
-
-    Collects every cluster_id referenced by synthesis_json in one pass, calls
-    `cluster_regions()` once, then walks each card list in place. Cards
-    without cluster_id linkage (hottest / releases / trends) are untouched —
-    the template signals 'Not region-tagged' via the `region_active` flag.
-
-    Special-cased entries:
-      - community.narrative: whole-corpus prose; cleared on regional tabs.
-      - watch[] without `cluster_id`: corpus-wide editorial; dropped.
-    """
-    from app.services.sections import cluster_regions
-
-    cluster_ids: set[int] = set()
-    for b in cards.get("biggest", []) or []:
-        try:
-            cluster_ids.add(int(b["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for m in cards.get("market_momentum", []) or []:
-        try:
-            cluster_ids.add(int(m["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for r in cards.get("risks", []) or []:
-        try:
-            cluster_ids.add(int(r["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for d in cards.get("drama", []) or []:
-        try:
-            cluster_ids.add(int(d["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for e in cards.get("esports", []) or []:
-        try:
-            cluster_ids.add(int(e["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    co = cards.get("community") or {}
-    for c in co.get("heated_about", []) or []:
-        try:
-            cluster_ids.add(int(c["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for c in co.get("celebrating", []) or []:
-        try:
-            cluster_ids.add(int(c["cluster_id"]))
-        except (KeyError, TypeError, ValueError):
-            pass
-    for w in cards.get("watch", []) or []:
-        if w.get("cluster_id") is not None:
-            try:
-                cluster_ids.add(int(w["cluster_id"]))
-            except (TypeError, ValueError):
-                pass
-
-    region_map = cluster_regions(session, list(cluster_ids)) if cluster_ids else {}
-
-    def keep(cid) -> bool:
-        try:
-            return region in region_map.get(int(cid), set())
-        except (TypeError, ValueError):
-            return False
-
-    cards["biggest"] = [b for b in cards.get("biggest", []) if keep(b.get("cluster_id"))]
-    cards["market_momentum"] = [m for m in cards.get("market_momentum", []) if keep(m.get("cluster_id"))]
-    cards["risks"] = [r for r in cards.get("risks", []) if keep(r.get("cluster_id"))]
-    cards["drama"] = [d for d in cards.get("drama", []) if keep(d.get("cluster_id"))]
-    cards["esports"] = [e for e in cards.get("esports", []) if keep(e.get("cluster_id"))]
-
-    cards["community"] = {
-        "narrative": None,  # whole-corpus prose — drop on regional tabs
-        "heated_about": [c for c in co.get("heated_about", []) if keep(c.get("cluster_id"))],
-        "celebrating": [c for c in co.get("celebrating", []) if keep(c.get("cluster_id"))],
-    }
-
-    # watch[] — drop entries without cluster_id (corpus-wide narrative),
-    # filter the rest by region.
-    cards["watch"] = [
-        w for w in cards.get("watch", [])
-        if w.get("cluster_id") is not None and keep(w.get("cluster_id"))
-    ]
-
-
-def _build_week_payload(session: Session, week_id: str, region: str = "") -> dict:
-    """Assemble the full per-week card payload.
-
-    Phase 3c.16: when `region` is one of {'americas','europe','asia'}, every
-    cluster-keyed card list is filtered against `cluster_regions(...)` for the
-    cluster_ids referenced by synthesis_json. Non-cluster cards (Hottest /
-    Releases / Trends) are passed through unchanged — the template shows a
-    'Not region-tagged' chip in their headers when `region_active` is true.
-    """
-    label, rng = report_q.week_label_and_range(week_id)
-    stats = report_q.week_stats(session, week_id)
-    hottest_all = report_q.top_games_for_week(session, week_id, limit=5)
-    hottest_current = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="existing")
-    hottest_upcoming = report_q.top_games_for_week(session, week_id, limit=5, lifecycle="upcoming")
-    releases = report_q.upcoming_releases(session, week_id, limit=10)
-    trends = report_q.trends_for_week(session, week_id, limit=5)
-
-    cards = _empty_cards()
-    cards["hottest"] = {
-        "all": hottest_all,
-        "current": hottest_current,
-        "upcoming": hottest_upcoming,
-    }
-    cards["releases"] = releases
-    cards["trends"] = trends
-
-    synth = _load_synthesis(session, week_id)
-    if synth is not None:
-        _apply_synthesis(session, cards, synth)
-        if region in _REGION_ALLOWED:
-            _filter_cards_by_region(session, cards, region)
-
-    return {
-        "label": label,
-        "range": rng,
-        "stats": {"stories": stats["stories"], "sources": stats["sources"]},
-        "cards": cards,
-    }
-
-
 # ---------- Route -----------------------------------------------------------
 
 @router.get("/")
@@ -438,7 +158,18 @@ def reports_view(request: Request, week: str = "", region: str = ""):
             label, rng = report_q.week_label_and_range(k)
             weeks_index.append({"key": k, "label": label, "range": rng, "is_active": k == active_key})
 
-        week_data = _build_week_payload(session, active_key, region=region_norm)
+        # Phase 3c.35 — try the precomputed payload cache first. Synthesized
+        # weeks are static, so we serialize the region='' payload at synthesis
+        # time and apply the cheap (~6 ms) region filter in-memory on read.
+        # Falls through to the live builder on cache miss (current week, or
+        # any pre-feature synthesized week before the rebuild script ran).
+        cached_payload = dashboard_svc.load_cached_payload(session, active_key)
+        if cached_payload is not None:
+            week_data = cached_payload
+            if region_norm in _REGION_ALLOWED:
+                _filter_cards_by_region(session, week_data["cards"], region_norm)
+        else:
+            week_data = _build_week_payload(session, active_key, region=region_norm)
         sources_meta = _build_sources_meta(session)
 
         last_pull_dt = _latest_ingest_dt(session)

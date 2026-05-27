@@ -316,11 +316,39 @@ Investigation session triggered by an empty W21 dashboard. The empty dashboard w
 - [x] **Step 3 — full pipeline + synthesis cite-check.** Re-cluster W21 (151 clusters, 11 carry YT members); re-synth W21 → 9 referenced clusters, 2 with YT members. GREEN. — **Done 2026-05-21.**
 - [x] **Step 4 — corpus wipe + rebuild.** Wiped 7,446 rows across 8 tables; kept `sources`/`games`/`game_releases`; reset per-source counters. Full rebuild ~3h19m. Fresh corpus: 1,023 items / 866 ok / 152 skipped / 5 failed / 50 W21 clusters / 1 W21 synthesis. Final verify: 10 referenced clusters, 4 with YT members (7 YT items reach Opus). GREEN. W17–W20 history permanently lost (accepted). — **Done 2026-05-21.**
 
-### Phase 3c.34 follow-ups (open)
+### Phase 3c.34 follow-ups (resolved 2026-05-27 in Phase 3c.35)
 
-- [ ] **`category` enum too narrow.** Haiku emits `preview` / `guide` / `gameplay` / `interview` for YT content types → those items hard-fail (`ValueError: category '<X>' not in allowed set`); 5 failures in the rebuild. Fix: widen `_ALLOWED_CATEGORIES` in `app/services/ollama.py` or add a coercion validator (like the Phase 3c.22 `WatchItem.category` normalizer).
-- [ ] **No length cap on whisper audio transcription.** A 2h04m video took ~11 min of whisper-CPU; long-form YongYea/Game Informer videos dominated the ~3hr rebuild. Skip-or-flag videos over N minutes. (Pre-existing OPEN_QUESTIONS item from Phase 3c.15, now confirmed material.)
-- [ ] **Phase 3c.35 backfill — scoped to W19–W21 (3 weeks)** per user. W19 currently has only ~53 items; making it usable needs yt-dlp YT backfill (Path A) + per-site sitemap RSS recovery (Path B). Reddit's 25-item feed cap is a hard accepted gap. See OPEN_QUESTIONS.md.
+- [x] **`category` enum too narrow.** Resolved 2026-05-27 — added `EnrichmentData._coerce_category` pre-validator in `app/services/ollama.py` mapping `preview`/`guide`/`gameplay` → `news` and `interview` → `industry`. Removed dead post-parse `_ALLOWED_CATEGORIES` checks in `ollama.py` + `anthropic.py`. 5 previously-failed items (IDs 15, 626, 630, 921, 979) re-enriched and flipped to `status='ok'`. See DECISIONS 2026-05-27 "Coerce out-of-taxonomy `category` values".
+- [x] **No length cap on whisper audio transcription.** Resolved 2026-05-27 — **user explicitly rejected the gate** ("don't want to put any whisper duration gate, that would mean less data ingestion and possibility of missing some data"). Pre-screen remains the only filter in front of whisper. See DECISIONS 2026-05-27 "No whisper-duration cap on YT audio transcription".
+- [x] **Phase 3c.35 backfill — scoped to W19–W21 (3 weeks).** Resolved 2026-05-27 — shipped via parallel `scripts/backfill_youtube.py` (Path A, ~430 LOC, 220 new YT items across both windows) + `scripts/backfill_news.py` (Path B, ~1,063 LOC, ~4,550 items combined). Final corpus 6,958 items / 6,695 ok / 1 failed. Reddit 25-item RSS cap remains an accepted gap. See DECISIONS 2026-05-27 "Path A + Path B shipped in parallel".
+
+### Phase 3c.35 (shipped 2026-05-27) — W19–W21 backfill + dashboard precompute + Phase 4 inert scaffolding
+
+Long cross-midnight session. Three threads landed together: W19–W21 backfill (corpus 1,023 → 6,958), two performance fixes (query-plan hints + cached dashboard payloads), and Phase 4 automation infrastructure shipped INERT (env-gated). Total spend ~$8–10. Final corpus: **6,958 items / 6,695 ok / 262 skipped / 1 failed / 1,044 region-tagged / 184+187+189 W19/W20/W21 clusters / 3 synthesized weekly_reports rows**. See CHANGELOG 2026-05-27 + SESSION_LOG 2026-05-26/27 + DECISIONS 2026-05-27 (6 entries).
+
+- [x] **Category coercion validator.** `EnrichmentData._coerce_category` in `app/services/ollama.py` maps YT-flavor categories (`preview`/`guide`/`gameplay` → `news`, `interview` → `industry`); dead `_ALLOWED_CATEGORIES` post-parse checks removed in `ollama.py` + `anthropic.py`. — **Done 2026-05-27.**
+- [x] **5 failed YT items re-enriched** (IDs 15, 626, 630, 921, 979) — all `status='ok'` post-fix. — **Done 2026-05-27.**
+- [x] **Path A — `scripts/backfill_youtube.py`** (~430 LOC, yt-dlp channel enumeration → existing transcript+enrich pipeline). 6 YT channels × 2 windows. 86 (W19/W20) + 134 (W21) = 220 new YT items. — **Done 2026-05-27.**
+- [x] **Path B — `scripts/backfill_news.py`** (~1,063 LOC, 8 sitemap-recipe strategies: `ign_year` / `gamespot_numbered` / `monthly_archive` / `monthly_parts` / `yearly_archive` / etc.). 15 news sites × 2 windows. 1,851 (W21) + ~2,700 (W19/W20) items; +854 Game Rant after mid-run network switch. — **Done 2026-05-27.**
+- [x] **Re-cluster W19 + W20.** 184 / 187 clusters; Sonnet labels; 0 failures. — **Done 2026-05-27.**
+- [x] **Synthesize W19 + W20** via Opus 4.7 + critic. — **Done 2026-05-27.**
+- [x] **Re-synthesize W21** (now backed by ~4× more items than the post-wipe corpus). 189 clusters. — **Done 2026-05-27.**
+- [x] **`scripts/backfill_region.py` on full corpus.** 1,044 items now carry non-null `region_focus`. — **Done 2026-05-27.**
+- [x] **Template hygiene.** `app/templates/_report_grid.html` Biggest/Community/Watch cards now use `{% elif synth_ran %}` to differentiate "no data in this region" from "synthesis missing" — matches the existing pattern on the other 4 cards. — **Done 2026-05-27.**
+- [x] **`scripts/run_cluster.py::_run_single` bug fix.** Was calling `cluster_window(week_id=...)` without start/end → silently clustered ENTIRE corpus under the passed week_id. Patched to derive bounds via `iso_week_bounds(week_id)`. — **Done 2026-05-27.**
+- [x] **`scripts/run_synthesis.py` cp1252 stdout crash fix.** Added `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at script entry. Same pattern as `rerun_enrichment.py` got in Phase 3c.14. — **Done 2026-05-27.**
+- [x] **Perf regression fix in `app/services/reports.py`.** Added `INDEXED BY ix_items_published_at` hints to force items-first joins (planner was choosing games-first at 7× corpus scale). Added stable `(delta_pp, name)` tiebreaker in `_merge_wow` to deterministic-ize hash-seed-dependent set unions. `_build_week_payload`: 25–33s → 2.5–3.4s (~10×). HTML byte-identical W19/W21; W20 has one tied-pair swap now deterministic. — **Done 2026-05-27.**
+- [x] **Dashboard precompute.** New `app/services/dashboard.py` (extracted `_empty_cards` / `_load_synthesis` / `_apply_synthesis` / `_filter_cards_by_region` / `_build_week_payload` + new `load_cached_payload` / `save_cached_payload` / `compute_and_cache_payload`). `routers/reports.py` re-exports the underscore-prefixed names so `eval.py` keeps working. New column `weekly_reports.dashboard_payload_json TEXT` (additive ALTER + idempotent init_db migration). Synthesis hook calls `compute_and_cache_payload()` post-persist (non-fatal). Read path: cached payload (~6ms) → region filter → render. — **Done 2026-05-27.**
+- [x] **`scripts/rebuild_dashboard_payloads.py`** (idempotent; `--force` overwrite). Ran once → 16,853 / 18,924 / 19,630 bytes cached for W19/W20/W21. — **Done 2026-05-27.**
+- [x] **Result: /reports per-click 5–15s → 210–240ms (~20–25× speedup).** HTML byte-identical across all 12 page variants (3 weeks × 4 regions). — **Done 2026-05-27.**
+
+### Phase 3c.35 follow-ups (open)
+
+- [ ] **Style `/runs` page** — cosmetic; new `gc-run-*` classes are currently unstyled. (Task #9.)
+- [ ] **Path B silent-fail sources.** Polygon recovered on its W21 run; **Game Informer / GamesBeat / GamesIndustry / Game Developer** still appear to need recipe patches in `scripts/backfill_news.py`'s `SOURCE_RECIPES`. Estimated 200–400 items of leakage. (Task #10.)
+- [ ] **1 failed enrichment item (ID 2504)** — Kotaku "Player Pirates Subnautica 2 And Then Asks For Tech Support". Triage deferred.
+- [ ] **`run_cluster.py` regression test.** Single-week bug fixed; consider a regression test someday.
+- [ ] **Current-week (W22) /reports falls through to live compute.** Intentional, not blocking — no synthesis yet means no cached payload. Revisit only if the live path becomes visibly slow on the current week.
 
 ### Phase 3d — YT transcript-fetching *(resolved 2026-05-21 — already shipped in 3c.14)*
 
@@ -331,11 +359,14 @@ Phase 3c.34's verification found YT transcript-fetching has been live since Phas
 
 ## Phase 4 — Automation
 
-- [ ] APScheduler jobs: daily ingest, Monday synthesis
-- [ ] Catch-up logic on app startup for missed runs
-- [ ] Run log table writes + UI (`/runs`)
-- [ ] Source CRUD (add / edit / disable / remove) via web forms
-- [ ] Per-source health/error display
+**Phase 3c.35 (2026-05-27)** shipped the scheduler + orchestrator + `/runs` page INERT under `SCHEDULER_ENABLED` env gate. Activation is the user's call.
+
+- [x] **APScheduler jobs: daily ingest, Monday synthesis.** Shipped 2026-05-27 (inert). `app/main.py` lifespan creates a `BackgroundScheduler` only when `SCHEDULER_ENABLED=1`. `CronTrigger(hour=7, minute=0)` daily + `CronTrigger(day_of_week='mon', hour=7, minute=30)` weekly chained after daily. `max_instances=1`, `coalesce=True`. Single `threading.RLock` in `app/services/jobs.py` serializes all paths. See DECISIONS 2026-05-27 "Phase 4 automation locked to single-process APScheduler".
+- [x] **Catch-up logic on app startup.** Shipped 2026-05-27 (inert). Daily overdue if >24h since last `started_at` (or crashed mid-flight); weekly overdue if today is Mon/Tue/Wed AND >8 days since last weekly. Lock-miss persists `status='skipped'`.
+- [x] **Run log table writes + UI (`/runs`).** Shipped 2026-05-27. New `JobRun` SQLModel → `job_runs` table (orchestrator-level; distinct from existing per-step `run_log`). New `app/routers/runs.py` + `app/templates/runs.html` — job history + "Run now" panel + HTMX expand-row for `details_json`. **Not added to sidebar nav** (direct URL only — deliberate scope cut to avoid `chrome.py` edit). Page is currently unstyled (Task #9 follow-up).
+- [ ] **Activate scheduler.** Set `SCHEDULER_ENABLED=1` in `.env` + restart uvicorn. Inert today.
+- [ ] **Source CRUD (add / edit / disable / remove) via web forms.** Not started.
+- [ ] **Per-source health/error display.** Already partially covered by the Phase 3c.19 source-failure banner; full per-source health page deferred.
 
 ## Phase 5 — Polish
 

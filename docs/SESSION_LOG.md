@@ -4,6 +4,74 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-05-26 / 2026-05-27 (Phase 3c.35 + Phase 4-inert) — W19/W20/W21 backfill + dashboard precompute + Phase 4 scheduler scaffolding
+
+**What shipped.** Long session (wall-clock crossed midnight) spanning three threads: (1) Phase 3c.35 W19–W21 backfill via two new scripts (`scripts/backfill_youtube.py` + `scripts/backfill_news.py`), bringing the corpus from 1,023 → 6,958 items; (2) two performance fixes against the 7× larger corpus (SQL query plan hints + cached dashboard payloads); (3) Phase 4 automation infrastructure landed INERT (single env-gated APScheduler, `JobRun` table, orchestrator service, `/runs` page) — no actual scheduling until `SCHEDULER_ENABLED=1`. Total spend ~$8–10 (Haiku enrichment on ~5,900 new items + Sonnet cluster labels on 570 new clusters + 2 Opus W19/W20 syntheses + 1 Opus W21 re-synth + region backfill on 1,044 items). Whisper-CPU on long-form YT backfill was the wall-time bottleneck.
+
+**Final corpus state.** **6,958 items / 6,695 ok / 262 skipped / 1 failed** (ID 2504 — Kotaku "Player Pirates Subnautica 2 And Then Asks For Tech Support"; deferred). Per-ISO-week distribution: W19 (May 4–10) 53 → 2,055; W20 (May 11–17) 219 → 2,167; W21 (May 18–24) 618 → 2,603. Clusters: 184 / 187 / 189 across W19/W20/W21, Sonnet-labeled, 0 label failures. Synthesized `weekly_reports` rows: 3 (all three weeks, Opus 4.7 + critic). Region tags: 1,044 items carry a non-null `region_focus` after `scripts/backfill_region.py` against the full corpus.
+
+**Bucket 1 — Category coercion + 5 failed re-enrich.** `app/services/ollama.py::EnrichmentData._coerce_category` now maps Haiku's YT-flavored values (`preview`/`guide`/`gameplay` → `news`, `interview` → `industry`) instead of hard-failing. Removed the now-dead post-parse `_ALLOWED_CATEGORIES` checks in both `ollama.py` and `anthropic.py` (+ removed the now-unused import in `anthropic.py`). Re-ran the 5 previously-`failed` YT items (IDs 15, 626, 630, 921, 979) through enrich; all flipped to `status='ok'`. Resolves the recurring Phase 3c.0.5 / 3c.34 OPEN_QUESTION about the narrow category enum.
+
+**Bucket 2 — Phase 3c.35 backfill (Path A + Path B in parallel).**
+
+- **Path A — `scripts/backfill_youtube.py`** (~430 LOC). yt-dlp channel-video enumeration → existing transcript+enrich pipeline. 6 YT channels × 2 windows (W19/W20 + W21). 86 new items in the W19/W20 pass + 134 in the W21 pass = **220 new YT items** total. Bypasses the 15-item Atom-feed cap by walking the channel listing directly.
+- **Path B — `scripts/backfill_news.py`** (~1,063 LOC). Per-source sitemap recipes — 8 distinct strategies (`ign_year` / `gamespot_numbered` / `monthly_archive` / `monthly_parts` / `yearly_archive` / etc.). 15 news sites × 2 windows. **1,851 items (W21 window) + ~2,700 items (W19/W20 window)** captured. After a mid-run network switch, Game Rant resumed for an additional 854 items.
+
+**Bucket 3 — Template hygiene.** `app/templates/_report_grid.html` Biggest / Community / Watch cards now use `{% elif synth_ran %}` to differentiate "no data in this region" from "synthesis missing" — matches the existing pattern on the other 4 cards.
+
+**Bucket 4 — Phase 4 automation infrastructure (INERT).** Everything wired but the scheduler is gated by `SCHEDULER_ENABLED` (default off).
+
+- New SQLModel `JobRun` → `job_runs` table (id, job_name, started_at, finished_at, status, duration_seconds, message, details_json, triggered_by). Intentionally distinct from the existing `RunLog` / `run_log` (per-step) — `job_runs` is orchestrator-level.
+- New module `app/services/jobs.py` — orchestrators `run_daily_pipeline` / `run_weekly_extension` / `run_release_refresh` / `run_startup_catchup`, plus granular `run_ingest_only` / `run_enrich_only` / `run_cluster_only` / `run_synthesis_only`. Single `threading.RLock` serializes everything; lock-miss persists `status='skipped'`.
+- New router `app/routers/runs.py` + template `app/templates/runs.html` — `/runs` page with job history + "Run now" panel + HTMX expand-row for `details_json`. **Not added to sidebar nav** (deliberate scope cut to avoid the `chrome.py` edit); direct URL only.
+- `app/main.py` lifespan — env-gated `BackgroundScheduler` with `CronTrigger(hour=7, minute=0)` daily + `CronTrigger(day_of_week='mon', hour=7, minute=30)` weekly. `max_instances=1`, `coalesce=True`. Catch-up logic: daily overdue if >24h since last `started_at` (or crashed mid-flight); weekly overdue if today is Mon/Tue/Wed AND >8 days since the last weekly run.
+- Refactored 3 scripts (`scripts/backfill_region.py` / `scripts/refresh_pcgamer_releases.py` / `scripts/refresh_ign_releases.py`) — extracted each `main()` body into a `run(...)` callable so the orchestrators can invoke them in-process. CLI behavior unchanged.
+
+**Bucket 5 — Bug fixes uncovered along the way.**
+
+- **`scripts/run_cluster.py::_run_single` silent disaster** — was calling `cluster_window(week_id=...)` without start/end, which silently clustered the *entire* corpus under the passed `week_id`. Patched to derive bounds via `iso_week_bounds(week_id)`. Without this, the W19/W20 re-cluster would have hashed the whole 6,958-item corpus into 184 W19 clusters and similar for W20. Caught before damage.
+- **`scripts/run_synthesis.py` cp1252 stdout crash** — Windows console choked on non-Latin synthesis output. Added `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at script entry. Same fix pattern that `scripts/rerun_enrichment.py` got in Phase 3c.14.
+
+**Bucket 6 — Perf regression fix (`app/services/reports.py`).** At 7× corpus growth SQLite's planner started choosing games-first joins, scanning ~7,000 enrichments per game. Added `INDEXED BY ix_items_published_at` hints to force items-first. Also added a stable `(delta_pp, name)` tiebreaker inside `_merge_wow` to eliminate pre-existing hash-seed nondeterminism in `set() | set()` ordering. `_build_week_payload` end-to-end: 25–33s → 2.5–3.4s (~10× speedup). HTML byte-identical for W19/W21 across before/after; W20 has one tied-pair swap (Saros↔Star Fox 64 in `live_service.rising`) — now deterministic.
+
+**Bucket 7 — Dashboard precompute (the big per-click win).**
+
+- New `app/services/dashboard.py` — extracted `_empty_cards`, `_load_synthesis`, `_apply_synthesis`, `_filter_cards_by_region`, `_build_week_payload`, plus new cache helpers `load_cached_payload` / `save_cached_payload` / `compute_and_cache_payload`. `app/routers/reports.py` re-exports the underscore-prefixed names so `eval.py`'s imports keep working.
+- New column `weekly_reports.dashboard_payload_json TEXT` (additive ALTER). Field added to SQLModel; `init_db()` has an idempotent ALTER for fresh installs.
+- Synthesis hook in `app/services/synthesis.py::synthesize_week()` — after persisting synthesis, also computes + persists the default-region payload via `compute_and_cache_payload()`. Non-fatal error handling (logs, doesn't block synth).
+- Read path in the `/` route — if cached payload exists, load + apply region filter (~6ms) + render. Else live compute.
+- New script `scripts/rebuild_dashboard_payloads.py` (idempotent; `--force` to overwrite). Ran once against the 3 synthesized weeks → 16,853 / 18,924 / 19,630 bytes cached per week.
+
+**Result.** Per-click `/reports` timings on the synthesized weeks went from **5–15s → 210–240ms (~20–25× speedup)**. HTML byte-identical across all 12 page variants (3 weeks × 4 regions). Current-week (W22, ongoing) intentionally falls through to live compute — no cached payload until synthesis runs.
+
+**Bucket 8 — Region backfill.** Ran `scripts/backfill_region.py` against the full corpus → 1,044 items now carry a non-null `region_focus`.
+
+**User decisions captured (see DECISIONS 2026-05-27):**
+
+- **No ingestion caps.** Explicitly rejected the proposed whisper-duration gate (Phase 3c.34 OQ blocker #2). User quote: *"don't want to put any whisper duration gate, that would mean less data ingestion and possibility of missing some data."*
+- **Coercion over enum-widening** for category drift — extends the same Pydantic field-validator pattern already used by `WatchItem.category` in 3c.22.
+- **Path A + Path B sequenced in parallel** for the backfill — not sequential.
+- **Phase 4 automation locked to:** daily 07:00 local, weekly Monday 07:30 chained after daily, catch-up on startup, single-process APScheduler. Inert until env flag flipped.
+- **Precompute over caching/materialized tables** for dashboard perf — user's "durable" requirement (cached payload is a real column on `weekly_reports`, not an in-process LRU or a temp table).
+
+**State at end of session:**
+
+- /reports W19/W20/W21 all render in 210–240ms per click on the synthesized weeks.
+- All 3 weeks have correct synthesis, clusters, and regional tabs working.
+- Phase 4 scheduler remains INERT — flip `SCHEDULER_ENABLED=1` in `.env` + restart uvicorn to activate.
+- 1 enrichment failure (item ID 2504) left unfixed; deferred.
+
+**Open / pending:**
+
+- **Task #9** — style `/runs` page (cosmetic; new `gc-run-*` classes are currently unstyled).
+- **Task #10** — Path B silent-fail sources. Polygon recovered after its W21 run; **Game Informer / GamesBeat / GamesIndustry / Game Developer** still appear to need recipe patches in `scripts/backfill_news.py`'s `SOURCE_RECIPES`. Estimated 200–400 items of leakage.
+- **Item ID 2504** — single failed enrichment, triage deferred.
+- **`run_cluster.py` regression test** — bug fixed; consider a regression test someday.
+- **Current week (W22) /reports** — falls through to live compute. Intentional, not blocking; revisit if the live path becomes visibly slow on the current week.
+- **Phase 4 activation** — user's call.
+
+---
+
 ## 2026-05-21 (Phase 3c.34) — Staged YT verification + Haiku pre-screen + corpus wipe/rebuild
 
 **What shipped.** The 4-step staged plan from Phase 3c.33 was executed end-to-end. Along the way Step 2 was rescoped, a new Haiku pre-screen gate was built, and the corpus was wiped + rebuilt from scratch. Total spend ~$5–6 (full-corpus Haiku re-enrich ~$3.40 + Sonnet cluster labels ~$0.28 + Opus W21 synthesis ~$1.60 + probe/pre-screen Haiku calls). Whisper-CPU transcription — the ~3hr rebuild bottleneck — is local and free.

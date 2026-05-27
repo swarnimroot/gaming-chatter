@@ -75,33 +75,23 @@ def _summarize_distribution() -> dict[str, int]:
     return counts
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--limit", type=int, default=None, help="Max enrichments to process")
-    ap.add_argument(
-        "--ids",
-        type=str,
-        default=None,
-        help="Comma-separated item_ids to target directly",
-    )
-    args = ap.parse_args()
+def run(limit: int | None = None, ids: list[int] | None = None) -> dict:
+    """Importable orchestrator entry. Phase 4 jobs.py calls this.
 
-    targeted_ids: list[int] | None = None
-    if args.ids:
-        targeted_ids = [int(x.strip()) for x in args.ids.split(",") if x.strip()]
-        log.info("targeted-id mode: %d ids", len(targeted_ids))
-
+    Mirrors the legacy CLI body — only the argparse + return-code shell
+    moved out into `main()`. Returns the totals dict for callers that
+    want to record per-step counts in JobRun.details_json.
+    """
     t0 = time.time()
-    log.info("=== backfill_region start (limit=%s) ===", args.limit)
+    log.info("=== backfill_region start (limit=%s) ===", limit)
 
-    pending = _pending_rows(args.limit, targeted_ids)
+    pending = _pending_rows(limit, ids)
     log.info("pending region-backfill rows: %d", len(pending))
     if not pending:
         log.info("nothing to do.")
-        _print_distribution()
-        return 0
+        return {"attempted": 0, "ok": 0, "failed": 0, "tagged": 0, "untagged": 0, "pending": 0}
 
-    totals = {"attempted": 0, "ok": 0, "failed": 0, "tagged": 0, "untagged": 0}
+    totals = {"attempted": 0, "ok": 0, "failed": 0, "tagged": 0, "untagged": 0, "pending": len(pending)}
 
     try:
         from tqdm import tqdm
@@ -141,7 +131,26 @@ def main() -> int:
     elapsed = time.time() - t0
     log.info("totals: %s", totals)
     log.info("=== backfill_region done; elapsed %.1fs ===", elapsed)
+    return totals
 
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--limit", type=int, default=None, help="Max enrichments to process")
+    ap.add_argument(
+        "--ids",
+        type=str,
+        default=None,
+        help="Comma-separated item_ids to target directly",
+    )
+    args = ap.parse_args()
+
+    targeted_ids: list[int] | None = None
+    if args.ids:
+        targeted_ids = [int(x.strip()) for x in args.ids.split(",") if x.strip()]
+        log.info("targeted-id mode: %d ids", len(targeted_ids))
+
+    run(limit=args.limit, ids=targeted_ids)
     _print_distribution()
     return 0
 
