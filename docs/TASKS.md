@@ -348,7 +348,10 @@ Long cross-midnight session. Three threads landed together: W19–W21 backfill (
 - [ ] **Path B silent-fail sources.** Polygon recovered on its W21 run; **Game Informer / GamesBeat / GamesIndustry / Game Developer** still appear to need recipe patches in `scripts/backfill_news.py`'s `SOURCE_RECIPES`. Estimated 200–400 items of leakage. (Task #10.)
 - [ ] **1 failed enrichment item (ID 2504)** — Kotaku "Player Pirates Subnautica 2 And Then Asks For Tech Support". Triage deferred.
 - [ ] **`run_cluster.py` regression test.** Single-week bug fixed; consider a regression test someday.
-- [ ] **Current-week (W22) /reports falls through to live compute.** Intentional, not blocking — no synthesis yet means no cached payload. Revisit only if the live path becomes visibly slow on the current week.
+- [ ] **Current-week /reports falls through to live compute.** Intentional, not blocking — no synthesis yet means no cached payload. Revisit only if the live path becomes visibly slow on the current week.
+- [x] **W22 + W23 backfilled + synthesized.** — **Done 2026-06-09 (W23).** W22 (166 clusters) + W23 (week of Jun 1; full-pipeline run + Jun 3–6 backfill → 2,680 items / 208 clusters / Opus 4.7 + critic re-synth) bring the synthesized archive to 5 weeks (W19–W23). Corpus 6,958 → 12,273. Reddit Jun 3–6 permanently lost (RSS rolloff); YouTube Jun 3–6 partially recovered (yt-dlp bot-detection). See SESSION_LOG / DECISIONS / CHANGELOG 2026-06-09.
+- [x] **Read-out (`/`) week picker flipped `available_weeks()` → `weekly_reports`.** — **Done 2026-06-09.** New `readout_weeks()` in `app/services/reports.py` (wired into `app/routers/reports.py`) lists synthesized weeks only; the in-progress current week (W24) is hidden until its weekly synthesis runs. `/stories` + `/eval` still use `available_weeks()` (clusters). Executes the long-deferred picker-flip TODO from the 3c.5 / 3c.8 notes. See DECISIONS 2026-06-09.
+- [x] **Mojibake repair in `app/templates/_report_grid.html`.** — **Done 2026-06-09.** Corrupted bytes for `→ — · ●` + a stray BOM repaired at byte level; DB + other templates were clean. See DECISIONS 2026-06-09.
 
 ### Phase 3d — YT transcript-fetching *(resolved 2026-05-21 — already shipped in 3c.14)*
 

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed / Fixed — W23 backfill + read-out picker + mojibake (2026-06-09)
+
+- **Home read-out hides incomplete weeks.** New `readout_weeks()` in `app/services/reports.py` sources the `/` week picker from **synthesized `weekly_reports`** instead of `available_weeks()` (clusters), wired into `app/routers/reports.py`. The in-progress current week (which has clusters from daily ingest but no weekly synthesis yet) no longer appears as a near-empty default brief. Executes the deferred "flip picker `available_weeks` → `weekly_reports`" TODO from the 3c.5/3c.8 notes. `/stories` + `/eval` keep `available_weeks()`. See DECISIONS 2026-06-09.
+- **Fixed mojibake in `app/templates/_report_grid.html`.** The file had double/mixed-encoded bytes — `→`, `—`, `·`, `●` all corrupted (rendered as `â†'` etc.) plus a stray BOM. Repaired at byte level (per-run cp1252 reverse + explicit byte swap for a mixed-codec `●` using the undefined cp1252 slot `0x8F`). File is now clean UTF-8; DB and other templates were unaffected. See DECISIONS 2026-06-09.
+- **W23 (week of Jun 1) full-pipeline run + Jun 3–6 backfill.** Recovered the mid-week RSS-rolloff gap: ran the daily + weekly orchestrators, then `backfill_news.py` + `backfill_youtube.py` for `2026-06-03..2026-06-06`, then re-clustered + re-synthesized W23. Final **W23: 2,680 items / 208 clusters / re-synthesized (Opus 4.7 + critic)**. YouTube partially recovered (yt-dlp bot-detection on some videos); **Reddit Jun 3–6 unrecoverable** (rolled off, no archive path).
+
 ### Added — Phase 3c.35: W19–W21 backfill + dashboard precompute + Phase 4 inert scaffolding (2026-05-27)
 
 Long cross-midnight session covering three threads: (1) Phase 3c.35 W19–W21 backfill, bringing the corpus from 1,023 → 6,958 items via two new backfill scripts; (2) two performance fixes against the resulting 7× corpus — SQL query-plan hints + cached dashboard payloads, collapsing per-click `/reports` timings from 5–15s to 210–240ms (~20–25× speedup); (3) Phase 4 automation infrastructure landed INERT under `SCHEDULER_ENABLED` env gate (single APScheduler, `JobRun` table, orchestrator service, `/runs` page). Total spend ~$8–10 (full corpus enrichment delta + Sonnet cluster labels on 570 new clusters + 2 Opus W19/W20 syntheses + 1 Opus W21 re-synth + region backfill on 1,044 items). Whisper-CPU on long-form YT backfill was the wall-time bottleneck. Final corpus: **6,958 items / 6,695 ok / 262 skipped / 1 failed / 1,044 region-tagged / 184+187+189 W19/W20/W21 clusters / 3 synthesized weekly_reports rows**.

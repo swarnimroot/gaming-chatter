@@ -4,6 +4,24 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-09 — W23 (week of Jun 1) full-pipeline run + Jun 3–6 backfill + read-out picker fix + mojibake repair
+
+**Context.** Ingest had silently lapsed after ~mid-day Jun 2 (no scheduler running). Goal: produce a complete week-of-June-1 (ISO **2026-W23**) brief, running every pipeline stage from scratch.
+
+**What was done.**
+- **Full pipeline for W23**, run as the two `app/services/jobs.py` orchestrators in sequence (manual one-shot, `triggered_by='manual_w23'`): `run_daily_pipeline` (ingest 717 new → Haiku enrich 586 → embed → article-fetch 194 → enrich pass 2 → region backfill → cluster W24) then `run_weekly_extension` (cluster W23 → Opus synth+critic W23 → PC Gamer/IGN release refresh). Both `status=ok`. Note: the region step did a **one-time ~9k-item whole-corpus `region_focus` catch-up** (most of the older backfilled corpus was never region-tagged) — not a recurring per-run cost.
+- **Jun 3–6 news/YT backfill** (the mid-week RSS-rolloff gap). Standard Jun-8 ingest only recovered the rolling feed window (Jun 3–6 news was 24–61/day). Ran `backfill_news.py` + `backfill_youtube.py` for `2026-06-03..2026-06-06`, then re-clustered + re-synthesized W23. **Final W23: 2,680 items / 208 clusters**, news filled to ~280–450/day. YouTube only partially recovered (yt-dlp bot-detection "Sign in to confirm you're not a bot" on some videos). **Reddit Jun 3–6 is permanently lost** — no sitemap/archive path; rolled off the RSS window. Backfill was paused/resumed once mid-run (idempotent URL dedup → no double-spend).
+- **Read-out picker now hides incomplete weeks.** New `readout_weeks()` (synthesized-only) replaces `available_weeks()` in `app/routers/reports.py`; W24 (in-progress) no longer shows as an empty default brief. This finally executes the deferred "flip picker `available_weeks` → `weekly_reports`" TODO from the 3c.5/3c.8 notes below. See DECISIONS 2026-06-09.
+- **Mojibake fix.** `app/templates/_report_grid.html` had double/mixed-encoded bytes (`→ — · ●` all corrupted + a stray BOM). Repaired at byte level; file now clean UTF-8. DB + other templates were unaffected. See DECISIONS 2026-06-09.
+
+**Verified.** Both fixes live on `:8001` (the gaming-chatter dev server; `:8000` is an unrelated portfolio app): read-out defaults to W23, W24 absent, 0 mojibake bytes in the rendered page.
+
+**Where we left off / next.**
+- **Corpus is current only to ~Jun 8 21:46 UTC** (last ingest). Jun 9 has no data. Pending: a fresh **daily ingest** to capture late-Jun 8 + Jun 9 (W24).
+- **Scheduler still inert.** The project's "complete" milestone = activate Phase 4 (`SCHEDULER_ENABLED=1` + uvicorn restart, verify on `/runs`). This is the real fix for the ingest-lapse that caused this whole session.
+
+---
+
 ## 2026-05-26 / 2026-05-27 (Phase 3c.35 + Phase 4-inert) — W19/W20/W21 backfill + dashboard precompute + Phase 4 scheduler scaffolding
 
 **What shipped.** Long session (wall-clock crossed midnight) spanning three threads: (1) Phase 3c.35 W19–W21 backfill via two new scripts (`scripts/backfill_youtube.py` + `scripts/backfill_news.py`), bringing the corpus from 1,023 → 6,958 items; (2) two performance fixes against the 7× larger corpus (SQL query plan hints + cached dashboard payloads); (3) Phase 4 automation infrastructure landed INERT (single env-gated APScheduler, `JobRun` table, orchestrator service, `/runs` page) — no actual scheduling until `SCHEDULER_ENABLED=1`. Total spend ~$8–10 (Haiku enrichment on ~5,900 new items + Sonnet cluster labels on 570 new clusters + 2 Opus W19/W20 syntheses + 1 Opus W21 re-synth + region backfill on 1,044 items). Whisper-CPU on long-form YT backfill was the wall-time bottleneck.

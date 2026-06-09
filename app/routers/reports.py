@@ -124,7 +124,9 @@ def reports_view(request: Request, week: str = "", region: str = ""):
     region_norm = region if region in _REGION_ALLOWED else ""
     region_active = bool(region_norm)
     with Session(engine) as session:
-        week_ids = report_q.available_weeks(session)
+        # Read-out picker shows only synthesized (complete) weeks — the
+        # in-progress current week stays hidden until its weekly synthesis runs.
+        week_ids = report_q.readout_weeks(session)
 
         # Empty-corpus fallback — renders the chrome with one blank week.
         if not week_ids:

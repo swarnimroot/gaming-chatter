@@ -97,7 +97,7 @@ HTMX + Jinja, server-rendered. No JS build step.
 
 | Route | Purpose |
 |---|---|
-| `/` | Weekly read-out (Monday exec summary; 9-card layout; ISO-week selector). Phase 3c.7 swapped from `/reports`. |
+| `/` | Weekly read-out (Monday exec summary; 9-card layout; ISO-week selector). Phase 3c.7 swapped from `/reports`. Week picker lists **synthesized weeks only** via `readout_weeks()` in `app/services/reports.py` (2026-06-09) — distinct from `available_weeks()` (clusters) used by `/stories` + `/clusters` / `/eval`; the in-progress current week is hidden until its weekly synthesis runs. |
 | `/stories` | Live stories table — items in last 7 days by default; HTMX search + section / region tabs + date-range picker (`?from=YYYY-MM-DD&to=YYYY-MM-DD`; back-compat `?week_id=` shim) (Phase 3c.7 + 3c.9 + 3c.11 + 3c.15 + 3c.17) |
 | `/clusters` | Cluster cards by date range (default last 30d; `?from=…&to=…` or back-compat `?week_id=`; any-member-in-range semantic) with editorial-section overlay chips, region tabs, view toggle (cluster cards / flat list) (Phase 3c.7 + 3c.10–3c.12 + 3c.15 + 3c.17) |
 | `/sentiment` | Per-category average sentiment view — `AVG(sentiment_score) + COUNT(*) GROUP BY enrichments.category` over a date-range window; default last 30d; tone bucketed at ±0.05; date-range picker reuses the Phase 3c.17 `parse_date_range` + flatpickr UI (Phase 3c.21) |

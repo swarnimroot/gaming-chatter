@@ -1,4 +1,4 @@
-﻿{# _report_grid.html â€” Phase 3c.25
+{# _report_grid.html — Phase 3c.25
    Extracted from reports.html for shared use by /reports and /eval.
    Caller must provide: week.cards.*, active_week_key, region_active,
    sources_meta, request (for url_for). All macros formerly inline in
@@ -6,7 +6,7 @@
 {% from "_components.html" import eyebrow, source_row, delta, card_header %}
 
 {%- macro seeall_footer(week_key) -%}
-<a class="gc-card-seeall" href="{{ request.url_for('clusters_view') }}?week_id={{ week_key }}">See all stories this week â†’</a>
+<a class="gc-card-seeall" href="{{ request.url_for('clusters_view') }}?week_id={{ week_key }}">See all stories this week →</a>
 {%- endmacro -%}
 
 {%- macro hot_rows(rows) -%}
@@ -30,7 +30,7 @@
   {% if not rows %}<div class="gc-row-empty">No matching mentions this week.</div>{% endif %}
 {%- endmacro -%}
 
-{# Phase 3c.20 â€” inline mini-bar for WoW delta. Bar is anchored to a
+{# Phase 3c.20 — inline mini-bar for WoW delta. Bar is anchored to a
    zero line at the midpoint of the bar track: positive deltas grow
    right, negative grow left. Magnitude clamped to 12pp = 100% of
    half-width so a runaway outlier doesn't blow out the layout. #}
@@ -54,7 +54,7 @@
   <label class="gc-row gc-row--trend gc-row-trigger" for="drawer-open"
          hx-get="{{ request.url_for('reports_drawer') }}?kind={{ kind }}&value={{ r.name|urlencode }}&week={{ active_week_key }}"
          hx-target="#source-drawer-body" hx-swap="innerHTML">
-    <span class="gc-trend-name" title="{{ r.count }} this week Â· {{ r.prev_count }} prior">{{ r.name }}</span>
+    <span class="gc-trend-name" title="{{ r.count }} this week · {{ r.prev_count }} prior">{{ r.name }}</span>
     {{ trend_bar(r.delta_pp, r.tone) }}
     {{ delta(r.delta_display, r.tone) }}
   </label>
@@ -65,8 +65,8 @@
 {% set synth_ran = week.cards.synthesis_meta %}
 <div class="gc-grid">
 
-  {# 2. Biggest stories (spans 2) â€” Phase 3c.5: plural top-3,
-       each row click â†’ cluster drawer. #}
+  {# 2. Biggest stories (spans 2) — Phase 3c.5: plural top-3,
+       each row click → cluster drawer. #}
   {% set biggest = week.cards.biggest %}
   <div class="gc-span-2">
     <div class="gc-card" id="card-biggest">
@@ -100,7 +100,7 @@
     </div>
   </div>
 
-  {# 3. Hottest games â€” Phase 3c.1: title + chips + mention count, 3 tabs #}
+  {# 3. Hottest games — Phase 3c.1: title + chips + mention count, 3 tabs #}
   {% set hot = week.cards.hottest %}
   <div>
     <div class="gc-card" id="card-hottest">
@@ -124,13 +124,13 @@
     </div>
   </div>
 
-  {# 4. Market momentum â€” Phase 3c.5: row list (acquisitions / funds /
+  {# 4. Market momentum — Phase 3c.5: row list (acquisitions / funds /
        platform-policy / structural / people-moves). Absorbs the dropped
        Studio watch + Storefronts cards. #}
   {% set mm = week.cards.market_momentum %}
   <div>
     <div class="gc-card" id="card-market-momentum">
-      {{ card_header("Market momentum", "Acquisitions Â· funds Â· policy Â· structural Â· people") }}
+      {{ card_header("Market momentum", "Acquisitions · funds · policy · structural · people") }}
       {% if mm %}
       <div class="gc-row-list">
         {% for m in mm %}
@@ -154,7 +154,7 @@
     </div>
   </div>
 
-  {# 5. Trends â€” Phase 3c.2: 5-tab WoW mention-rate delta (CSS-only radios) #}
+  {# 5. Trends — Phase 3c.2: 5-tab WoW mention-rate delta (CSS-only radios) #}
   {% set tr = week.cards.trends %}
   <div>
     <div class="gc-card" id="card-trends">
@@ -176,7 +176,7 @@
           <label for="trend-tab-liveservice" class="gc-tab-label">Live-service</label>
           <label for="trend-tab-events" class="gc-tab-label">Events</label>
         </div>
-        {# Phase 3c.23 â€” each tab now shows two subsections: Rising +
+        {# Phase 3c.23 — each tab now shows two subsections: Rising +
            Declining. The Games tab collapsed current/upcoming into a
            single combined view (lifecycle=None). #}
         <div class="gc-tab-panes">
@@ -216,8 +216,8 @@
     </div>
   </div>
 
-  {# 6. Community sentiment â€” Phase 3c.5: narrative on top + two per-cluster
-       polarized lists (heated / celebrating). Each row â†’ cluster drawer. #}
+  {# 6. Community sentiment — Phase 3c.5: narrative on top + two per-cluster
+       polarized lists (heated / celebrating). Each row → cluster drawer. #}
   {% set co = week.cards.community %}
   <div>
     <div class="gc-card" id="card-community">
@@ -268,11 +268,11 @@
     </div>
   </div>
 
-  {# 7. Industry risks â€” Phase 3c.5: trend chip dropped; rows â†’ cluster drawer #}
+  {# 7. Industry risks — Phase 3c.5: trend chip dropped; rows → cluster drawer #}
   {% set risks = week.cards.risks %}
   <div>
     <div class="gc-card" id="card-risks">
-      {{ card_header("Industry risks", "Layoffs Â· regulation Â· legal") }}
+      {{ card_header("Industry risks", "Layoffs · regulation · legal") }}
       {% if risks %}
       <div class="gc-risks">
         {% for r in risks %}
@@ -299,12 +299,12 @@
     </div>
   </div>
 
-  {# Drama / Controversy tracker â€” moved up per Phase 3c.8 reorder
-       (risks â†’ drama â†’ esports â†’ release â†’ watch). #}
+  {# Drama / Controversy tracker — moved up per Phase 3c.8 reorder
+       (risks → drama → esports → release → watch). #}
   {% set drama = week.cards.drama %}
   <div>
     <div class="gc-card" id="card-drama">
-      {{ card_header("Controversy tracker", "Exec / PR blunders Â· studio feuds") }}
+      {{ card_header("Controversy tracker", "Exec / PR blunders · studio feuds") }}
       {% if drama %}
       <div class="gc-drama-list">
         {% for d in drama %}
@@ -312,7 +312,7 @@
                hx-get="{{ request.url_for('reports_drawer') }}?kind=cluster&value={{ d.cluster_id }}&week={{ active_week_key }}"
                hx-target="#source-drawer-body" hx-swap="innerHTML">
           <div class="gc-drama-head">
-            <span class="gc-drama-sev gc-drama-sev--{{ d.severity }}">â— {{ d.severity }}</span>
+            <span class="gc-drama-sev gc-drama-sev--{{ d.severity }}">● {{ d.severity }}</span>
             <span class="gc-drama-title">{{ d.title }}</span>
           </div>
           <div class="gc-drama-recap">{{ d.recap }}</div>
@@ -328,7 +328,7 @@
     </div>
   </div>
 
-  {# Esports & streaming â€” Phase 3c.5: row list of corpus-anchored clusters #}
+  {# Esports & streaming — Phase 3c.5: row list of corpus-anchored clusters #}
   {% set es = week.cards.esports %}
   <div>
     <div class="gc-card" id="card-esports">
@@ -355,7 +355,7 @@
     </div>
   </div>
 
-  {# Release radar â€” Phase 3c.8: top-6 visible, scroll within card #}
+  {# Release radar — Phase 3c.8: top-6 visible, scroll within card #}
   {% set releases = week.cards.releases %}
   <div>
     <div class="gc-card" id="card-releases">
@@ -363,8 +363,8 @@
            "Release radar",
            "Upcoming releases mentioned this week",
            '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-              <a class="gc-ghost-link" href="https://www.pcgamer.com/games/new-pc-games-2026/" target="_blank" rel="noopener">PCGamer â†’</a>
-              <a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">IGN â†’</a>
+              <a class="gc-ghost-link" href="https://www.pcgamer.com/games/new-pc-games-2026/" target="_blank" rel="noopener">PCGamer →</a>
+              <a class="gc-ghost-link" href="https://www.ign.com/upcoming/games" target="_blank" rel="noopener">IGN →</a>
             </div>'|safe
          ) }}
       {% if region_active %}<div class="gc-card-note"><span class="gc-chip--muted" title="This card is sourced from game release dates; cluster region tags don't apply.">Not region-tagged</span></div>{% endif %}
@@ -387,7 +387,7 @@
     </div>
   </div>
 
-  {# Watch next week â€” rows â†’ cluster drawer when cluster_id present. #}
+  {# Watch next week — rows → cluster drawer when cluster_id present. #}
   {% set watch = week.cards.watch %}
   <div>
     <div class="gc-card" id="card-watch">

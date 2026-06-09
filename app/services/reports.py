@@ -112,6 +112,26 @@ def available_weeks(session: Session) -> list[str]:
     return [r[0] for r in rows]
 
 
+def readout_weeks(session: Session) -> list[str]:
+    """ISO-week ids for the home weekly read-out picker.
+
+    Unlike `available_weeks()` (every week that has clusters), this returns ONLY
+    weeks that already have a *synthesized* `weekly_reports` row. Synthesis is
+    the weekly job, so it is the completeness signal: an in-progress week with no
+    report stays hidden from the read-out until it closes and gets synthesized.
+    Ordering follows `available_weeks()` (newest ISO week first).
+    """
+    rows = session.exec(text(
+        "SELECT DISTINCT date(week_start) FROM weekly_reports "
+        "WHERE status = 'synthesized'"
+    )).all()
+    synthesized_dates = {r[0] for r in rows}  # 'YYYY-MM-DD' strings
+    return [
+        wid for wid in available_weeks(session)
+        if iso_week_bounds(wid)[0].date().isoformat() in synthesized_dates
+    ]
+
+
 def week_label_and_range(week_id: str) -> tuple[str, str]:
     """Format an ISO week id as ('Week of May 4, 2026', 'Apr 27 — May 3').
 

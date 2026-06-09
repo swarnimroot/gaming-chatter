@@ -4,6 +4,25 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-06-09 — Home read-out picker sources from synthesized weeks; `_report_grid.html` mojibake repaired
+
+**Decision:** The weekly read-out (`/`) week picker now lists only weeks that have a **`synthesized` `weekly_reports` row** — via a new `readout_weeks(session)` in `app/services/reports.py`, wired into `app/routers/reports.py` in place of `available_weeks()`. The in-progress current ISO week (which has clusters from the daily pipeline but no weekly synthesis yet) is therefore hidden from the read-out until its weekly synthesis runs. `/stories` and `/eval` keep using `available_weeks()` (cluster-derived) — they intentionally show live current-week data.
+
+**Why:** With ingest + daily clustering running mid-week, the current week (e.g. W24 / Jun 8–14) showed up in the read-out as a near-empty, unsynthesized brief and became the default selection. Synthesis is the weekly job, so its presence is the natural "this week is complete" signal — the user's framing: *"the synthesized report is only supposed to be done weekly; if it isn't created, don't show the week."*
+
+**Rationale:**
+- **Resolves the long-deferred picker-source flip.** The Phase 3c.5 walkthrough originally specced the picker off `weekly_reports`, but it was kept on `available_weeks()` until W17/W18 synthesis existed (see SESSION_LOG 2026-05-13 / 3c.8). All shown weeks are now synthesized, so the flip is finally correct — done as a *new* function rather than mutating `available_weeks()`, since that helper is shared by `/stories` + `/eval`.
+- **No elapsed-date check needed.** Gating purely on `status='synthesized'` is simpler than an `end_date <= today` rule and matches the operational reality that synthesis only runs on closed weeks (weekly cron / manual previous-week runs).
+
+**Also repaired:** `app/templates/_report_grid.html` had double/mixed-encoded **mojibake** baked into the file bytes (`→`, `—`, `·`, `●` all corrupted, e.g. rendered `â†'`), plus a stray BOM. Root cause was a bad save/encoding round-trip on that one file — the DB and every other template were clean. Fixed via surgical byte-level replacement (per-run cp1252 reverse for the clean cases + an explicit byte swap for a mixed-codec `●` that used the undefined cp1252 slot `0x8F`). Final file is valid UTF-8 with only correct `· — → ●`.
+
+**Alternatives rejected:**
+- **Mutate `available_weeks()` globally.** Would also hide the current week from `/stories` + `/eval`, where live current-week data is wanted.
+- **Gate on `end_date <= today` (elapsed) instead of synthesized.** Rejected per user — would surface an elapsed-but-unsynthesized week as an empty brief.
+- **Whole-file cp1252 re-decode for the mojibake.** Unsafe — the file mixes correct and corrupted non-ASCII, and one mojibake run used `0x8F` (undefined in cp1252), so a blanket reverse fails / corrupts the good chars. Per-pattern byte replacement was the safe path.
+
+---
+
 ## 2026-05-27 — Precompute the dashboard payload at synthesis time (Phase 3c.35)
 
 **Decision:** When `synthesize_week()` finishes persisting synthesis_json, it also computes + persists the default-region `/reports` payload to a new `weekly_reports.dashboard_payload_json TEXT` column. The `/` route reads the cached payload (~6ms) and applies a region filter in-process; only weeks without a cached payload fall through to live compute.
