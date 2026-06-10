@@ -4,6 +4,44 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-10 (safety) — confirm dialogs on `/runs` trigger buttons
+
+**Context.** Clicking any "Run now" button on `/runs` fired its job immediately — no guard against an accidental click kicking a multi-hour, API-spending job. Added per-action confirmation.
+
+**What was done.**
+- Audited every user-triggerable control app-wide, classified by side-effect. Decision: confirm the **7 `/runs` trigger buttons** only. **Excluded** eval scoring/note/missing (cheap, local-only, reversible save-on-change — a modal per click would wreck the scoring flow) and the exec-summary "Generate" (generates only on cache miss for ~a fraction of a cent + caches forever; `hx-confirm` can't tell cached from uncached so it would nag on every free reopen — left unconfirmed by design).
+- `app/routers/runs.py` — `_TRIGGER_MAP` tuples gained a 4th element: a confirm one-liner (what it does + realistic time + whether it spends Anthropic $). Threaded through the `trigger_jobs` context; handler unpack updated to 4-tuple.
+- `app/templates/runs.html` — `hx-confirm="{{ job.confirm }}"` on both button forms (HTMX-native browser confirm dialog; no JS build step).
+- **Realistic times** sourced from `job_runs` history (daily measured 4.4–5.7h) + user's operational knowledge — NOT the old wrong "~few min" guesses: Daily **4–6h**, Enrich+embed **3–5h** (Whisper transcription), Ingest **10–20m**, Cluster **5–15m**, Synthesis **5–10m**, Weekly **5–10m**, Release refresh **2–5m**.
+- Fixed two honesty bugs found while wiring: `cluster_only` *does* spend Sonnet $ (new-cluster labels); `enrich_only`'s hours are Whisper transcription via `enrich_pending → fetch_youtube_transcript`.
+- **Alert-banner wording softened** (`app/templates/_alert_banner.html`): "{N} source(s) is/are erroring — click to inspect." → "{N} source(s) needs/need attention — click to inspect." The banner also fires on `silent` sources (ran fine, 0 items), so "erroring" overstated it. Singular/plural grammar verified.
+
+**Verified.** `runs.py` parses; `_TRIGGER_MAP` unpacks; all 7 jobs build with non-empty confirm text (offline check); 7 `hx-confirm` attrs render live on `/runs`; alert-banner singular/plural both render.
+
+**Where we left off / next.**
+- **No dev work outstanding.** Scheduler is ACTIVE (flipped earlier this session); confirm dialogs + softened banner are live on `:8001`.
+- **Watch tonight's 23:00 CST auto-daily** — the first real automated run; confirm it writes a `/runs` row with a populated Cost column. Optional follow-up: set an Anthropic Console monthly spend cap.
+- Exec-summary confirm deliberately NOT built (see above) — revisit only if first-generation-only gating is wanted.
+
+---
+
+## 2026-06-10 (Phase 4 activation) — scheduler flipped ON (live)
+
+**Context.** The last remaining Phase-4 open item — scheduler activation (a user action) — is now done. Automation is live.
+
+**What was done.**
+- Added `SCHEDULER_ENABLED=1` to `.env` (was absent = disabled).
+- Restarted uvicorn with `uvicorn app.main:app --host 127.0.0.1 --port 8001` (deliberately **no `--reload`** for a stable overnight run; explicit localhost bind).
+- Confirmed boot log: `APScheduler started: daily=23:00 local; weekly chained off daily`.
+- **No `startup_catchup: firing daily_pipeline` line** → catchup ran and found the last daily **not overdue** (<24h old), so **no immediate run fired / no surprise API spend**. As intended.
+
+**Where we left off / next.**
+- First automated daily fires **tonight 23:00 CST**; it will write a real `/runs` row + populate the new Cost column. Weekly brief chains off it once the UTC week closes.
+- Next: **small refinements** (TBD this session).
+- Still-open optional polish (carried over): alert-banner wording ("erroring" → "needs attention"); set an Anthropic Console monthly spend limit (hard ceiling).
+
+---
+
 ## 2026-06-10 (Phase 4 follow-up) — per-run Anthropic cost meter on `/runs` BUILT
 
 **Context.** The last Claude-actionable item from the confirmed Phase-4 set. `/runs` now shows the **actual dollars each pipeline run spent**, read from each Anthropic response's real `usage`, replacing the old docstring estimate (~$0.30/night). Corpus + all other Phase-4 facts unchanged (12,710 items / 31 active sources / W19–W23 synthesized).

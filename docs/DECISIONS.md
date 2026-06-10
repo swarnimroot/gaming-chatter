@@ -4,6 +4,22 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-06-10 (Phase 4 — activation + safety) — confirmation dialogs on `/runs` trigger actions
+
+**Decision — Add `hx-confirm` to the 7 `/runs` "Run now" trigger buttons only; deliberately exclude the eval writes and the exec-summary "Generate".** Each "Run now" button previously fired its job on a single click with no guard — an accidental tap could kick a multi-hour, API-spending pipeline. All **7 trigger buttons** now show a browser confirm dialog (HTMX-native `hx-confirm`, no JS build step) stating **what the job does, its realistic runtime, and whether it spends Anthropic $**. Implementation: `app/routers/runs.py` `_TRIGGER_MAP` tuples gained a 4th element (the confirm one-liner), threaded through the `trigger_jobs` template context (handler unpack → 4-tuple); `app/templates/runs.html` got `hx-confirm="{{ job.confirm }}"` on both button forms. Realistic times sourced from `job_runs` history + the user's operational knowledge (Daily 4–6h, Enrich+embed 3–5h, Ingest 10–20m, Cluster 5–15m, Synthesis 5–10m, Weekly 5–10m, Release refresh 2–5m), replacing earlier wrong "~few min" guesses. Two honesty fixes made while wiring: `cluster_only` *does* spend Anthropic $ (Sonnet labels for new clusters); `enrich_only`'s multi-hour cost is Whisper transcription via `enrich_pending → fetch_youtube_transcript`.
+
+**Why these two are NOT confirmed:**
+- **Exec-summary "Generate" — the cache-nag rationale.** It generates only on a cache miss (a fraction of a cent) and then caches forever; every subsequent open serves from cache for free. `hx-confirm` fires on every click and can't distinguish a cached open from an uncached one, so confirming it would nag the user on every free reopen. Left unconfirmed by design.
+- **Eval scoring / note / missing writes — cheap, local-only, reversible.** These are save-on-change local DB writes (no LLM, no external $, trivially reversible). A modal per click would wreck the scoring flow for zero protective value.
+
+**Verified:** 7 `hx-confirm` attrs render live on `/runs`; `runs.py` parses; `_TRIGGER_MAP` unpacks; all 7 jobs build with non-empty confirm text.
+
+**Alternatives rejected:**
+- **Confirm every user-triggerable control app-wide.** Rejected — over-broad; the eval flow and the free cached exec-summary reopen would become hostile to use.
+- **A custom JS modal instead of `hx-confirm`.** Rejected — `hx-confirm` is HTMX-native and honors the no-JS-build-step constraint.
+
+---
+
 ## 2026-06-10 (Phase 4 follow-up) — per-run cost meter: thread-local exclusive accumulator; per-model pricing + cache multipliers; $0-on-unknown-model
 
 **Decision 1 — Cost accounting is a THREAD-LOCAL stack with EXCLUSIVE (innermost-only) semantics, not a global counter or lock.** New `app/services/cost.py`: `open_run(run_id)` pushes an accounting frame onto the calling thread's stack; `record(model, usage)` adds one Anthropic response's token usage to the INNERMOST open frame only; `close_run(run_id)` pops down to and including the matching frame, prices it, and returns the totals. Wired via `open_run()` in `jobs._start_run` and `close_run()` in `jobs._finish_run`; one `cost.record(model, message.usage)` line at all 9 Anthropic call sites (`anthropic.py`: `enrich_item` / `label_cluster` / `prescreen_yt_relevance` / `tag_game` / `tag_pcgamer_releases` / `tag_ign_releases` / `tag_region`; `exec_summary.py::_call_haiku`; `synthesis.py::_opus_once`). 3 nullable columns (`input_tokens`, `output_tokens`, `cost_usd`) added to `job_runs` via the idempotent `_migrate_job_runs_columns` ALTER pattern in `app/db/init.py`; `/runs` renders a Cost column (`$X.XXXX`, tokens in tooltip), `—` when NULL (pre-meter rows).

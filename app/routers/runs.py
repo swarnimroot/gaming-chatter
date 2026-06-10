@@ -43,15 +43,25 @@ log = logging.getLogger(__name__)
 
 
 # Manual-trigger whitelist. Maps the trigger URL slug to (callable, label,
-# accepts_week_id). Anything not in this dict is rejected with 400.
+# accepts_week_id, confirm_message). The confirm_message is shown in a
+# browser confirm() dialog (HTMX hx-confirm) before the job fires — these
+# all spend real time and/or Anthropic API money. Anything not in this dict
+# is rejected with 400.
 _TRIGGER_MAP: dict[str, tuple] = {
-    "daily_pipeline":    (jobs_svc.run_daily_pipeline,    "Daily pipeline",      False),
-    "weekly_extension":  (jobs_svc.run_weekly_extension,  "Weekly extension",    False),
-    "release_refresh":   (jobs_svc.run_release_refresh,   "Release refresh",     False),
-    "ingest_only":       (jobs_svc.run_ingest_only,       "Ingest only",         False),
-    "enrich_only":       (jobs_svc.run_enrich_only,       "Enrich + embed only", False),
-    "cluster_only":      (jobs_svc.run_cluster_only,      "Cluster only",        True),
-    "synthesis_only":    (jobs_svc.run_synthesis_only,    "Synthesis only",      True),
+    "daily_pipeline":    (jobs_svc.run_daily_pipeline,    "Daily pipeline",      False,
+        "Runs the full pipeline (ingest → enrich → cluster → synthesis). ~4–6 hours and spends Anthropic API money (Haiku + Opus). Continue?"),
+    "weekly_extension":  (jobs_svc.run_weekly_extension,  "Weekly extension",    False,
+        "Regenerates the weekly brief via Opus synthesis. ~5–10 min and spends Anthropic API money. Continue?"),
+    "release_refresh":   (jobs_svc.run_release_refresh,   "Release refresh",     False,
+        "Refreshes the game/platform release data. ~2–5 min, no LLM cost. Continue?"),
+    "ingest_only":       (jobs_svc.run_ingest_only,       "Ingest only",         False,
+        "Fetches fresh items from all sources. ~10–20 min, no LLM cost. Continue?"),
+    "enrich_only":       (jobs_svc.run_enrich_only,       "Enrich + embed only", False,
+        "Runs Haiku enrichment + embeddings over pending items (incl. Whisper transcription). ~3–5 hours and spends Anthropic API money. Continue?"),
+    "cluster_only":      (jobs_svc.run_cluster_only,      "Cluster only",        True,
+        "Re-clusters the selected week's items; new clusters get Sonnet labels (spends Anthropic API money). ~5–15 min. Continue?"),
+    "synthesis_only":    (jobs_svc.run_synthesis_only,    "Synthesis only",      True,
+        "Re-runs Opus synthesis for the selected week, overwriting its brief. ~5–10 min and spends Anthropic API money. Continue?"),
 }
 
 
@@ -205,8 +215,9 @@ def runs_view(request: Request, session: Session = Depends(get_session)):
         "source_window_days": SOURCE_VOLUME_WINDOW_DAYS,
         "scheduler_enabled": _scheduler_enabled(),
         "trigger_jobs": [
-            {"slug": slug, "label": label, "accepts_week": accepts_week}
-            for slug, (_, label, accepts_week) in _TRIGGER_MAP.items()
+            {"slug": slug, "label": label, "accepts_week": accepts_week,
+             "confirm": confirm}
+            for slug, (_, label, accepts_week, confirm) in _TRIGGER_MAP.items()
         ],
         "nav_items": nav_items_for(request, "runs"),
         "failing_sources_count": failing_sources_count(session),
@@ -223,7 +234,7 @@ def runs_trigger(
     entry = _TRIGGER_MAP.get(job_name)
     if entry is None:
         raise HTTPException(status_code=400, detail=f"unknown job_name: {job_name!r}")
-    fn, label, accepts_week = entry
+    fn, label, accepts_week, _confirm = entry
 
     started = datetime.utcnow().strftime("%H:%M:%S")
     if accepts_week:

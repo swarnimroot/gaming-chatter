@@ -15,7 +15,7 @@ simple per CLAUDE.md "no JS build" rule). Links to /sources for inspection.
   <a class="gc-alert-banner-link" href="{{ request.url_for('list_sources') }}">
     <span class="gc-alert-banner-icon" aria-hidden="true">&#9888;</span>
     <span class="gc-alert-banner-text">
-      {{ failing_sources_count }} source{{ 's' if failing_sources_count != 1 else '' }} {{ 'are' if failing_sources_count != 1 else 'is' }} erroring — click to inspect.
+      {{ failing_sources_count }} source{{ 's' if failing_sources_count != 1 else '' }} {{ 'need' if failing_sources_count != 1 else 'needs' }} attention — click to inspect.
     </span>
   </a>
 </div>

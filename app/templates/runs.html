@@ -91,7 +91,8 @@
       {% if job.accepts_week %}
         <form class="gc-run-button-form"
               hx-post="{{ request.url_for('runs_trigger', job_name=job.slug) }}"
-              hx-target="#run-status" hx-swap="outerHTML">
+              hx-target="#run-status" hx-swap="outerHTML"
+              hx-confirm="{{ job.confirm }}">
           <button type="submit" class="gc-run-button">{{ job.label }}</button>
           <input type="text" name="week_id" class="gc-run-week-input"
                  placeholder="2026-W21" autocomplete="off">
@@ -99,7 +100,8 @@
       {% else %}
         <form class="gc-run-button-form"
               hx-post="{{ request.url_for('runs_trigger', job_name=job.slug) }}"
-              hx-target="#run-status" hx-swap="outerHTML">
+              hx-target="#run-status" hx-swap="outerHTML"
+              hx-confirm="{{ job.confirm }}">
           <button type="submit" class="gc-run-button">{{ job.label }}</button>
         </form>
       {% endif %}

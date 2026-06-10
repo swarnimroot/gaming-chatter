@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Changed — Alert-banner wording: "erroring" → "needs attention" (2026-06-10)
+
+Softened the source-failure banner copy in `app/templates/_alert_banner.html`: the old "{N} source(s) is/are erroring — click to inspect." read as an alarming hard-failure when in practice the banner also fires on `silent` sources (ran fine, produced 0 items). New copy: "{N} source(s) needs/need attention — click to inspect." — accurate to what the grid actually flags and less alarming.
+
+- Singular/plural grammar preserved (is/are → needs/need); verified both branches render correctly.
+
+### Changed — Phase 4: scheduler ACTIVATED (live) (2026-06-10)
+
+The Phase-4 scheduler is now **ACTIVE** (was INERT). This was the last open Phase-4 item and a user action — code was already wired; flipping the gate turned automation on. No dev work outstanding.
+
+- **`.env` — `SCHEDULER_ENABLED=1` added** (was absent = disabled).
+- **uvicorn restarted** as `uvicorn app.main:app --host 127.0.0.1 --port 8001` — deliberately **without `--reload`** for a stable overnight run, explicit localhost bind.
+- **Boot log confirmed:** `APScheduler started: daily=23:00 local; weekly chained off daily`.
+- **No surprise spend:** startup-catchup ran and found the last daily **not overdue** (<24h old) → **no immediate run fired** (no `startup_catchup: firing daily_pipeline` line), as intended.
+- **First real automated daily fires tonight 23:00 CST** — it will write the first `/runs` row with a real Cost column value; the weekly chains off it once the UTC week closes.
+- Cron config unchanged from the prior automation-wiring work: daily 23:00 local (CST); weekly chained inline off each daily (no separate weekly cron).
+- Remaining items are **user actions only**: observe tonight's first auto-daily + confirm the cost row populates; optionally set an Anthropic Console monthly spend cap.
+
+### Added — Safety: confirmation dialogs on `/runs` trigger buttons (2026-06-10)
+
+The "Run now" buttons on `/runs` fired their jobs on a single click with no guard — an accidental tap could kick a multi-hour, API-spending job. Each of the **7 trigger buttons** now shows a browser confirm dialog (HTMX-native, no JS build step) stating **what the job does, its realistic runtime, and whether it spends Anthropic $** before firing. Audited every user-triggerable control app-wide first; deliberately scoped to these 7. Verified: `runs.py` parses, `_TRIGGER_MAP` unpacks, all 7 jobs build with non-empty confirm text. Live on `:8001` after restart.
+
+- **`app/routers/runs.py` — `_TRIGGER_MAP` tuples gained a 4th element**, the confirm one-liner. Threaded through the `trigger_jobs` template context; the `runs_trigger` handler unpack updated to the 4-tuple.
+- **`app/templates/runs.html` — `hx-confirm="{{ job.confirm }}"`** on both button forms (week-input and plain variants).
+- **Realistic times** sourced from `job_runs` history (daily measured 4.4–5.7h) + the user's operational knowledge — replacing the earlier wrong "~few min" guesses: Daily pipeline **4–6h**, Enrich+embed **3–5h** (Whisper transcription dominates), Ingest **10–20m**, Cluster **5–15m**, Synthesis **5–10m**, Weekly **5–10m**, Release refresh **2–5m**.
+- **Two honesty fixes found while wiring:** `cluster_only` *does* spend Anthropic $ (Sonnet labels for new clusters) — was about to be labeled "no LLM cost"; `enrich_only`'s multi-hour cost is Whisper transcription via `enrich_pending → fetch_youtube_transcript`.
+- **Deliberately NOT confirmed:** eval scoring/note/missing writes (cheap, local-only, reversible save-on-change — a modal per click would wreck the scoring flow) and the exec-summary "Generate" (generates only on cache miss for a fraction of a cent + caches forever; `hx-confirm` can't distinguish cached from uncached, so it would nag on every free reopen).
+
 ### Added — Phase 4 follow-up: per-run Anthropic cost meter on `/runs` (2026-06-10)
 
 Built the last Claude-actionable item from the confirmed Phase-4 set: `/runs` now shows the **actual dollars each pipeline run spent**, read from each Anthropic response's real `usage`, replacing the old docstring estimate (~$0.30/night). Verified: imports compile; the migration applies and is idempotent; the stack unit test passes. Corpus + all other Phase-4 facts unchanged (**12,710 items / 31 active sources** / W19–W23 synthesized).
