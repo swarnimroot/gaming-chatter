@@ -157,10 +157,9 @@ sources:
     url: "https://www.reddit.com/r/GameDev/.rss"
     enabled: true
 
-  - name: "r/GamesIndustry"
-    type: rss
-    url: "https://www.reddit.com/r/GamesIndustry/.rss"
-    enabled: true
+  # r/GamesIndustry removed 2026-06-10 — Reddit served our scraper a frozen
+  # .rss (newest entry 2026-03-23), 0 new items since 2026-05-21. Public-RSS
+  # throttling, not a code bug. Source disabled in DB + dropped here.
 
   # ───── YouTube channels — 6 ─────
   # NOTE: handle is the full Atom feed URL (with channel_id), NOT @handle.

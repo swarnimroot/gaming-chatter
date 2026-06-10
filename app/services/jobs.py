@@ -32,7 +32,7 @@ from typing import Any, Optional
 
 from sqlmodel import Session, select
 
-from app.db.models import JobRun
+from app.db.models import Enrichment, JobRun, WeeklyReport
 from app.db.session import engine
 
 log = logging.getLogger(__name__)
@@ -93,6 +93,101 @@ def _finish_run(
         session.commit()
 
 
+# ---------------------------------------------------------------------------
+# Floor checks — turn silent partial-success into a visible 'degraded' status
+# ---------------------------------------------------------------------------
+# A step can finish WITHOUT raising yet still under-deliver: a source feed dies
+# and ingest returns errors>0, a Haiku batch fails (enrich failed>0), or a
+# non-blocking step (article_fetch / backfill_region / release refresh) errors
+# and is swallowed. Pre-floor-checks all of these still showed status='ok' —
+# the exact "all green but <1000 mentions" false positive. _evaluate_floors
+# reads the per-step counts already in `details` and returns one warning per
+# tripped floor; any warning downgrades an otherwise-ok run to 'degraded'.
+
+# Steps the orchestrators wrap as {"error": "..."} on a swallowed exception.
+_NONBLOCKING_STEPS = (
+    "article_fetch", "enrich_after_fetch", "backfill_region",
+    "release_refresh_pcgamer", "release_refresh_ign", "pcgamer", "ign",
+)
+
+
+def _evaluate_floors(details: dict) -> list[str]:
+    """Return human-readable warnings for steps that completed but under-
+    delivered. Empty list => the run met every floor. Reads only verified
+    per-step keys (see app/services/{ingest,enrich,article_fetch}.py)."""
+    warnings: list[str] = []
+
+    # 1. Non-blocking steps that quietly errored (previously invisible).
+    for step in _NONBLOCKING_STEPS:
+        d = details.get(step)
+        if isinstance(d, dict) and d.get("error"):
+            warnings.append(f"{step} errored: {d['error']}")
+
+    # 2. Ingest: any source that failed its fetch. The headline "<1000 mentions"
+    #    signal — a dead feed returns errors>0 without raising.
+    ing = details.get("ingest")
+    if isinstance(ing, dict):
+        if ing.get("errors", 0):
+            warnings.append(f"ingest: {ing['errors']} source(s) errored")
+        elif ing.get("fetched", None) == 0:
+            warnings.append("ingest fetched 0 items (every source dry?)")
+
+    # 3. Enrich / embed: per-item failures are tolerated mid-step but should
+    #    still surface — a bad batch silently shrinks the enriched corpus.
+    for step in ("enrich", "enrich_after_fetch", "embed"):
+        d = details.get(step)
+        if isinstance(d, dict) and d.get("failed", 0):
+            warnings.append(f"{step}: {d['failed']} item(s) failed")
+
+    return warnings
+
+
+def _apply_floor_status(
+    status: str, details: dict, message: Optional[str]
+) -> tuple[str, Optional[str]]:
+    """Downgrade an otherwise-'ok' run to 'degraded' when any floor check trips.
+    'failed'/'skipped'/'running' pass through unchanged. The returned message
+    keeps the success counts and appends what degraded it; the warning list is
+    also stored under details['_warnings'] for the expand-row view."""
+    if status != "ok":
+        return status, message
+    warnings = _evaluate_floors(details)
+    if not warnings:
+        return status, message
+    details["_warnings"] = warnings
+    suffix = "DEGRADED: " + "; ".join(warnings)
+    return "degraded", (f"{message} | {suffix}" if message else suffix)
+
+
+def reconcile_interrupted_runs() -> int:
+    """Mark any JobRun still in 'running' as failed (interrupted). Returns count.
+
+    This app is single-process, so a 'running' row observed from a fresh process
+    can only be a run whose process exited before `_finish_run` — e.g. uvicorn
+    was killed mid-pipeline. Left alone it makes the /runs health band report a
+    phantom in-flight job: precisely the false positive the console must avoid.
+    Called once from the FastAPI lifespan on every boot (regardless of
+    SCHEDULER_ENABLED)."""
+    with Session(engine) as session:
+        rows = session.exec(select(JobRun).where(JobRun.status == "running")).all()
+        if not rows:
+            return 0
+        now = datetime.utcnow()
+        for run in rows:
+            run.status = "failed"
+            run.finished_at = now
+            if run.started_at:
+                run.duration_seconds = round((now - run.started_at).total_seconds(), 2)
+            run.message = "interrupted — process exited before completion (auto-reconciled)"
+            session.add(run)
+        session.commit()
+        log.info(
+            "reconcile_interrupted_runs: marked %d stale 'running' row(s) as failed",
+            len(rows),
+        )
+        return len(rows)
+
+
 def _current_iso_week_id() -> str:
     iso = datetime.utcnow().isocalendar()
     return f"{iso[0]}-W{iso[1]:02d}"
@@ -101,6 +196,24 @@ def _current_iso_week_id() -> str:
 def _previous_iso_week_id() -> str:
     iso = (datetime.utcnow() - timedelta(days=7)).isocalendar()
     return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def _previous_week_needs_synthesis() -> Optional[str]:
+    """Return the previous ISO week id if it's closed but NOT yet synthesized,
+    else None. Drives the weekly brief chained off each daily run (replaces the
+    standalone weekly cron). Idempotent: once the week is synthesized, returns
+    None so later dailies skip it."""
+    from app.services.reports import iso_week_bounds
+
+    prev = _previous_iso_week_id()
+    week_start, _ = iso_week_bounds(prev)
+    with Session(engine) as session:
+        row = session.exec(
+            select(WeeklyReport).where(WeeklyReport.week_start == week_start)
+        ).first()
+        if row and row.status == "synthesized":
+            return None
+        return prev
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +243,7 @@ def run_daily_pipeline(triggered_by: str = "scheduler") -> dict:
         return {"skipped": True, "reason": "another job already running"}
 
     run_id = _start_run("daily_pipeline", triggered_by)
+    run_started = datetime.utcnow()  # scopes the region step to THIS run's items
     details: dict[str, Any] = {}
     overall_status = "ok"
     overall_message: Optional[str] = None
@@ -175,26 +289,43 @@ def run_daily_pipeline(triggered_by: str = "scheduler") -> dict:
             details["article_fetch"] = {"error": f"{type(e).__name__}: {e}"}
             log.warning("article_fetch failed (non-blocking): %s", e)
 
-        # Step 5 — enrich second pass over newly-fetched items. Only worth
-        # running if step 4 actually fetched bodies; otherwise skip the
-        # whole-corpus re-scan.
+        # Step 5 — re-enrich ONLY the items that just got article bodies (the ids
+        # returned by step 4), not the whole skipped backlog. The old
+        # retry_failed=True re-scanned every non-ok item each night, re-running
+        # Whisper over the entire YouTube backlog (~55 min). See DECISIONS 2026-06-10.
         af = details.get("article_fetch") or {}
-        if isinstance(af, dict) and af.get("fetched", 0) > 0:
+        fetched_ids = af.get("fetched_ids") if isinstance(af, dict) else None
+        if fetched_ids:
             try:
-                details["enrich_after_fetch"] = enrich_pending(retry_failed=True)
+                details["enrich_after_fetch"] = enrich_pending(item_ids=fetched_ids)
             except Exception as e:  # noqa: BLE001
                 details["enrich_after_fetch"] = {"error": f"{type(e).__name__}: {e}"}
                 log.warning("enrich_after_fetch failed (non-blocking): %s", e)
         else:
             details["enrich_after_fetch"] = {"skipped": "no new bodies fetched"}
 
-        # Step 6 — backfill_region (non-blocking)
+        # Step 6 — backfill_region (non-blocking), SCOPED to this run's items.
+        # backfill_region.run() with no args re-scans every region_focus IS NULL
+        # row each night — but most items legitimately have no region, so they
+        # stay NULL and get re-billed (~10k Haiku calls/night). Restricting to
+        # enrichments created during THIS run keeps it to the day's new items.
+        # The full-corpus backfill stays available as the manual script.
+        # See DECISIONS 2026-06-10.
         try:
-            # Importing the script as a module — sys.path already has repo root
-            # under uvicorn since the project lives at the cwd.
             _ensure_repo_on_path()
             from scripts import backfill_region
-            details["backfill_region"] = backfill_region.run()
+            with Session(engine) as _rs:
+                new_region_ids = list(_rs.exec(
+                    select(Enrichment.item_id).where(
+                        Enrichment.created_at >= run_started,
+                        Enrichment.region_focus.is_(None),
+                        Enrichment.status == "ok",
+                    )
+                ).all())
+            if new_region_ids:
+                details["backfill_region"] = backfill_region.run(ids=new_region_ids)
+            else:
+                details["backfill_region"] = {"skipped": "no new enrichments to region-tag", "attempted": 0}
         except Exception as e:  # noqa: BLE001
             details["backfill_region"] = {"error": f"{type(e).__name__}: {e}"}
             log.warning("backfill_region failed (non-blocking): %s", e)
@@ -222,7 +353,23 @@ def run_daily_pipeline(triggered_by: str = "scheduler") -> dict:
                 f"clusters_touched={clu.get('clusters_existing_touched', 0)} "
                 f"clusters_new={clu.get('clusters_new_created', 0)}"
             )
-        log.info("=== run_daily_pipeline done: %s ===", overall_message)
+        overall_status, overall_message = _apply_floor_status(
+            overall_status, details, overall_message
+        )
+
+        # Chained weekly brief. Replaces the standalone weekly cron: once a week
+        # closes, the first daily after it (which has just ingested that week's
+        # tail) briefs it. Runs INSIDE the daily so it can't start before ingest
+        # finishes, regardless of how long ingest takes; the RLock is re-entrant
+        # so the same thread re-acquires it. Self-heals a missed run. Skipped if
+        # the daily hard-failed (don't brief on incomplete ingest).
+        if overall_status != "failed":
+            wk = _previous_week_needs_synthesis()
+            if wk:
+                log.info("daily: week %s not synthesized — chaining weekly extension", wk)
+                details["weekly_chained"] = run_weekly_extension(week_id=wk, triggered_by="chained")
+
+        log.info("=== run_daily_pipeline done: status=%s %s ===", overall_status, overall_message)
         return {"status": overall_status, "details": details, "message": overall_message}
     except Exception as e:  # noqa: BLE001
         log.exception("run_daily_pipeline crashed")
@@ -238,12 +385,12 @@ def run_daily_pipeline(triggered_by: str = "scheduler") -> dict:
 # Weekly orchestrator
 # ---------------------------------------------------------------------------
 
-def run_weekly_extension(triggered_by: str = "scheduler") -> dict:
-    """Monday-morning extension: cluster previous-week + synthesize previous-week
-    + refresh PC Gamer + IGN release calendars.
-
-    "Previous week" = the ISO week ending the day before today (so a Monday run
-    targets the week that just closed).
+def run_weekly_extension(week_id: Optional[str] = None, triggered_by: str = "scheduler") -> dict:
+    """Cluster + synthesize a closed week, then refresh PC Gamer + IGN release
+    calendars. `week_id` defaults to the previous ISO week (the manual-trigger
+    case); the daily chain passes an explicit week. The brief is ready Monday
+    morning because the Sunday-night daily (23:00 CST) chains this once the
+    week's UTC boundary has already rolled over.
     """
     if not _JOB_LOCK.acquire(blocking=False):
         log.warning("run_weekly_extension: another job is running; skipping")
@@ -260,8 +407,8 @@ def run_weekly_extension(triggered_by: str = "scheduler") -> dict:
         from app.services.reports import iso_week_bounds
         from app.services.synthesis import synthesize_week
 
-        prev = _previous_iso_week_id()
-        log.info("=== run_weekly_extension start (prev=%s, triggered_by=%s) ===", prev, triggered_by)
+        prev = week_id or _previous_iso_week_id()
+        log.info("=== run_weekly_extension start (week=%s, triggered_by=%s) ===", prev, triggered_by)
 
         # Step 1 — cluster previous week (catch any late-arriving items).
         try:
@@ -308,7 +455,10 @@ def run_weekly_extension(triggered_by: str = "scheduler") -> dict:
 
         if overall_status == "ok":
             overall_message = f"synthesized prev={prev}"
-        log.info("=== run_weekly_extension done: %s ===", overall_message)
+        overall_status, overall_message = _apply_floor_status(
+            overall_status, details, overall_message
+        )
+        log.info("=== run_weekly_extension done: status=%s %s ===", overall_status, overall_message)
         return {"status": overall_status, "details": details, "message": overall_message}
     except Exception as e:  # noqa: BLE001
         log.exception("run_weekly_extension crashed")
@@ -361,6 +511,9 @@ def run_release_refresh(triggered_by: str = "manual") -> dict:
                 f"pcgamer: new={pc.get('new', 0)} updated={pc.get('updated', 0)}; "
                 f"ign: new={ig.get('new', 0)} updated={ig.get('updated', 0)}"
             )
+        overall_status, overall_message = _apply_floor_status(
+            overall_status, details, overall_message
+        )
         return {"status": overall_status, "details": details, "message": overall_message}
     except Exception as e:  # noqa: BLE001
         log.exception("run_release_refresh crashed")
@@ -391,6 +544,7 @@ def run_ingest_only(triggered_by: str = "manual") -> dict:
         from app.services.ingest import ingest_all
         details["ingest"] = ingest_all()
         message = f"new={details['ingest'].get('new', 0)} errors={details['ingest'].get('errors', 0)}"
+        status, message = _apply_floor_status(status, details, message)
         return {"status": status, "details": details, "message": message}
     except Exception as e:  # noqa: BLE001
         log.exception("run_ingest_only crashed")
@@ -421,6 +575,7 @@ def run_enrich_only(triggered_by: str = "manual") -> dict:
             f"enrich_ok={details['enrich'].get('ok', 0)} "
             f"embed_ok={details['embed'].get('ok', 0)}"
         )
+        status, message = _apply_floor_status(status, details, message)
         return {"status": status, "details": details, "message": message}
     except Exception as e:  # noqa: BLE001
         log.exception("run_enrich_only crashed")
@@ -503,13 +658,11 @@ def run_synthesis_only(week_id: Optional[str] = None, triggered_by: str = "manua
 # Startup catch-up
 # ---------------------------------------------------------------------------
 
-# Catch-up windows. A daily_pipeline finished more than 24h ago is considered
-# "overdue" and we fire one immediately on boot. The weekly_extension cron is
-# Monday 07:30; if today is Mon/Tue/Wed and the last weekly_extension finished
-# more than 8 days ago (or never ran), we fire one too.
+# Catch-up window. A daily_pipeline that finished more than 24h ago is "overdue"
+# and we fire one immediately on boot. The weekly brief no longer has its own
+# catch-up: it's chained off the daily, so firing the overdue daily also briefs
+# any unsynthesized closed week (see run_daily_pipeline).
 _DAILY_OVERDUE_HOURS = 24
-_WEEKLY_OVERDUE_DAYS = 8
-_WEEKLY_CATCHUP_WEEKDAYS = {0, 1, 2}  # Monday=0..Wednesday=2 (python weekday())
 
 
 def _last_run(job_name: str) -> Optional[JobRun]:
@@ -533,25 +686,14 @@ def _is_daily_overdue(now: datetime) -> tuple[bool, str]:
     return False, f"last daily_pipeline {age.total_seconds()/3600:.1f}h ago — not overdue"
 
 
-def _is_weekly_overdue(now: datetime) -> tuple[bool, str]:
-    if now.weekday() not in _WEEKLY_CATCHUP_WEEKDAYS:
-        return False, f"weekday={now.weekday()} outside catch-up window"
-    last = _last_run("weekly_extension")
-    if last is None:
-        return True, "no prior weekly_extension run"
-    age = now - last.started_at
-    if age > timedelta(days=_WEEKLY_OVERDUE_DAYS):
-        return True, f"last weekly_extension started {age.days}d ago"
-    return False, f"last weekly_extension {age.days}d ago — not overdue"
-
-
 def run_startup_catchup() -> dict:
-    """Fire any overdue daily / weekly jobs in background threads.
+    """Fire an overdue daily job on boot (in a background thread). The daily
+    chains the weekly brief itself, so there's no separate weekly catch-up.
 
     Called from the FastAPI lifespan hook ONLY when SCHEDULER_ENABLED is set.
-    Returns a dict for inspection (mostly useful in tests / debug). Each
-    decision is also recorded as a JobRun row with `triggered_by='startup_catchup'`
-    when the underlying orchestrator runs.
+    Returns a dict for inspection (mostly useful in tests / debug). The decision
+    is also recorded as a JobRun row with `triggered_by='startup_catchup'` when
+    the underlying orchestrator runs.
     """
     now = datetime.utcnow()
     decisions: dict[str, Any] = {}
@@ -566,20 +708,6 @@ def run_startup_catchup() -> dict:
             name="startup_catchup_daily",
             daemon=True,
         )
-        t.start()
-
-    weekly_due, weekly_reason = _is_weekly_overdue(now)
-    decisions["weekly"] = {"overdue": weekly_due, "reason": weekly_reason}
-    if weekly_due:
-        log.info("startup_catchup: firing weekly_extension — %s", weekly_reason)
-        # Tiny delay-driven offset: weekly waits for daily to acquire the lock
-        # first if both fire on the same boot. Both threads block on _JOB_LOCK
-        # so this is just an ordering hint, not a correctness requirement.
-        def _delayed_weekly():
-            import time as _t
-            _t.sleep(2.0)
-            run_weekly_extension(triggered_by="startup_catchup")
-        t = threading.Thread(target=_delayed_weekly, name="startup_catchup_weekly", daemon=True)
         t.start()
 
     return decisions

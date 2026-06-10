@@ -4,6 +4,85 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-06-10 (Phase 4 — automation wiring) — weekly chained off daily; 23:00 daily; no-tz-migration (Option A); no full-corpus backfills on nightly; region `""` sentinel; r/GamesIndustry removed
+
+**Decision 1 — Daily cron moves to 23:00 local; weekly is CHAINED off the daily (no standalone weekly cron).** Daily moved **07:00 → 23:00 local (CST)** so the brief is ready in the morning. The standalone `Mon 07:30` weekly cron is **removed**; instead, at the end of each daily run, `_previous_week_needs_synthesis()` checks whether the previous ISO week is closed-but-unsynthesized and, if so, calls `run_weekly_extension(week_id=...)` inline (the `threading.RLock` is re-entrant). `run_weekly_extension` gained an optional `week_id` param. Startup-catchup was simplified accordingly: the weekly branch + `_is_weekly_overdue` + weekly constants were removed (the daily chain covers it). (`app/main.py`, `app/services/jobs.py`.)
+
+**Why:** A separate weekly cron could fire before that night's ingest finished (long catch-up nights, Whisper backlog), synthesizing a half-ingested week. Chaining the weekly to the *end* of the daily makes ordering deterministic regardless of ingest duration, and self-heals a missed run (the next daily notices the previous week is still unsynthesized and runs it). One trigger, one lock, one ordering guarantee.
+
+**Decision 2 — No timezone migration ("Option A"): keep UTC week definitions.** The user's laptop is **CST/CDT (Texas)**. 11 PM Central is already next-day UTC, and the UTC week rolls over ~Sunday 6–7 PM Central, so the Sunday-night 23:00 daily briefs the just-closed UTC week → ready Monday morning. We keep `iso_week_bounds` / `weekly_reports.week_start` on UTC.
+
+**Why / alternatives rejected:** A full local-week migration was a moderate change touching **15 `iso_week_bounds` call sites** + **5 load-bearing exact-equality `weekly_reports.week_start` lookups**, plus a data-migration of existing week rows. The 23:00-Central timing already lands the brief on the right week without any of that risk, so the migration buys nothing the schedule doesn't already deliver. Rejected.
+
+**Decision 3 — The nightly pipeline must NOT run full-corpus backfills; full backfills are manual-only.** Two scope fixes:
+- **Region scope:** the daily's `backfill_region` step is scoped to items enriched *this run* (`Enrichment.created_at >= run_started AND region_focus IS NULL`), not the whole untagged corpus. The full-corpus pass stays available only as `scripts/backfill_region.py`. (`app/services/jobs.py`.)
+- **`retry_failed` scope:** the daily's 2nd enrich pass (`enrich_after_fetch`) re-enriches ONLY the items that just got article bodies (`enrich_pending(item_ids=...)`), not the whole skipped backlog. `enrich_pending` gained an `item_ids` param (`app/services/enrich.py`); `fetch_skipped_bodies` returns `fetched_ids` (`app/services/article_fetch.py`).
+
+**Why:** The old behavior was a **silent recurring cost leak**. Region backfill re-ran ~10,495 Haiku calls/night because most NULL-region rows legitimately *have* no region and stay NULL → re-billed every single night, forever. `retry_failed=True` re-scanned every non-ok item nightly and re-ran Whisper over the entire YouTube backlog (~55 min stall observed). Both are correct as one-time/manual operations and wrong as per-night work.
+
+**Cost rationale (recorded here as the justification for Decision 3):** normalized typical-night cost ≈ **$0.30 (~$120/yr) WITH the fixes**, vs **~$1,500/yr WITHOUT** (the region re-billing alone). Paid steps: enrich (Haiku, incl. YouTube transcript→Whisper-audio fallback), region-tag (Haiku), cluster labels (Sonnet), weekly synthesis+critic (Opus ~$0.11). Embeddings are local/free.
+
+**Decision 4 — Region "no region" sentinel is `""` (empty string), not `NULL`.** `scripts/backfill_region.py` now stores a no-region result as `""` so its own `region_focus IS NULL` selector won't re-process already-evaluated rows (the docstring's idempotency claim is now actually true). All consumers already treat `""` like NULL (dashboard `.ilike`, sections skip-if-falsy), so no read-path change was needed.
+
+**Why:** `NULL` is ambiguous — "not yet evaluated" vs. "evaluated, no region." Splitting those (`NULL` = pending, `""` = evaluated-empty) makes the backfill genuinely idempotent and stops it re-billing rows that have already been judged region-less.
+
+**Decision 5 — r/GamesIndustry removed (source + data).** Reddit served our scraper a frozen `.rss` (newest entry 2026-03-23; 0 new items since 2026-05-21) — public-RSS throttling, not a code bug; the source-health grid surfaced it as `silent` (every fetch ok, 0 items). Removed from `sources.yaml` AND purged from the DB (source id=24 + 13 items + 13 raw_items + 13 enrichments + 5 run_log rows, FK-ordered). **NOT** `GamesIndustry.biz` (news site, id=9) — that is KEPT. Corpus → 31 active sources.
+
+**Why / forward note:** A feed that hasn't moved in ~11 weeks contributes nothing but a permanent `silent` flag. Reddit public-RSS feeds are a **structural risk** — other subreddits may freeze the same way; watch the source-health grid for the next one.
+
+**Alternatives rejected:**
+- **Keep the standalone weekly cron (Decision 1).** Rejected — non-deterministic ordering vs. the daily; can synthesize a half-ingested week.
+- **Full local-week timezone migration (Decision 2).** Rejected — 15 + 5 call sites + data migration for zero gain over 23:00-Central.
+- **Keep full-corpus region backfill on the nightly (Decision 3).** Rejected — the headline ~$1,500/yr leak.
+- **Disable r/GamesIndustry (`enabled=False`) instead of removing (Decision 5).** Rejected — a permanently frozen feed adds only noise; clean removal is honest. (Reversible — re-add to `sources.yaml` if Reddit un-throttles.)
+
+---
+
+## 2026-06-09 (later) (Phase 4 — operator console) — Recency source-health SHIPPED; silent-window = 14d; synthesis retry policy
+
+**Decision 1 — Recency-based source health + single-source-of-truth `failing_sources_count`: NOW IMPLEMENTED** (was Decision 3 / "APPROVED — NOT YET IMPLEMENTED" in the earlier 2026-06-09 entry). New `source_health(session)` in `app/services/chrome.py` returns one row per source, verdict driven by **RunLog recency** (latest ingest attempt outcome + items produced in a rolling window): `disabled` (`Source.enabled` False) / `error` (most recent ingest RunLog `status='error'`) / `silent` (ran during the window but produced **0 new items across the whole window** — the "feed fetches but extracts nothing" silent death) / `idle` (no ingest run within 30d — **not** flagged) / `ok`. `failing_sources_count` is **rewritten** to derive from `source_health` (counts verdicts `error` or `silent`), **replacing** the old cumulative `error_count > 3` rule (which never decayed → cried wolf on already-recovered sources). This is the **single source of truth** shared by the global alert banner (every page) AND the new `/runs` source-grid. Old `FAILING_SOURCE_ERROR_THRESHOLD = 3` constant + the now-unused `from sqlalchemy import func` import removed. Grid rendered as a sorted table (problems first) on `/runs` via a `verdict_chip` macro in `runs.html`, styled in `app.css` (reuses `.gc-table`; red/yellow left-border accents on error/silent rows). Verified live on `:8001`.
+
+**Why:** Closes the operator-trust gap from the earlier entry's Decision 3 — `error_count` is cumulative and never decays, so a source that errored 4× last month but has ingested cleanly since still tripped `error_count > 3`. Recency self-heals on recovery and is the same signal the grid needs, so both consumers share one definition rather than drifting apart.
+
+**Decision 2 — Silent-window = 14 days (not 7).** Constant `SOURCE_VOLUME_WINDOW_DAYS = 14` (public) in `chrome.py`; the `/runs` grid label is driven off it (passed as `source_window_days`), not hardcoded, so it can't drift. Grid keys renamed `items_7d`/`runs_7d` → `items_window`/`runs_window` to stay honest. Result: VG247 → `ok`; r/GamesIndustry remains `silent` (genuinely 0 items in 14d).
+
+**Why:** The VG247 investigation (see SESSION_LOG 2026-06-09) showed VG247's feed URL (`https://www.vg247.com/feed`) is correct and returns valid RSS — the site (now an IGN brand) has simply slowed to ~weekly publishing, so "0 items in 7 days" was the **true state, not a bug**. A legitimately low-volume source shouldn't trip "silent" on a normal quiet stretch; 14d means only a sustained two-week drought trips it.
+
+**Decision 3 — Synthesis retry policy: bounded 3-attempt transient-only retry, app-level cap authoritative, fail loudly.** `_call_opus` in `app/services/synthesis.py` refactored into `_opus_once` (single attempt) + a bounded-retry `_call_opus`. Up to **3 attempts on TRANSIENT failures only** (`anthropic.APIConnectionError`/timeouts, `APIStatusError` 429 or 5xx, one-off malformed/unparseable structured output → internal `_SynthRetryable`/`ValidationError`) with exponential backoff (2s, 4s); **non-retryable** errors (4xx bad-request/auth/etc.) fail on attempt 1. After the cap it raises `ValueError` → orchestrator marks the `JobRun` `failed` → surfaced on `/runs` for a manual "Synthesis only" re-run. `with_options(max_retries=0)` disables the SDK's own retry layer so the app cap is the **only** retry source (no stacking). Unit-tested (success-on-retry / exhaustion / fast-fail all pass).
+
+**Why:** Synthesis is the one expensive all-or-nothing call (~37k tokens / ~$0.11 per `synthesize_week`; worst case ~3× ≈ $0.33 then stop). Don't loop and burn tokens — retry only on genuinely transient failures, cap hard, then surface for a human rather than silently retrying forever.
+
+**Alternatives rejected:**
+- **Silent-window 7d.** Too noisy — false-flagged VG247 on a normal quiet stretch.
+- **Per-source expected-volume baselines for the silent check.** More work for marginal gain; deferred.
+- **Let the SDK retry layer stack with the app cap.** Rejected — two retry sources multiply attempts and obscure the real cap; disabled SDK retries so the app policy is authoritative.
+- **Retry synthesis on any error / unbounded.** Rejected — burns tokens on non-transient (4xx) failures that will never succeed; fail-fast + manual re-run is cheaper and honest.
+
+---
+
+## 2026-06-09 (Phase 4 — operator console) — Run status must be earned; reconcile interrupted runs on boot; per-source health to go recency-based
+
+**Decision 1 — Run status is EARNED by meeting explicit expectations, not GRANTED by absence-of-exception.** A `JobRun` that finishes without raising but **under-delivers** is now downgraded `ok → degraded` via `_evaluate_floors()` + `_apply_floor_status()` in `app/services/jobs.py` (wired into `run_daily_pipeline` / `run_weekly_extension` / `run_release_refresh` / `run_ingest_only` / `run_enrich_only`). Floors: ingest `errors>0` OR `fetched==0`; enrich/embed/enrich-after-fetch `failed>0`; **any non-blocking step** (`article_fetch`, `backfill_region`, `release_refresh_pcgamer`/`ign`) that recorded an `error` key. `degraded` renders as a warning chip `.gc-table-chip--warn`.
+
+**Why:** The old contract was "if no orchestrator step threw, the run is green." But several steps are deliberately non-blocking (an article-fetch or region-backfill failure must not abort the pipeline), so their errors were swallowed silently and the run still showed `ok`. That's a false-positive: the operator glance lies green while a step quietly failed. Tying status to explicit per-step floors makes green mean "delivered what it was supposed to," and surfaces partial failures as `degraded` rather than hiding them. `failed`/`skipped` pass through unchanged.
+
+**Decision 2 — Reconcile interrupted runs on every boot.** `reconcile_interrupted_runs()` (in `app/services/jobs.py`) runs from the `app/main.py` lifespan immediately after `init_db()`, **always** (independent of `SCHEDULER_ENABLED`). It marks any `JobRun` still `status='running'` → `'failed'` + `finished_at` + message `"interrupted — process exited before completion (auto-reconciled)"`.
+
+**Why:** This is a single-process app (FastAPI + scheduler + pipeline in one uvicorn process — see the hard architectural constraints). Therefore a `running` `JobRun` row observed at startup is **definitionally dead**: the only process that could have been advancing it is the one that just started. Leaving it `running` would make the new health band show a phantom in-flight job forever. Validated in the wild this session: a user-triggered daily pipeline was killed mid-run (uvicorn PID 17572 + reload worker), and its 2 `running` rows were correctly auto-reconciled on the next reload.
+
+**Decision 3 (NOW IMPLEMENTED — see 2026-06-09 (later) below) — Per-source health goes recency-based, replacing `error_count > 3`.** Per-source health will be driven by **RunLog recency** — did the source produce items recently? — **replacing** the cumulative `error_count > 3` rule in `app/services/chrome.py::failing_sources_count`. One source of truth, shared by the global alert banner AND the new operator-console source-grid. *(Built later the same day — see the 2026-06-09 (later) entry for the as-shipped verdict taxonomy + 14-day window.)*
+
+**Why:** `error_count` is a cumulative counter that **never decays**. A source that errored 4× last month but has ingested cleanly every day since still trips `error_count > 3` and cries wolf in the alert banner. Recency ("has this source produced items in the last N runs / days?") reflects *current* health, self-heals when a source recovers, and is the same signal the new source-grid needs — so both consumers should share it rather than the grid inventing a second definition.
+
+**Alternatives rejected:**
+- **Keep status = no-exception (Decision 1).** Rejected — silently green on partial failure is exactly the operator-trust bug this console exists to kill.
+- **Add a third terminal state only for blocking steps (Decision 1).** Rejected — the whole point is that *non-blocking* step failures are the ones being hidden; they must be what trips `degraded`.
+- **Reconcile only when the scheduler is enabled (Decision 2).** Rejected — interrupted rows can exist regardless of automation (manual one-shots, user-triggered runs); the single-process invariant holds either way, so reconcile unconditionally.
+- **A grace window / timestamp heuristic before reconciling (Decision 2).** Rejected — unnecessary given the single-process invariant; the row is dead the moment a new process boots.
+- **Let the source-grid keep its own `error_count` view (Decision 3).** Rejected — two definitions of "failing source" drift apart; the banner and the grid must agree.
+
+---
+
 ## 2026-06-09 — Home read-out picker sources from synthesized weeks; `_report_grid.html` mojibake repaired
 
 **Decision:** The weekly read-out (`/`) week picker now lists only weeks that have a **`synthesized` `weekly_reports` row** — via a new `readout_weeks(session)` in `app/services/reports.py`, wired into `app/routers/reports.py` in place of `available_weeks()`. The in-progress current ISO week (which has clusters from the daily pipeline but no weekly synthesis yet) is therefore hidden from the read-out until its weekly synthesis runs. `/stories` and `/eval` keep using `available_weeks()` (cluster-derived) — they intentionally show live current-week data.

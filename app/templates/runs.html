@@ -13,6 +13,69 @@
 
 {% block main_content %}
 
+{# ── Health band: scheduled-job status + next-run countdown + corpus freshness.
+   Read-only operator glance; populated by _build_health() in routers/runs.py. #}
+{% macro job_status_chip(status) %}
+  {% if status == 'ok' %}<span class="gc-table-chip gc-table-chip--ok">ok</span>
+  {% elif status == 'degraded' %}<span class="gc-table-chip gc-table-chip--warn">degraded</span>
+  {% elif status == 'failed' %}<span class="gc-table-chip gc-table-chip--bad">failed</span>
+  {% elif status == 'running' %}<span class="gc-table-chip">running</span>
+  {% elif status == 'skipped' %}<span class="gc-table-chip gc-table-chip--off">skipped</span>
+  {% else %}<span class="gc-table-chip gc-table-chip--off">no runs</span>{% endif %}
+{% endmacro %}
+
+{% macro verdict_chip(v) %}
+  {% if v == 'ok' %}<span class="gc-table-chip gc-table-chip--ok">ok</span>
+  {% elif v == 'silent' %}<span class="gc-table-chip gc-table-chip--warn">silent</span>
+  {% elif v == 'error' %}<span class="gc-table-chip gc-table-chip--bad">error</span>
+  {% elif v == 'disabled' %}<span class="gc-table-chip gc-table-chip--off">disabled</span>
+  {% else %}<span class="gc-table-chip gc-table-chip--off">idle</span>{% endif %}
+{% endmacro %}
+
+<section class="gc-health-band">
+  <div class="gc-health-card">
+    <div class="gc-health-card-label">Daily pipeline</div>
+    <div class="gc-health-card-main">
+      {{ job_status_chip(health.daily.status) }}
+      {% if health.daily.stale %}<span class="gc-table-chip gc-table-chip--bad">stale</span>{% endif %}
+    </div>
+    <div class="gc-health-card-sub">
+      ran {{ health.daily.last_ago }}
+      {% if health.daily.next_in %}&middot; next in {{ health.daily.next_in }}
+      {% else %}&middot; <span class="gc-health-off">scheduler off</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="gc-health-card">
+    <div class="gc-health-card-label">Weekly extension</div>
+    <div class="gc-health-card-main">
+      {{ job_status_chip(health.weekly.status) }}
+      {% if health.weekly.stale %}<span class="gc-table-chip gc-table-chip--bad">stale</span>{% endif %}
+    </div>
+    <div class="gc-health-card-sub">
+      ran {{ health.weekly.last_ago }} &middot; chained to daily
+    </div>
+  </div>
+
+  <div class="gc-health-card">
+    <div class="gc-health-card-label">Corpus</div>
+    <div class="gc-health-card-main">{{ "{:,}".format(health.total_items) }} items</div>
+    <div class="gc-health-card-sub">
+      newest {{ health.newest_ago }} &middot; {{ health.enrich_pct }}% enriched
+    </div>
+  </div>
+
+  <div class="gc-health-card">
+    <div class="gc-health-card-label">Synthesis</div>
+    <div class="gc-health-card-main">{{ health.latest_synth or '—' }}</div>
+    <div class="gc-health-card-sub">
+      {{ health.cur_week }}:
+      {% if health.cur_week_synth %}synthesized
+      {% else %}<span class="gc-health-off">awaiting synthesis</span>{% endif %}
+    </div>
+  </div>
+</section>
+
 <section class="gc-run-panel">
   <div class="gc-run-panel-title">Run now</div>
   <div class="gc-run-panel-hint">
@@ -44,6 +107,45 @@
   </div>
 </section>
 
+<section class="gc-source-health">
+  <div class="gc-run-history-title">Source health
+    <span class="gc-source-health-hint">ingest outcomes per source &middot; last {{ source_window_days }} days &middot; "silent" = ran but produced nothing</span>
+  </div>
+
+  {% if sources %}
+    <table class="gc-table gc-source-table">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th class="gc-table-cat">Type</th>
+          <th class="gc-table-cat">Health</th>
+          <th>Last run</th>
+          <th>Items (last / {{ source_window_days }}d)</th>
+          <th>Last error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sources %}
+          <tr class="gc-src-row gc-src-row--{{ s.verdict }}">
+            <td>{{ s.name }}</td>
+            <td class="gc-table-cat"><span class="gc-table-chip">{{ s.type }}</span></td>
+            <td class="gc-table-cat">{{ verdict_chip(s.verdict) }}</td>
+            <td class="gc-table-when">
+              {% if s.last_status %}{{ s.last_status }} &middot; {{ s.last_ago }}{% else %}—{% endif %}
+            </td>
+            <td>{{ s.last_items if s.last_items is not none else '—' }} / {{ s.items_window }}</td>
+            <td class="gc-src-err">
+              {% if s.verdict in ['error', 'silent'] and s.last_error %}{{ s.last_error[:80] }}{% else %}—{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="gc-row-empty">No sources configured.</div>
+  {% endif %}
+</section>
+
 <section class="gc-run-history">
   <div class="gc-run-history-title">Recent runs</div>
 
@@ -71,6 +173,8 @@
             <td class="gc-table-cat">
               {% if r.status == 'ok' %}
                 <span class="gc-table-chip gc-table-chip--ok">ok</span>
+              {% elif r.status == 'degraded' %}
+                <span class="gc-table-chip gc-table-chip--warn">degraded</span>
               {% elif r.status == 'failed' %}
                 <span class="gc-table-chip gc-table-chip--bad">failed</span>
               {% elif r.status == 'running' %}

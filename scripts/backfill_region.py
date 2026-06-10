@@ -2,8 +2,9 @@
 
 For each enrichment row with status='ok' and region_focus IS NULL, calls
 Anthropic Haiku 4.5 with the existing tldr text to extract region tags
-(subset of {americas, europe, asia} or empty). Idempotent — re-runs skip
-already-populated rows. Phase 3c.15.
+(subset of {americas, europe, asia} or empty). Truly idempotent — an evaluated
+no-region row is stored as "" (NOT NULL), so re-runs skip BOTH tagged rows and
+already-evaluated no-region rows. Phase 3c.15; "" sentinel added 2026-06-10.
 
 Usage:
     python scripts/backfill_region.py --limit 10     # smoke-test batch
@@ -112,7 +113,13 @@ def run(limit: int | None = None, ids: list[int] | None = None) -> dict:
             log.warning("tag_region failed for enrichment=%s: %s", enrichment_id, e)
             continue
 
-        value = ",".join(tags) if tags else None
+        # "" = "evaluated, no region" (vs NULL = "not yet evaluated"). Storing the
+        # empty-string sentinel is what makes re-runs idempotent: _pending_rows
+        # selects region_focus IS NULL, so an evaluated no-region row is never
+        # re-billed. All consumers treat "" the same as NULL (no region):
+        # dashboard ilike won't match, sections skips falsy values. See
+        # DECISIONS 2026-06-10.
+        value = ",".join(tags) if tags else ""
         with Session(engine) as session:
             enr = session.get(Enrichment, enrichment_id)
             if enr is None:

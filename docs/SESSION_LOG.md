@@ -4,6 +4,76 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-10 (Phase 4 — automation wiring) — scheduler chained + retimed (still INERT), nightly full-corpus backfills killed, r/GamesIndustry removed
+
+**Context.** Same operator-console arc, later work. The scheduler is now *wired the way it should run* (but still INERT — `SCHEDULER_ENABLED` off; flipping it is the user's action), the two cost-critical nightly-backfill warts are fixed, and a frozen subreddit was removed source-and-data. All verified live on `:8001`.
+
+**What was done.**
+- **Scheduler retimed + weekly chained off the daily (`app/main.py`, `app/services/jobs.py`).** Daily cron moved **07:00 → 23:00 local (CST)** so the brief is ready in the morning. The standalone `Mon 07:30` weekly cron was **removed**; the weekly now runs **inline at the end of each daily run** — `_previous_week_needs_synthesis()` checks if the previous ISO week is closed-but-unsynthesized and, if so, calls `run_weekly_extension(week_id=...)` (the RLock is re-entrant). This guarantees the weekly runs AFTER that night's ingest regardless of ingest duration, and self-heals a missed run. `run_weekly_extension` gained an optional `week_id` param. Startup-catchup simplified: removed the weekly branch + `_is_weekly_overdue` + weekly constants (the daily chain covers it). Health-band weekly card now shows "chained to daily" instead of a next-run countdown.
+- **DECISION — no timezone migration ("Option A").** Kept UTC week definitions. The laptop is CST/CDT (Texas); 11 PM Central is already next-day UTC, and the UTC week rolls over ~Sunday 6–7 PM Central, so the Sunday-night 23:00 run briefs the just-closed week → ready Monday morning. Rejected the full local-week migration (15 `iso_week_bounds` call sites; 5 load-bearing exact-equality `weekly_reports.week_start` lookups; data-migration risk). See DECISIONS 2026-06-10.
+- **Nightly pipeline no longer does FULL-CORPUS backfills (the cost-critical fixes).**
+  - **Region scope fix (`app/services/jobs.py`).** The daily's `backfill_region` step is now scoped to items enriched THIS run (`Enrichment.created_at >= run_started AND region_focus IS NULL`), not the whole untagged corpus. Previously it re-ran ~10,495 Haiku calls/night (every NULL-region row — most of which legitimately have no region and stay NULL → re-billed forever). Full-corpus backfill remains available only as the manual `scripts/backfill_region.py`.
+  - **`retry_failed` scope fix.** The daily's 2nd enrich pass (`enrich_after_fetch`) now re-enriches ONLY the items that just got article bodies (`enrich_pending(item_ids=...)`), not the whole skipped backlog. `enrich_pending` gained an `item_ids` param (`app/services/enrich.py`); `fetch_skipped_bodies` now returns `fetched_ids` (`app/services/article_fetch.py`). The old `retry_failed=True` re-scanned every non-ok item nightly and re-ran Whisper over the entire YouTube backlog (~55 min stall observed).
+  - **Region backfill idempotency fix (`scripts/backfill_region.py`).** A no-region result is now stored as `""` (empty-string sentinel) instead of `NULL`, so the manual full backfill's `region_focus IS NULL` selector no longer re-processes already-evaluated rows. All consumers treat `""` like NULL (dashboard `.ilike`, sections skip-if-falsy). The docstring's idempotency claim is now actually true.
+- **r/GamesIndustry subreddit fully removed (source + data).** Reddit served our scraper a frozen `.rss` (newest entry 2026-03-23; 0 new items since 2026-05-21) — public-RSS throttling, not a code bug. The source-health grid correctly surfaced it as `silent` (every fetch ok, 0 items) before removal. Removed from `sources.yaml` AND purged from the DB (source id=24 + its 13 items + 13 raw_items + 13 enrichments + 5 run_log rows, FK-ordered). **NOT** to be confused with `GamesIndustry.biz` (news site, id=9) which is KEPT. See DECISIONS 2026-06-10.
+- **Catch-up daily run (one-time, manual).** status=ok, 267 min, ingest new=34, enrich 270 ok, region attempted 10,495 / tagged 68, 24 new W24 clusters. Worst-case run (1.5-day catch-up + the now-fixed full backfills); a normal night is far smaller.
+
+**Cost analysis (rationale).** Normalized typical-night cost ≈ **$0.30 (~$120/yr) WITH the fixes**, vs **~$1,500/yr WITHOUT** (region re-billing 10k Haiku calls/night). Paid steps: enrich (Haiku, incl. YouTube transcript→Whisper-audio fallback), region-tag (Haiku), cluster labels (Sonnet), weekly synthesis+critic (Opus ~$0.11). Embeddings local/free. See DECISIONS 2026-06-10.
+
+**Corpus after this session.** **12,710 items** (12,689 at session start → +34 from the catch-up daily → −13 from the r/GamesIndustry purge) / **31 active sources** (was 32) / 5 synthesized `weekly_reports` (W19–W23); W24 clusters-only.
+
+**Verified.** All items live on `:8001`.
+
+**Where we left off / next.**
+- **Cost meter — STILL PENDING (not built).** Per-run actual-token/$ on `/runs`, from each Anthropic response's real `usage` (+ optional soft-cap). Designed, not built. This is the one remaining item from the confirmed Phase-4 set.
+- **Scheduler ACTIVATION — STILL PENDING (user's action).** Code is wired but `SCHEDULER_ENABLED` is off. Flip it + restart uvicorn → triggers startup-catchup → fires an overdue daily → which now chains the weekly.
+- Optional: alert-banner wording ("erroring" → "needs attention" so `silent` isn't mislabeled). User action: set an Anthropic Console monthly spend limit (hard ceiling).
+
+---
+
+## 2026-06-09 (Phase 4 — operator console) — /runs health band + earned `degraded` status + reconcile-on-boot
+
+**Context.** First Phase 4 "operator console" session against the live `:8001` dev server. The `/runs` page (shipped INERT + unstyled in 3c.35) gets a read-only operator glance, run status stops being granted by absence-of-exception, and interrupted runs are reconciled on every boot. **No scheduler activation** — `SCHEDULER_ENABLED` is still off; this is the instrumentation that makes activation safe to watch.
+
+**What was done.**
+- **Home read-out → "Data flow" link.** `app/templates/reports.html`: the "Run pipeline" button (which POSTed `pipeline_run`) is replaced with a "Data flow" link → `/runs` (route `runs_view`); the "Last workflow" meta callout is removed (kept "Last pull"). The old `pipeline_run` route + the `can_run_pipeline` / `last_workflow` template context vars are now **unused-but-left** (not cleaned up).
+- **`/runs` health band (new, read-only).** `_build_health()` + helpers (`_job_health`, `_next_run_secs`, `_fmt_span`, `_fmt_ago`, `_current_iso_week_id`, `_scalar_count`) in `app/routers/runs.py`; band markup in `app/templates/runs.html`; CSS `.gc-health-band` / `.gc-health-card*` / `.gc-health-off` in `app/static/app.css`. 4 cards: **Daily pipeline** + **Weekly extension** (latest `JobRun` status + age + next-run countdown read live from `app.main._scheduler.get_job(id).next_run_time`; shows "scheduler off" when `SCHEDULER_ENABLED` unset), **Corpus** (total items, newest-item age via `max(RawItem.fetched_at)`, enrich % = `count(Enrichment.status=='ok') / count(Item)`), **Synthesis** (latest synthesized week via `readout_weeks()` + current-week synth state). Stale flag: daily >25h, weekly >8d.
+- **Earned `degraded` status + floor checks (the false-positive killer).** `_evaluate_floors()` + `_apply_floor_status()` in `app/services/jobs.py`, wired into `run_daily_pipeline` / `run_weekly_extension` / `run_release_refresh` / `run_ingest_only` / `run_enrich_only`. A run that finishes without raising but **under-delivers** is downgraded `ok → degraded` instead of showing green. Floors (verified per-step keys): ingest `errors>0` OR `fetched==0`; enrich/embed/enrich_after_fetch `failed>0`; any **non-blocking** step (`article_fetch`, `backfill_region`, `release_refresh_pcgamer`/`ign`) that recorded an `error` key — previously swallowed silently. Trips store `details["_warnings"]` + append `"DEGRADED: ..."` to the message; `failed`/`skipped` pass through unchanged. New status rendered as a warning chip `.gc-table-chip--warn` (band macro + history table); `JobRun.status` doc comment updated to include `'degraded'`. Unit-tested: 7 synthetic cases pass.
+- **Reconcile interrupted runs on boot.** `reconcile_interrupted_runs()` in `app/services/jobs.py`, called from `app/main.py` lifespan right after `init_db()` (always, regardless of `SCHEDULER_ENABLED`). Marks any `JobRun` still `status='running'` → `'failed'` + `finished_at` + message `"interrupted — process exited before completion (auto-reconciled)"`. Rationale: single-process app ⇒ a `running` row at boot is always a dead run; prevents the health band showing a phantom in-flight job.
+
+**Operational note.** User accidentally triggered a daily pipeline mid-session; killed uvicorn (PID 17572 + reload worker 4568) to stop it. Partial ingest persisted safely — corpus grew **12,273 → 12,689 items**, no loss/corruption. The 2 interrupted `JobRun` rows were auto-reconciled by `reconcile_interrupted_runs` on the next reload (the feature validating itself in the wild).
+
+**Verified.** All four items live on `:8001`. 7-case floor-check unit test passes.
+
+**Where we left off / next.**
+- **Per-source health grid (recency-based) — NEXT.** Approved this session: per-source health will be driven by **RunLog recency** (did the source produce items recently?), **replacing** the cumulative `error_count > 3` logic in `chrome.py::failing_sources_count` — one source of truth shared by the global alert banner AND the new console source-grid. (`error_count` never decays, so the old rule cries wolf on recovered sources.) Designed, not built. See DECISIONS 2026-06-09.
+- **`/runs` styling polish + add to sidebar nav** — still rough, not in the menu.
+- **Synthesis retry-with-cap** — 3 attempts, transient errors only (429/5xx/timeout), then stop + surface for manual handling (~11¢/attempt, ~37k tokens/synthesis run). Designed, not built.
+- **Scheduler still INERT** (`SCHEDULER_ENABLED` off). The next-run countdown only displays once the flag is flipped — verify then.
+
+---
+
+## 2026-06-09 (later) (Phase 4 — operator console) — per-source health grid + recency banner + nav/styling + synthesis retry-cap
+
+**Context.** Continuation of the same-day operator-console session; this pass BUILT AND VERIFIED (on `:8001`) the three items the earlier entry left pending, plus tuned the silent threshold off a real-source investigation. The operator console is now feature-complete; only scheduler activation remains.
+
+**What was done.**
+- **Per-source health grid (recency-based).** New `source_health(session)` in `app/services/chrome.py` — one row per source, verdict from RunLog recency (latest ingest outcome + items in a rolling window): `disabled` / `error` (latest ingest `status='error'`) / `silent` (ran but **0 new items across the whole window** — the "fetches but extracts nothing" silent death) / `idle` (no ingest in 30d, not flagged) / `ok`. Rendered as a sorted table (problems first) on `/runs` via a new section + `verdict_chip` macro in `app/templates/runs.html`, styled in `app.css` (reuses `.gc-table`; red/yellow left-border accents on error/silent rows).
+- **`failing_sources_count` rewritten** (`chrome.py`) — now derives from `source_health` (counts `error`+`silent`), **replacing** the cumulative `error_count > 3` rule (never decayed → flagged recovered sources). **Single source of truth** shared by the global alert banner AND the grid — this IMPLEMENTS the earlier entry's "approved-not-implemented" Decision 3. Old `FAILING_SOURCE_ERROR_THRESHOLD = 3` constant removed; unused `from sqlalchemy import func` dropped.
+- **Silent-window tuned to 14 days** (was 7). `SOURCE_VOLUME_WINDOW_DAYS = 14` (public) in `chrome.py`; `/runs` grid label driven off it (passed as `source_window_days`), not hardcoded. Grid keys `items_7d`/`runs_7d` → `items_window`/`runs_window`. Result: VG247 → `ok`; r/GamesIndustry remains `silent` (genuinely 0 items in 14d).
+- **VG247 investigation (finding).** VG247's stored feed URL (`https://www.vg247.com/feed`) is **CORRECT** and returns valid RSS — the site (now an IGN brand) has simply slowed to ~weekly publishing, so "0 items in 7 days" was the **true state, not a bug**. No URL change. This drove the 14d loosen. (An earlier in-session assumption that VG247 was "likely a dead feed" was WRONG — it's a genuine content drought.)
+- **Sidebar nav.** Added a "Runs" nav item (gauge icon, route `runs_view`) to `NAV_ITEMS_BASE` in `chrome.py`, between Sources and About; is-active on `/runs`. `/runs` now reachable from the menu on every page.
+- **`/runs` styling.** Full CSS pass in `app.css` for the Run-now panel, trigger buttons, status pill, history + source tables, expand-details `<pre>`, and red/yellow left-border accents on failed/degraded/error/silent rows. Uses existing design tokens; page now matches app chrome.
+- **Synthesis retry-cap.** `_call_opus` in `app/services/synthesis.py` split into `_opus_once` (single attempt) + bounded-retry `_call_opus`: up to 3 attempts on TRANSIENT failures only (APIConnectionError/timeout, APIStatusError 429/5xx, malformed structured output → `_SynthRetryable`/`ValidationError`) with exponential backoff (2s, 4s); non-retryable 4xx fail on attempt 1. SDK retries disabled (`with_options(max_retries=0)`) so the app cap is authoritative; after the cap raises `ValueError` → JobRun `failed` → manual "Synthesis only" re-run. ~37k tokens / ~$0.11 per run; worst case ~3× ≈ $0.33. Unit-tested (success-on-retry / exhaustion / fast-fail all pass).
+
+**Verified.** All seven items live on `:8001`. Synthesis retry unit tests pass.
+
+**Where we left off / next.**
+- **Operator console is feature-complete** (health band, earned `degraded` + floors, reconcile-on-boot, per-source grid, recency banner, nav + styling, synthesis retry-cap).
+- **Scheduler still INERT** (`SCHEDULER_ENABLED` off) — the remaining milestone. Activate = flip `SCHEDULER_ENABLED=1` + restart uvicorn, then verify the live next-run countdown on `/runs`.
+
+---
+
 ## 2026-06-09 — W23 (week of Jun 1) full-pipeline run + Jun 3–6 backfill + read-out picker fix + mojibake repair
 
 **Context.** Ingest had silently lapsed after ~mid-day Jun 2 (no scheduler running). Goal: produce a complete week-of-June-1 (ISO **2026-W23**) brief, running every pipeline stage from scratch.

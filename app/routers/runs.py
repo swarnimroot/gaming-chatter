@@ -15,19 +15,27 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.config import TEMPLATES_DIR
-from app.db.models import JobRun
+from app.db.models import Enrichment, Item, JobRun, RawItem
 from app.db.session import get_session
 from app.services import jobs as jobs_svc
-from app.services.chrome import failing_sources_count, nav_items_for
+from app.services.chrome import (
+    SOURCE_VOLUME_WINDOW_DAYS,
+    failing_sources_count,
+    nav_items_for,
+    source_health,
+)
+from app.services.reports import readout_weeks
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -67,6 +75,100 @@ def _fmt_duration(d: Optional[float]) -> str:
     return f"{int(d // 3600)}h {int((d % 3600) // 60)}m"
 
 
+# ── Health band (Phase 4 operator console) ──────────────────────────────────
+# A scheduled job whose most-recent run is older than these is flagged "stale"
+# even if that run succeeded — i.e. the cron silently stopped firing.
+_DAILY_STALE_S = 25 * 3600
+_WEEKLY_STALE_S = 8 * 86400
+
+
+def _current_iso_week_id() -> str:
+    iso = datetime.utcnow().isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def _fmt_span(secs: float) -> str:
+    """Compact duration like '45m' / '6h 12m' / '2d 9h'."""
+    secs = int(max(0, secs))
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m"
+    if secs < 86400:
+        return f"{secs // 3600}h {(secs % 3600) // 60}m"
+    return f"{secs // 86400}d {(secs % 86400) // 3600}h"
+
+
+def _fmt_ago(dt: Optional[datetime]) -> str:
+    if dt is None:
+        return "never"
+    return _fmt_span((datetime.utcnow() - dt).total_seconds()) + " ago"
+
+
+def _next_run_secs(job_id: str) -> Optional[float]:
+    """Seconds until the named APScheduler job next fires, or None when the
+    scheduler isn't running (SCHEDULER_ENABLED off) or the job is absent.
+
+    `app.main` is imported lazily — main.py imports this router at module load,
+    so a top-level import would be circular."""
+    import app.main as main_module
+
+    sched = getattr(main_module, "_scheduler", None)
+    if sched is None:
+        return None
+    job = sched.get_job(job_id)
+    if job is None or job.next_run_time is None:
+        return None
+    # next_run_time is tz-aware; compare via epoch to dodge naive/aware math.
+    return job.next_run_time.timestamp() - time.time()
+
+
+def _job_health(session: Session, job_name: str, stale_after_s: int) -> dict:
+    row = session.exec(
+        select(JobRun)
+        .where(JobRun.job_name == job_name)
+        .order_by(JobRun.started_at.desc())
+    ).first()
+    last_dt = (row.finished_at or row.started_at) if row else None
+    age_s = (datetime.utcnow() - last_dt).total_seconds() if last_dt else None
+    next_s = _next_run_secs(job_name)
+    return {
+        "status": row.status if row else "none",
+        "last_ago": _fmt_ago(last_dt),
+        "stale": age_s is not None and age_s > stale_after_s,
+        "next_in": _fmt_span(next_s) if next_s is not None else None,
+    }
+
+
+def _scalar_count(session: Session, stmt) -> int:
+    result = session.exec(stmt).first()
+    return int(result or 0)
+
+
+def _build_health(session: Session) -> dict:
+    """Top-of-page operator glance: scheduled-job status + next-run countdown
+    + corpus freshness. Read-only; no pipeline side effects."""
+    total_items = _scalar_count(session, select(func.count(Item.id)))
+    enriched_ok = _scalar_count(
+        session, select(func.count(Enrichment.id)).where(Enrichment.status == "ok")
+    )
+    newest = session.exec(select(func.max(RawItem.fetched_at))).first()
+
+    synth_weeks = readout_weeks(session)  # newest ISO week first
+    cur_week = _current_iso_week_id()
+
+    return {
+        "daily": _job_health(session, "daily_pipeline", _DAILY_STALE_S),
+        "weekly": _job_health(session, "weekly_extension", _WEEKLY_STALE_S),
+        "total_items": total_items,
+        "enrich_pct": round(100.0 * enriched_ok / total_items, 1) if total_items else 0.0,
+        "newest_ago": _fmt_ago(newest),
+        "cur_week": cur_week,
+        "cur_week_synth": cur_week in set(synth_weeks),
+        "latest_synth": synth_weeks[0] if synth_weeks else None,
+    }
+
+
 def _build_rows(session: Session, limit: int = 50) -> list[dict]:
     rows = session.exec(
         select(JobRun).order_by(JobRun.started_at.desc()).limit(limit)
@@ -90,6 +192,12 @@ def _build_rows(session: Session, limit: int = 50) -> list[dict]:
 def runs_view(request: Request, session: Session = Depends(get_session)):
     ctx = {
         "rows": _build_rows(session, limit=50),
+        "health": _build_health(session),
+        "sources": [
+            {**h, "last_ago": _fmt_ago(h["last_started_at"])}
+            for h in source_health(session)
+        ],
+        "source_window_days": SOURCE_VOLUME_WINDOW_DAYS,
         "scheduler_enabled": _scheduler_enabled(),
         "trigger_jobs": [
             {"slug": slug, "label": label, "accepts_week": accepts_week}

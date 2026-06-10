@@ -177,7 +177,7 @@ class JobRun(SQLModel, table=True):
     job_name: str = Field(index=True)           # 'daily_pipeline' | 'weekly_extension' | 'release_refresh' | granular job name
     started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     finished_at: Optional[datetime] = None
-    status: str = Field(default="running", index=True)  # 'running' | 'ok' | 'failed' | 'skipped'
+    status: str = Field(default="running", index=True)  # 'running' | 'ok' | 'degraded' | 'failed' | 'skipped'
     duration_seconds: Optional[float] = None
     message: Optional[str] = Field(default=None, sa_column=Column(Text))    # short summary or error
     details_json: Optional[str] = Field(default=None, sa_column=Column(Text))  # per-step counts

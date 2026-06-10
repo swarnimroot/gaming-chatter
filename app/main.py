@@ -26,6 +26,12 @@ def _scheduler_enabled() -> bool:
 async def lifespan(app_: FastAPI):
     global _scheduler
     init_db()
+    # Reconcile any JobRun left 'running' by a previous process that exited
+    # mid-pipeline (e.g. uvicorn killed). Single-process app => a 'running' row
+    # at boot is always a dead run; mark it failed so /runs doesn't show a
+    # phantom in-flight job. Runs regardless of SCHEDULER_ENABLED.
+    from app.services.jobs import reconcile_interrupted_runs
+    reconcile_interrupted_runs()
     # Fail-fast nav validator: every route name in NAV_ITEMS_BASE must resolve,
     # so renaming a router function without updating chrome.py crashes at boot
     # rather than 500-ing later at first nav render.
@@ -55,31 +61,24 @@ async def lifespan(app_: FastAPI):
     if _scheduler_enabled():
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
-        from app.services.jobs import (
-            run_daily_pipeline,
-            run_startup_catchup,
-            run_weekly_extension,
-        )
-        # tz=None -> APScheduler uses system local time (matches what the user
-        # sees on their laptop clock); externalize via env later if/when this
-        # ever runs on a non-local machine.
+        from app.services.jobs import run_daily_pipeline, run_startup_catchup
+        # tz=None -> APScheduler uses system local time (the laptop's clock, CST).
+        # Daily at 23:00 so the brief is ready in the morning. There is NO separate
+        # weekly cron: the daily chains the weekly brief once a week closes (see
+        # jobs.run_daily_pipeline -> _previous_week_needs_synthesis). That runs the
+        # brief AFTER that night's ingest regardless of its duration, and at 23:00
+        # CST the week's UTC boundary has already rolled, so Sunday's run delivers
+        # the weekly Monday morning. See DECISIONS 2026-06-10.
         _scheduler = BackgroundScheduler(timezone=None)
         _scheduler.add_job(
             run_daily_pipeline,
-            CronTrigger(hour=7, minute=0),
+            CronTrigger(hour=23, minute=0),
             id="daily_pipeline",
             max_instances=1,
             coalesce=True,
         )
-        _scheduler.add_job(
-            run_weekly_extension,
-            CronTrigger(day_of_week="mon", hour=7, minute=30),
-            id="weekly_extension",
-            max_instances=1,
-            coalesce=True,
-        )
         _scheduler.start()
-        log.info("APScheduler started: daily=07:00 local, weekly=Mon 07:30 local")
+        log.info("APScheduler started: daily=23:00 local; weekly chained off daily")
         try:
             run_startup_catchup()
         except Exception:  # noqa: BLE001

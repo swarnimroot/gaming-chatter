@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -554,35 +555,89 @@ def _format_input_for_prompt(data: dict) -> str:
 # Anthropic calls
 # ---------------------------------------------------------------------------
 
-def _call_opus(system_prompt: str, user_text: str, max_tokens: int = 8192) -> WeeklySynthesis:
-    """Single Opus 4.7 structured-output call. Returns the parsed Pydantic instance.
+# Synthesis is the one expensive, all-or-nothing Anthropic call (~37k tokens /
+# ~$0.11 per synthesize_week — synth + critic). Per DECISIONS 2026-06-09 it gets
+# a bounded retry: up to 3 attempts on TRANSIENT failures (timeouts, 429, 5xx,
+# one-off malformed structured output) with exponential backoff, then fail
+# loudly so the orchestrator marks the run failed and /runs surfaces it for a
+# manual re-run. Non-transient errors (400/401/403/404/422 — they repeat
+# identically) fail on the first attempt without burning further tokens.
+_SYNTH_MAX_ATTEMPTS = 3
+_SYNTH_BACKOFF_BASE_S = 2.0  # waits: 2s after attempt 1, 4s after attempt 2
 
-    Raises ValueError on any transport / schema / validation failure.
-    """
-    try:
-        message = _get_client().messages.parse(
-            model=ANTHROPIC_SYNTHESIS_MODEL,
-            max_tokens=max_tokens,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": user_text}],
-            output_format=WeeklySynthesis,
-        )
-    except anthropic.APIError as e:
-        raise ValueError(f"anthropic synthesis API error: {e}") from e
-    except ValidationError as e:
-        raise ValueError(f"anthropic synthesis response failed schema: {e}") from e
 
+class _SynthRetryable(Exception):
+    """Internal marker: a synthesis failure worth retrying within the cap
+    (currently: Opus returned no parseable structured output)."""
+
+
+def _is_retryable_synth_error(exc: Exception) -> bool:
+    """Classify a synthesis failure as transient (retry) vs. permanent (fail
+    fast). Errors that would repeat identically are NOT retried."""
+    # Transport-level (timeouts, dropped connections) — always worth a retry.
+    # anthropic.APITimeoutError subclasses APIConnectionError.
+    if isinstance(exc, anthropic.APIConnectionError):
+        return True
+    # HTTP status errors: retry rate-limit (429) and server (5xx) only; a 4xx
+    # bad-request/auth error would repeat identically, so let it fail fast.
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code == 429 or exc.status_code >= 500
+    # Malformed / unparseable structured output is usually one-off model
+    # variance — a re-roll within the cap often succeeds.
+    if isinstance(exc, (ValidationError, _SynthRetryable)):
+        return True
+    return False
+
+
+def _opus_once(system_prompt: str, user_text: str, max_tokens: int) -> WeeklySynthesis:
+    """One Opus structured-output call. Raises raw anthropic.* / ValidationError
+    / _SynthRetryable for the retry wrapper to classify. `with_options(
+    max_retries=0)` disables the SDK's own retry layer so `_call_opus` is the
+    single, cost-capped source of retries."""
+    message = _get_client().with_options(max_retries=0).messages.parse(
+        model=ANTHROPIC_SYNTHESIS_MODEL,
+        max_tokens=max_tokens,
+        system=[
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_text}],
+        output_format=WeeklySynthesis,
+    )
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
-        raise ValueError(f"anthropic synthesis returned no parsed output (stop_reason={stop})")
+        raise _SynthRetryable(f"no parsed output (stop_reason={stop})")
     return data
+
+
+def _call_opus(system_prompt: str, user_text: str, max_tokens: int = 8192) -> WeeklySynthesis:
+    """Opus structured-output call with a bounded transient-retry cap. Returns
+    the parsed Pydantic instance; raises ValueError once retries are exhausted
+    or on a non-retryable error (callers in synthesize_week / the orchestrators
+    turn that into a failed JobRun, surfaced on /runs for manual re-run)."""
+    for attempt in range(1, _SYNTH_MAX_ATTEMPTS + 1):
+        try:
+            return _opus_once(system_prompt, user_text, max_tokens)
+        except Exception as exc:  # noqa: BLE001 — re-raised after classification
+            retryable = _is_retryable_synth_error(exc)
+            if not retryable or attempt == _SYNTH_MAX_ATTEMPTS:
+                kind = "transient, retries exhausted" if retryable else "non-retryable"
+                raise ValueError(
+                    f"Opus synthesis failed after {attempt} attempt(s) "
+                    f"[{kind}]: {type(exc).__name__}: {exc}"
+                ) from exc
+            backoff = _SYNTH_BACKOFF_BASE_S * (2 ** (attempt - 1))
+            log.warning(
+                "Opus synthesis attempt %d/%d failed (%s) - retrying in %.0fs: %s",
+                attempt, _SYNTH_MAX_ATTEMPTS, type(exc).__name__, backoff, exc,
+            )
+            time.sleep(backoff)
+    # Unreachable (loop either returns or raises) — satisfies the type checker.
+    raise ValueError("Opus synthesis failed: exhausted retry loop")
 
 
 # ---------------------------------------------------------------------------

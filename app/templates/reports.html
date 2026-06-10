@@ -84,22 +84,11 @@
             <span class="gc-meta-tag-label">Last pull</span>
             <span class="gc-meta-tag-value">{{ last_pull }}</span>
           </span>
-          <span class="gc-meta-tag" title="Last successful synthesis = end-to-end workflow completion">
-            <span class="gc-meta-tag-label">Last workflow</span>
-            <span class="gc-meta-tag-value">{{ last_workflow }}</span>
-          </span>
         </div>
-        <button class="gc-cta gc-cta--ghost{% if not can_run_pipeline %} is-disabled{% endif %}"
-                {% if can_run_pipeline %}
-                title="Run ingest → enrich → embed → cluster → synthesize. ~5 min, ~$0.50 cost."
-                hx-post="{{ request.url_for('pipeline_run') }}" hx-swap="outerHTML"
-                hx-confirm="Run the full pipeline? Fetches new items, enriches with Haiku, re-clusters, and re-synthesizes. ~5 min, ~$0.50 in Anthropic cost."
-                {% else %}
-                disabled
-                title="Last pull was within the past 6 days. Wait until it's >6 days old to refresh."
-                {% endif %}>
-          <i data-lucide="refresh-cw"></i>Run pipeline
-        </button>
+        <a class="gc-cta gc-cta--ghost" href="{{ request.url_for('runs_view') }}"
+           title="View pipeline data flow, run history, and refresh details.">
+          <i data-lucide="activity"></i>Data flow
+        </a>
         {% if exec_summary_hidden_for_region %}
         <span class="gc-meta-tag gc-meta-tag--note" title="The exec summary is generated against the whole corpus. Switch to Global to read it.">
           Exec summary covers the whole-corpus week. Switch to Global to read it.

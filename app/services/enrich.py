@@ -112,7 +112,7 @@ def _persist_skipped(session: Session, item_id: int, reason: str) -> None:
         session.add(Enrichment(item_id=item_id, status="skipped", error=reason))
 
 
-def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False, force: bool = False) -> dict:
+def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False, force: bool = False, item_ids: Optional[list[int]] = None) -> dict:
     """Enrich items lacking an Enrichment row (or retry failed ones).
 
     Items are processed newest-first. Returns counts dict.
@@ -144,7 +144,13 @@ def enrich_pending(limit: Optional[int] = None, retry_failed: bool = False, forc
         items = session.exec(
             select(Item).order_by(Item.published_at.desc().nullslast())
         ).all()
-        items = [it for it in items if it.id not in skip_ids]
+        if item_ids is not None:
+            # Targeted re-enrich (e.g. items that just got article bodies) —
+            # process exactly these, ignoring the skip-list.
+            wanted = set(item_ids)
+            items = [it for it in items if it.id in wanted]
+        else:
+            items = [it for it in items if it.id not in skip_ids]
         if limit:
             items = items[:limit]
 

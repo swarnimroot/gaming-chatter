@@ -58,6 +58,7 @@ def fetch_skipped_bodies(
         "yt_excluded": 0,
         "reddit_excluded": 0,
     }
+    fetched_ids: list[int] = []  # items that got a usable body — for targeted re-enrich
 
     with Session(engine) as session:
         run = RunLog(job_type="article_fetch", status="running", started_at=started)
@@ -111,6 +112,7 @@ def fetch_skipped_bodies(
             session.add(item)
             session.commit()
             totals["fetched"] += 1
+            fetched_ids.append(item.id)
             log.info("fetched %d chars for item=%s", len(body), item.id)
             time.sleep(delay_s)
 
@@ -126,5 +128,6 @@ def fetch_skipped_bodies(
         session.add(run)
         session.commit()
 
-    log.info("fetch_skipped_bodies done: %s", totals)
+    totals["fetched_ids"] = fetched_ids
+    log.info("fetch_skipped_bodies done: fetched=%d attempted=%d", totals["fetched"], totals["attempted"])
     return totals
