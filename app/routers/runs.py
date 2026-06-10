@@ -184,6 +184,11 @@ def _build_rows(session: Session, limit: int = 50) -> list[dict]:
             "duration": _fmt_duration(r.duration_seconds),
             "message": (r.message or "")[:240],
             "has_details": bool(r.details_json),
+            "cost": f"${r.cost_usd:.4f}" if r.cost_usd is not None else None,
+            "tokens_title": (
+                f"{r.input_tokens:,} in / {r.output_tokens:,} out"
+                if r.input_tokens is not None else None
+            ),
         })
     return out
 

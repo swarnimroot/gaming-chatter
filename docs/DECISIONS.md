@@ -4,6 +4,31 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-06-10 (Phase 4 follow-up) — per-run cost meter: thread-local exclusive accumulator; per-model pricing + cache multipliers; $0-on-unknown-model
+
+**Decision 1 — Cost accounting is a THREAD-LOCAL stack with EXCLUSIVE (innermost-only) semantics, not a global counter or lock.** New `app/services/cost.py`: `open_run(run_id)` pushes an accounting frame onto the calling thread's stack; `record(model, usage)` adds one Anthropic response's token usage to the INNERMOST open frame only; `close_run(run_id)` pops down to and including the matching frame, prices it, and returns the totals. Wired via `open_run()` in `jobs._start_run` and `close_run()` in `jobs._finish_run`; one `cost.record(model, message.usage)` line at all 9 Anthropic call sites (`anthropic.py`: `enrich_item` / `label_cluster` / `prescreen_yt_relevance` / `tag_game` / `tag_pcgamer_releases` / `tag_ign_releases` / `tag_region`; `exec_summary.py::_call_haiku`; `synthesis.py::_opus_once`). 3 nullable columns (`input_tokens`, `output_tokens`, `cost_usd`) added to `job_runs` via the idempotent `_migrate_job_runs_columns` ALTER pattern in `app/db/init.py`; `/runs` renders a Cost column (`$X.XXXX`, tokens in tooltip), `—` when NULL (pre-meter rows).
+
+**Why exclusive (innermost-only):** `run_daily_pipeline` calls `run_weekly_extension` INLINE (Decision 1 of the automation-wiring entry below), and the weekly opens its own `JobRun` while the daily row is still running — nested execution, two separate rows. Attributing tokens to the innermost open frame puts the Opus synthesis spend on the WEEKLY row and keeps it OFF the daily row, so the two rows sum without double-counting.
+
+**Why thread-local (not a global stack or lock):** each orchestrator and its inline nested weekly run execute in one thread, while a concurrently-blocked "skipped" run sits on another thread. A thread-local stack confines each thread's accounting to itself, so a skipped run on another thread can never steal the active run's tokens (a single global top-of-stack could). Because each stack is only ever touched by its owning thread, no lock is needed. `record()` is a no-op when the calling thread has no open run (manual backfill scripts go unmetered rather than erroring).
+
+**Leak handling:** `close_run(run_id)` folds any never-closed inner frames (a crashed sub-run) into the matching frame rather than dropping them; it's called from `_finish_run` even if the row vanished, so no frame leaks forward into the next run.
+
+**Decision 2 — Per-model pricing table + cache multipliers live in code; unknown models cost $0 with a warning.** `PRICING` (USD per MILLION tokens, standard non-batch list, June 2026): `claude-haiku-4-5` = $1/$5 (in/out), `claude-sonnet-4-6` = $3/$15, `claude-opus-4-7` = $4/$20. Cached input is billed at **0.1x** the input rate (cache read) and **1.25x** (cache write). A model id absent from the table (e.g. an env-overridden model) is priced at **$0 with a logged warning**.
+
+**Why:** the three model ids match the locked LLM split (CLAUDE.md), so the table is small and static. Pricing $0 + warn on an unknown id is the honest fail-soft: the run never crashes over a missing rate, and the warning surfaces the gap to fix the table rather than silently inventing a number.
+
+**Verified:** imports compile; the migration applies and is idempotent (columns present after two `init_db()` runs); the stack unit test passes — nested weekly = $4.00 (Opus only), daily = $2.00 (Haiku only, no double-count), cache pricing $0.10, no-op when no run open, unknown-model = $0.
+
+**Alternatives rejected:**
+- **Global counter / single top-of-stack.** Rejected — a concurrently-blocked skipped run on another thread would mis-attribute the active run's tokens; nested daily/weekly would double-count.
+- **A lock around a shared stack.** Rejected — unnecessary once accounting is thread-confined; adds contention for no correctness gain.
+- **Hard-fail on an unknown model id.** Rejected — would crash a live pipeline run over a pricing-table gap; $0 + warning is the honest fail-soft.
+
+**Not done (NOT Claude's action):** a live `/runs` trigger to populate a real cost row (spends real API $) and scheduler activation (flip `SCHEDULER_ENABLED=1` + restart) remain the user's actions.
+
+---
+
 ## 2026-06-10 (Phase 4 — automation wiring) — weekly chained off daily; 23:00 daily; no-tz-migration (Option A); no full-corpus backfills on nightly; region `""` sentinel; r/GamesIndustry removed
 
 **Decision 1 — Daily cron moves to 23:00 local; weekly is CHAINED off the daily (no standalone weekly cron).** Daily moved **07:00 → 23:00 local (CST)** so the brief is ready in the morning. The standalone `Mon 07:30` weekly cron is **removed**; instead, at the end of each daily run, `_previous_week_needs_synthesis()` checks whether the previous ISO week is closed-but-unsynthesized and, if so, calls `run_weekly_extension(week_id=...)` inline (the `threading.RLock` is re-entrant). `run_weekly_extension` gained an optional `week_id` param. Startup-catchup was simplified accordingly: the weekly branch + `_is_weekly_overdue` + weekly constants were removed (the daily chain covers it). (`app/main.py`, `app/services/jobs.py`.)

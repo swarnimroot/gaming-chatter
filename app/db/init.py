@@ -103,11 +103,31 @@ def _migrate_clusters_columns() -> None:
             log.info("migrated clusters: added score column")
 
 
+def _migrate_job_runs_columns() -> None:
+    """Idempotent ALTER for the Phase 4 per-run cost meter.
+
+    Existing rows get NULL (no usage was captured before the meter shipped);
+    the /runs UI renders NULL cost as '—'.
+    """
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(job_runs)"))}
+        if "input_tokens" not in cols:
+            conn.execute(text("ALTER TABLE job_runs ADD COLUMN input_tokens INTEGER"))
+            log.info("migrated job_runs: added input_tokens column")
+        if "output_tokens" not in cols:
+            conn.execute(text("ALTER TABLE job_runs ADD COLUMN output_tokens INTEGER"))
+            log.info("migrated job_runs: added output_tokens column")
+        if "cost_usd" not in cols:
+            conn.execute(text("ALTER TABLE job_runs ADD COLUMN cost_usd REAL"))
+            log.info("migrated job_runs: added cost_usd column")
+
+
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _migrate_enrichments_columns()
     _migrate_clusters_columns()
     _migrate_games_columns()
     _migrate_weekly_reports_columns()
+    _migrate_job_runs_columns()
     inserted = seed_sources()
     log.info("db ready (seeded %d new sources)", inserted)

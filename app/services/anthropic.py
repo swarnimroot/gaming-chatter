@@ -30,6 +30,7 @@ from app.services.ollama import (
     SYSTEM_PROMPT,
     EnrichmentData,
 )
+from app.services import cost
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ def enrich_item(title: str, body: str, source_label: str) -> EnrichmentData:
     except ValidationError as e:
         raise ValueError(f"anthropic response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -157,6 +159,7 @@ def label_cluster(titles: list[str], tldrs: list[str]) -> str:
     except ValidationError as e:
         raise ValueError(f"anthropic label_cluster response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_CLUSTER_LABEL_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -216,6 +219,7 @@ def prescreen_yt_relevance(title: str, description: str) -> YTPrescreenData:
     except ValidationError as e:
         raise ValueError(f"anthropic prescreen response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -248,6 +252,7 @@ def tag_game(game_name: str) -> GameTagData:
     except ValidationError as e:
         raise ValueError(f"anthropic tag_game response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -391,6 +396,7 @@ def tag_pcgamer_releases(body_text: str) -> list[PCGamerRelease]:
     except ValidationError as e:
         raise ValueError(f"anthropic tag_pcgamer_releases response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -466,6 +472,7 @@ def tag_ign_releases(body_text: str) -> list[PCGamerRelease]:
     except ValidationError as e:
         raise ValueError(f"anthropic tag_ign_releases response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
@@ -507,6 +514,7 @@ def tag_region(tldr: str) -> list[str]:
     except ValidationError as e:
         raise ValueError(f"anthropic tag_region response failed schema: {e}") from e
 
+    cost.record(ANTHROPIC_ENRICH_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")

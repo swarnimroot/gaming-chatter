@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 
 from app.config import ANTHROPIC_EXEC_SUMMARY_MODEL, ANTHROPIC_TIMEOUT
 from app.db.models import WeeklyReport
+from app.services import cost
 from app.services import reports as report_q
 
 log = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ def _call_haiku(user_text: str) -> str:
     except anthropic.APIError as e:
         raise ValueError(f"anthropic exec-summary API error: {e}") from e
 
+    cost.record(ANTHROPIC_EXEC_SUMMARY_MODEL, message.usage)
     blocks = [b.text for b in message.content if getattr(b, "type", None) == "text"]
     if not blocks:
         stop = getattr(message, "stop_reason", "unknown")

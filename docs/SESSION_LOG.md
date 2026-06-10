@@ -4,6 +4,26 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-10 (Phase 4 follow-up) — per-run Anthropic cost meter on `/runs` BUILT
+
+**Context.** The last Claude-actionable item from the confirmed Phase-4 set. `/runs` now shows the **actual dollars each pipeline run spent**, read from each Anthropic response's real `usage`, replacing the old docstring estimate (~$0.30/night). Corpus + all other Phase-4 facts unchanged (12,710 items / 31 active sources / W19–W23 synthesized).
+
+**What was done.**
+- **New `app/services/cost.py` — thread-local stack accumulator, EXCLUSIVE semantics.** `record(model, usage)` adds tokens to the INNERMOST open run only. Rationale: `run_daily_pipeline` calls `run_weekly_extension` INLINE, which opens its own `JobRun` while the daily row is still running (nested execution, two separate rows) — so the Opus synthesis tokens land on the WEEKLY row and are NOT double-counted on the daily; the two rows sum without overlap. THREAD-LOCAL (not a global lock): each orchestrator + its inline nested weekly run live in one thread, while a concurrently-blocked "skipped" run lives on another thread; thread-confinement isolates each thread's accounting so a skipped run can't steal the active run's tokens (a global top-of-stack would). No lock needed. Leak handling: `close_run(run_id)` pops frames down to and including the matching frame, folding any never-closed inner frames into it; called from `_finish_run` even if the row vanished, so no frame leaks into the next run. `record()` is a no-op when the calling thread has no open run.
+- **Pricing (USD per million tokens, standard non-batch list, June 2026).** `claude-haiku-4-5` = $1/$5, `claude-sonnet-4-6` = $3/$15, `claude-opus-4-7` = $4/$20. Cached input billed at 0.1x the input rate (cache read) and 1.25x (cache write). Unknown / env-overridden model id → priced at $0 with a logged warning (never crashes a run).
+- **Wiring.** One `cost.record(model, message.usage)` line at all 9 Anthropic call sites — `app/services/anthropic.py` (`enrich_item`, `label_cluster`, `prescreen_yt_relevance`, `tag_game`, `tag_pcgamer_releases`, `tag_ign_releases`, `tag_region`), `app/services/exec_summary.py` (`_call_haiku`), `app/services/synthesis.py` (`_opus_once`). `open_run()` in `jobs._start_run`, `close_run()` in `jobs._finish_run`.
+- **Schema.** 3 new nullable columns on `job_runs` (`input_tokens`, `output_tokens`, `cost_usd`) via the existing idempotent ALTER pattern (`_migrate_job_runs_columns` in `app/db/init.py`). Pre-meter historical runs stay NULL and render `—`.
+- **UI.** `/runs` gains a Cost column (`$X.XXXX`, tokens in a tooltip), suppressed to `—` when null; details-row colspan bumped 7 → 8.
+
+**Verified.** Imports compile; migration applies and is idempotent (columns present after two runs); stack unit test passes — nested weekly = $4.00 (Opus only), daily = $2.00 (Haiku only, no double-count), cache pricing $0.10, no-op when no run open, unknown-model = $0. See DECISIONS 2026-06-10 (cost meter).
+
+**Where we left off / next.**
+- **Live `/runs` trigger to populate a real cost row — user's action** (spends real API $; left undone deliberately).
+- **Scheduler ACTIVATION — STILL PENDING (user's action).** Code is wired but `SCHEDULER_ENABLED` is off. Flip it + restart uvicorn → triggers startup-catchup → fires an overdue daily → which chains the weekly. This is now the **only** remaining open item from the Phase-4 set.
+- Optional: alert-banner wording ("erroring" → "needs attention"); set an Anthropic Console monthly spend limit (hard ceiling).
+
+---
+
 ## 2026-06-10 (Phase 4 — automation wiring) — scheduler chained + retimed (still INERT), nightly full-corpus backfills killed, r/GamesIndustry removed
 
 **Context.** Same operator-console arc, later work. The scheduler is now *wired the way it should run* (but still INERT — `SCHEDULER_ENABLED` off; flipping it is the user's action), the two cost-critical nightly-backfill warts are fixed, and a frozen subreddit was removed source-and-data. All verified live on `:8001`.
@@ -25,7 +45,7 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 **Verified.** All items live on `:8001`.
 
 **Where we left off / next.**
-- **Cost meter — STILL PENDING (not built).** Per-run actual-token/$ on `/runs`, from each Anthropic response's real `usage` (+ optional soft-cap). Designed, not built. This is the one remaining item from the confirmed Phase-4 set.
+- **Cost meter — designed here; BUILT later the same day.** Per-run actual-token/$ on `/runs` from each Anthropic response's real `usage`. See the 2026-06-10 cost-meter entry above.
 - **Scheduler ACTIVATION — STILL PENDING (user's action).** Code is wired but `SCHEDULER_ENABLED` is off. Flip it + restart uvicorn → triggers startup-catchup → fires an overdue daily → which now chains the weekly.
 - Optional: alert-banner wording ("erroring" → "needs attention" so `silent` isn't mislabeled). User action: set an Anthropic Console monthly spend limit (hard ceiling).
 

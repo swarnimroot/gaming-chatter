@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added — Phase 4 follow-up: per-run Anthropic cost meter on `/runs` (2026-06-10)
+
+Built the last Claude-actionable item from the confirmed Phase-4 set: `/runs` now shows the **actual dollars each pipeline run spent**, read from each Anthropic response's real `usage`, replacing the old docstring estimate (~$0.30/night). Verified: imports compile; the migration applies and is idempotent; the stack unit test passes. Corpus + all other Phase-4 facts unchanged (**12,710 items / 31 active sources** / W19–W23 synthesized).
+
+- **New `app/services/cost.py` — thread-local stack accumulator with EXCLUSIVE semantics.** `record(model, usage)` adds tokens to the INNERMOST open run only. Rationale: `run_daily_pipeline` calls `run_weekly_extension` INLINE, which opens its own `JobRun` while the daily row is still running (nested, two rows) — so the Opus synthesis tokens land on the WEEKLY row and are NOT double-counted on the daily; the two rows sum without overlap. THREAD-LOCAL (not a global lock) so a concurrently-blocked "skipped" run on another thread can't steal the active run's tokens (a global top-of-stack would). `close_run(run_id)` pops frames down to and including the matching frame, folding any never-closed inner frames into it; called from `_finish_run` even if the row vanished, so no frame leaks into the next run. `record()` is a no-op when the calling thread has no open run (manual backfill scripts go unmetered, never error). See DECISIONS 2026-06-10 (cost meter).
+- **Pricing (USD per million tokens, standard non-batch list, June 2026).** `claude-haiku-4-5` = $1/$5 (in/out), `claude-sonnet-4-6` = $3/$15, `claude-opus-4-7` = $4/$20. Cached input billed at **0.1x** the input rate (cache read) and **1.25x** (cache write). An unknown / env-overridden model id is priced at **$0 with a logged warning** (honest, never crashes a run).
+- **Wiring — one `cost.record(model, message.usage)` line at all 9 Anthropic call sites.** `app/services/anthropic.py` (`enrich_item`, `label_cluster`, `prescreen_yt_relevance`, `tag_game`, `tag_pcgamer_releases`, `tag_ign_releases`, `tag_region`), `app/services/exec_summary.py` (`_call_haiku`), `app/services/synthesis.py` (`_opus_once`). `open_run()` in `jobs._start_run`; `close_run()` in `jobs._finish_run`.
+- **Schema — 3 new nullable columns on `job_runs`** (`input_tokens`, `output_tokens`, `cost_usd`) added via the existing idempotent ALTER-TABLE pattern (`_migrate_job_runs_columns` in `app/db/init.py`). Pre-meter historical runs stay NULL.
+- **UI — `/runs` gains a Cost column** (`$X.XXXX`, with input/output tokens in a tooltip), suppressed to `—` when null; details-row colspan bumped 7 → 8.
+- **Verified by unit test:** nested weekly = $4.00 (Opus only), daily = $2.00 (Haiku only, no double-count), cache pricing $0.10, no-op when no run open, unknown-model = $0.
+
+**Pending / next.** **Scheduler ACTIVATION — user's action**: code wired but `SCHEDULER_ENABLED` still off; flip + restart triggers startup-catchup → overdue daily → chained weekly. A one-off live `/runs` trigger to populate a real cost row is also the user's call (spends real API $). Optional: alert-banner wording ("erroring" → "needs attention"); set an Anthropic Console monthly spend limit.
+
 ### Changed / Fixed — Phase 4 automation wiring: scheduler chained + retimed (still INERT), nightly full-corpus backfills killed, r/GamesIndustry removed (2026-06-10)
 
 Later work in the same operator-console arc. The scheduler is now wired the way it should run (but still **INERT** — `SCHEDULER_ENABLED` off; activation is the user's flip), the two cost-critical nightly-backfill warts are fixed, and a frozen subreddit was removed source-and-data. All verified live on `:8001`. Corpus → **12,710 items / 31 active sources** (was 12,689 / 32 at session start: +34 from a one-time catch-up daily, −13 from the r/GamesIndustry purge). 5 synthesized `weekly_reports` (W19–W23); W24 clusters-only.
@@ -18,7 +31,7 @@ Later work in the same operator-console arc. The scheduler is now wired the way 
 
 **Operational note.** One-time manual catch-up daily run: status=ok, 267 min, ingest new=34, enrich 270 ok, region attempted 10,495 / tagged 68, 24 new W24 clusters — a worst-case run (1.5-day catch-up + the now-fixed full backfills); a normal night is far smaller.
 
-**Pending / next.** (1) **Cost meter — NOT built**: per-run actual-token/$ on `/runs` from each Anthropic response's real `usage` (+ optional soft-cap); designed only — the one remaining item from the confirmed Phase-4 set. (2) **Scheduler ACTIVATION — user's action**: code wired but `SCHEDULER_ENABLED` still off; flip + restart triggers startup-catchup → overdue daily → chained weekly. Optional: alert-banner wording ("erroring" → "needs attention"); set an Anthropic Console monthly spend limit.
+**Pending / next.** (1) **Cost meter** — per-run actual-token/$ on `/runs` from each Anthropic response's real `usage`: designed here, **BUILT later the same day** (see the 2026-06-10 cost-meter entry above). (2) **Scheduler ACTIVATION — user's action**: code wired but `SCHEDULER_ENABLED` still off; flip + restart triggers startup-catchup → overdue daily → chained weekly. Optional: alert-banner wording ("erroring" → "needs attention"); set an Anthropic Console monthly spend limit.
 
 ### Added / Changed — Phase 4 operator console: `/runs` health band + earned `degraded` status + reconcile-on-boot (2026-06-09)
 

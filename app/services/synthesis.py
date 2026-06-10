@@ -45,6 +45,7 @@ from sqlmodel import Session, select
 
 from app.config import ANTHROPIC_SYNTHESIS_MODEL, ANTHROPIC_TIMEOUT
 from app.db.models import WeeklyReport
+from app.services import cost
 from app.services import reports as report_q
 
 log = logging.getLogger(__name__)
@@ -607,6 +608,7 @@ def _opus_once(system_prompt: str, user_text: str, max_tokens: int) -> WeeklySyn
         messages=[{"role": "user", "content": user_text}],
         output_format=WeeklySynthesis,
     )
+    cost.record(ANTHROPIC_SYNTHESIS_MODEL, message.usage)
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")

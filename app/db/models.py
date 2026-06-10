@@ -182,3 +182,6 @@ class JobRun(SQLModel, table=True):
     message: Optional[str] = Field(default=None, sa_column=Column(Text))    # short summary or error
     details_json: Optional[str] = Field(default=None, sa_column=Column(Text))  # per-step counts
     triggered_by: str = Field(default="scheduler")      # 'scheduler' | 'manual' | 'startup_catchup'
+    input_tokens: Optional[int] = None                  # total input-side tokens (fresh + cached) — cost meter
+    output_tokens: Optional[int] = None                 # total output tokens — cost meter
+    cost_usd: Optional[float] = None                    # measured Anthropic spend for this run (USD)

@@ -34,6 +34,7 @@ from sqlmodel import Session, select
 
 from app.db.models import Enrichment, JobRun, WeeklyReport
 from app.db.session import engine
+from app.services import cost
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ def _start_run(job_name: str, triggered_by: str) -> int:
         session.add(run)
         session.commit()
         session.refresh(run)
+        cost.open_run(run.id)
         return run.id
 
 
@@ -71,11 +73,17 @@ def _finish_run(
     details: Optional[dict] = None,
 ) -> None:
     """Patch the JobRun row in place with terminal status + details."""
+    # Always close the cost frame for this run (even if the row vanished) so a
+    # leaked frame can't bleed into the next run on this thread.
+    totals = cost.close_run(run_id)
     with Session(engine) as session:
         run = session.get(JobRun, run_id)
         if run is None:
             log.warning("_finish_run: JobRun id=%s vanished mid-run", run_id)
             return
+        run.input_tokens = totals["input_tokens"]
+        run.output_tokens = totals["output_tokens"]
+        run.cost_usd = totals["cost_usd"]
         now = datetime.utcnow()
         run.finished_at = now
         run.status = status
