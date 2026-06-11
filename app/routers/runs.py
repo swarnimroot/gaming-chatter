@@ -55,7 +55,7 @@ _TRIGGER_MAP: dict[str, tuple] = {
     "release_refresh":   (jobs_svc.run_release_refresh,   "Release refresh",     False,
         "Refreshes the game/platform release data. ~2–5 min, no LLM cost. Continue?"),
     "ingest_only":       (jobs_svc.run_ingest_only,       "Ingest only",         False,
-        "Fetches fresh items from all sources. ~10–20 min, no LLM cost. Continue?"),
+        "Fetches fresh items from all sources. ~1 min, no LLM cost. Continue?"),
     "enrich_only":       (jobs_svc.run_enrich_only,       "Enrich + embed only", False,
         "Runs Haiku enrichment + embeddings over pending items (incl. Whisper transcription). ~3–5 hours and spends Anthropic API money. Continue?"),
     "cluster_only":      (jobs_svc.run_cluster_only,      "Cluster only",        True,
@@ -220,7 +220,7 @@ def _build_rows(session: Session, limit: int = 50) -> list[dict]:
             "duration": _fmt_duration(r.duration_seconds),
             "message": (r.message or "")[:240],
             "has_details": bool(r.details_json),
-            "cost": f"${r.cost_usd:.4f}" if r.cost_usd is not None else None,
+            "cost": f"${r.cost_usd:.1f}" if r.cost_usd is not None else None,
             "tokens_title": (
                 f"{phase_title} — {tokens_title}" if phase_title and tokens_title
                 else tokens_title

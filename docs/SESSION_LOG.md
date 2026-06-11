@@ -26,15 +26,21 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 - Cost-column tooltip now reads e.g. `enrich $0.8400 (343 calls) · region_tag $0.2900 (309 calls) — 1,004,240 in / 48,965 out` (phases sorted by $, descending). Pre-meter rows unchanged (`—`).
 - **Verified:** compiles; unit tests for phase attribution, nested daily↔weekly exclusivity, crash leak-fold, default phase, tooltip formatter; end-to-end `_finish_run` persistence against the real DB (throwaway row, deleted).
 
-**Recovery (Option B, user-chosen).**
-- **uvicorn restarted** so the per-phase meter is live for tonight's 23:00 auto-daily. Now runs **detached** (`Start-Process`, hidden window), logs to `logs/uvicorn_8001.{out,err}.log`. Boot confirmed: scheduler active, no surprise catch-up (<24h).
-- **Ingest only**: `ok` in 18.5s — `new=204`, **0 source errors** (all 6 YT channels recovered).
-- **Enrich + embed only**: triggered 14:05 UTC — enriching the 204 new items + clearing the 361-embed backlog (free, Ollama up). In flight at session-log time; verify on `/runs` (expect the first per-phase cost row).
+**Recovery (Option B, user-chosen) — COMPLETED.**
+- **uvicorn restarted** so the per-phase meter was live for the recovery runs (detached `Start-Process`, hidden window, logs → `logs/uvicorn_8001.{out,err}.log`). Boot confirmed: scheduler active, no surprise catch-up (<24h).
+- **Ingest only** (id=6): `ok` in **18.5s** — `new=204`, **0 source errors** (all 6 YT channels recovered). Per-source `run_log` timings proved ingest has ALWAYS been ~20s (last night's was 20.3s): duration scales with source count, not news volume (feeds return a fixed window); 30s/feed timeout × 31 sequential = ~15 min pathological worst case — the origin of the old wrong "10–20 min" dialog estimate.
+- **Enrich + embed only** (id=7): `ok` in **53 min, $0.5970** — enrich 204 attempted → 180 ok / 24 skipped / 0 failed; embed **541/541 ok** (361 crash backlog + 180 new). **Embed backlog now 0; unenriched items 0.** First production per-phase row, matching the model ($0.00327 × 180 ≈ $0.59): `enrich $0.5650 (180 calls) · yt_prescreen $0.0320 (39 calls)`.
+
+**UI follow-ups (after first real per-phase row).**
+- `/runs` Cost column reduced to **one decimal** (`$0.6`, `$1.3`); full 4-dp per-phase detail stays in the tooltip (`app/routers/runs.py`).
+- Ingest confirm dialog corrected **"~10–20 min" → "~1 min"** (evidence above).
+- Both verified rendering live, then **uvicorn killed at user request** — user starts the server themselves going forward.
 
 **Where we left off / next.**
-- Confirm the enrich+embed recovery run finished `ok` and the embed backlog hit 0.
-- Tonight's 23:00 auto-daily is the first fully-metered scheduled run — its `/runs` row should show the per-phase tooltip.
-- Optional: Anthropic Console monthly spend cap (user action; ~$40/mo would fit the accepted budget).
+- **Server is DOWN** (user action: start `python -m uvicorn app.main:app --port 8001`, no `--reload`, ideally before 23:00 CST; startup catch-up self-heals if later).
+- Tonight's 23:00 auto-daily is the first fully-metered scheduled run — expect `ok`, ~$1–1.5, per-phase tooltip on `/runs`.
+- Monday's daily chains the first **metered weekly Opus synthesis** — fills in the last estimated number in the cost model.
+- Optional: Anthropic Console monthly spend cap (user action; ~$45/mo fits the accepted budget).
 
 ---
 

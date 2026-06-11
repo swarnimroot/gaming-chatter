@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed — `/runs` cost display + ingest dialog estimate (2026-06-11)
+
+- **Cost column reduced to one decimal** (`$0.6`, `$1.3`) — the 4-decimal figure was noise at a glance; full per-phase 4-dp detail remains in the tooltip.
+- **Ingest confirm dialog corrected "~10–20 min" → "~1 min"**: `run_log` per-source timings show ingest is ~20s every run (31 sources × ~0.6s; feeds return a fixed window so duration scales with source count, not news volume). The 15-min worst case needs every feed to hang to its 30s timeout.
+
 ### Added — Per-phase cost breakdown on `/runs` (2026-06-11)
 
 The per-run cost meter now attributes every Anthropic call to a **spend category**, so `/runs` shows *what the money bought*, not just the total.
