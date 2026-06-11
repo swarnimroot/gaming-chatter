@@ -4,6 +4,40 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-11 — degraded-run diagnosis · cost model CORRECTED (~$1.15/night, not $0.30) · per-phase cost breakdown on `/runs` · recovery runs
+
+**Context.** Overnight the PC restarted mid-run; on reboot startup-catchup fired a catch-up daily (id=5) that finished `degraded` ($1.25, the first metered cost row). User flagged the $1+ cost and asked whether $2–3/night (~$1,000/yr) was realistic.
+
+**Degraded-run diagnosis (no cost bug).**
+- `embed: 343 failed` — Ollama wasn't up yet after reboot. Embeddings are local/free; backlog self-heals (`embed_pending` selects `status='ok' AND embedding IS NULL`).
+- `ingest: 6 source(s) errored` — all 6 were **YouTube feeds** (transient YouTube 404/500; both tested feeds returned 200 later the same day). No Reddit sources errored → no rolloff risk.
+- The $1.25 was ~99% Haiku: 343 enrich + 309 region-tag calls over **383 new items — a NORMAL night's volume**, not a backlog spike. The region-backfill scoping fix held (`attempted=309`, not 10,495).
+
+**Cost model corrected (the headline).** The prior "~$0.30/night (~$120/yr)" estimate was **wrong** — it was derived from run id=4's `new=34`, which was artificially low (the interrupted run an hour earlier had already ingested that night's batch). Real volume from `items.published_at` (31 full days): **mean 351/night, median 343, range 145–691, ~2,450/week** — matching the user's "2000+ mentions/week". Measured economics: $1.2516 / 383 items = **$0.00327/item all-in** →
+- typical night ≈ **$1.15**; quiet ≈ $0.47; heavy (event weeks, ~690) ≈ $2.26
+- annual ≈ **$418 nightly + ~$25–45 weekly Opus synthesis ≈ ~$450/yr** (weekly Opus still estimated — first metered weekly lands next Monday)
+- $1,000/yr would need sustained ~840 items/night (2.4× current volume) — not realistic at current source mix.
+- **User decision: up to $500/yr accepted.** Cost-reduction levers identified but NOT built (merge region-tag into enrich call; Anthropic Batch API at 50% off).
+
+**Per-phase cost breakdown built (`/runs`).**
+- `cost.record(model, usage, phase=...)` — all 9 Anthropic call sites tagged by spend category: `enrich`, `yt_prescreen`, `game_tag`, `cluster_label`, `region_tag`, `release_extract`, `synthesis`, `exec_summary` (+ `other` default).
+- Frame gains `by_phase` (per-phase × per-model counts + call counts); `_merge` folds it on leak; `close_run` returns a priced per-phase rollup.
+- `jobs._finish_run` persists it into `details_json` under `_cost_by_phase` (shows in the existing `/runs` expand view — no schema change).
+- Cost-column tooltip now reads e.g. `enrich $0.8400 (343 calls) · region_tag $0.2900 (309 calls) — 1,004,240 in / 48,965 out` (phases sorted by $, descending). Pre-meter rows unchanged (`—`).
+- **Verified:** compiles; unit tests for phase attribution, nested daily↔weekly exclusivity, crash leak-fold, default phase, tooltip formatter; end-to-end `_finish_run` persistence against the real DB (throwaway row, deleted).
+
+**Recovery (Option B, user-chosen).**
+- **uvicorn restarted** so the per-phase meter is live for tonight's 23:00 auto-daily. Now runs **detached** (`Start-Process`, hidden window), logs to `logs/uvicorn_8001.{out,err}.log`. Boot confirmed: scheduler active, no surprise catch-up (<24h).
+- **Ingest only**: `ok` in 18.5s — `new=204`, **0 source errors** (all 6 YT channels recovered).
+- **Enrich + embed only**: triggered 14:05 UTC — enriching the 204 new items + clearing the 361-embed backlog (free, Ollama up). In flight at session-log time; verify on `/runs` (expect the first per-phase cost row).
+
+**Where we left off / next.**
+- Confirm the enrich+embed recovery run finished `ok` and the embed backlog hit 0.
+- Tonight's 23:00 auto-daily is the first fully-metered scheduled run — its `/runs` row should show the per-phase tooltip.
+- Optional: Anthropic Console monthly spend cap (user action; ~$40/mo would fit the accepted budget).
+
+---
+
 ## 2026-06-10 (safety) — confirm dialogs on `/runs` trigger buttons
 
 **Context.** Clicking any "Run now" button on `/runs` fired its job immediately — no guard against an accidental click kicking a multi-hour, API-spending job. Added per-action confirmation.

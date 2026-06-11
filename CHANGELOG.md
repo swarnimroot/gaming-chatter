@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added — Per-phase cost breakdown on `/runs` (2026-06-11)
+
+The per-run cost meter now attributes every Anthropic call to a **spend category**, so `/runs` shows *what the money bought*, not just the total.
+
+- **`app/services/cost.py`** — `record(model, usage, phase=...)`; accounting frames gain `by_phase` (per-phase × per-model token counts + call counts); leak-fold `_merge` handles it; `close_run` returns a priced per-phase rollup.
+- **All 9 Anthropic call sites tagged:** `enrich`, `yt_prescreen`, `game_tag`, `cluster_label`, `region_tag`, `release_extract` (PC Gamer + IGN), `synthesis`, `exec_summary`.
+- **`app/services/jobs.py`** — `_finish_run` persists the rollup into `details_json` under `_cost_by_phase` (renders in the existing `/runs` expand view; no schema change).
+- **`app/routers/runs.py`** — Cost-column tooltip now shows the split, e.g. `enrich $0.8400 (343 calls) · region_tag $0.2900 (309 calls) — 1,004,240 in / 48,965 out`. Pre-meter rows still render `—`.
+- Verified: unit tests (phase attribution, nested daily↔weekly exclusivity, crash leak-fold, default phase, tooltip formatter) + end-to-end `_finish_run` persistence against the real DB.
+
+### Changed — Nightly cost model corrected: ~$1.15/night (~$450/yr), not $0.30/$120 (2026-06-11)
+
+The first metered run ($1.25 for 383 new items) exposed the prior estimate as wrong. The "$0.30/night" figure was derived from a run that saw `new=34` only because an interrupted run an hour earlier had already ingested that night's batch. Actual volume (31 days of `items.published_at`): **mean 351 items/night, ~2,450/week**. Measured: **$0.00327/item all-in** → typical night **$1.15** ($0.47–$2.26 range), **~$450/yr** including weekly Opus synthesis. User accepted up to $500/yr; cost-reduction levers (region-tag merged into enrich, Batch API 50% off) identified but deliberately not built.
+
 ### Changed — Alert-banner wording: "erroring" → "needs attention" (2026-06-10)
 
 Softened the source-failure banner copy in `app/templates/_alert_banner.html`: the old "{N} source(s) is/are erroring — click to inspect." read as an alarming hard-failure when in practice the banner also fires on `silent` sources (ran fine, produced 0 items). New copy: "{N} source(s) needs/need attention — click to inspect." — accurate to what the grid actually flags and less alarming.

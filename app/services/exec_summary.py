@@ -150,7 +150,7 @@ def _call_haiku(user_text: str) -> str:
     except anthropic.APIError as e:
         raise ValueError(f"anthropic exec-summary API error: {e}") from e
 
-    cost.record(ANTHROPIC_EXEC_SUMMARY_MODEL, message.usage)
+    cost.record(ANTHROPIC_EXEC_SUMMARY_MODEL, message.usage, phase="exec_summary")
     blocks = [b.text for b in message.content if getattr(b, "type", None) == "text"]
     if not blocks:
         stop = getattr(message, "stop_reason", "unknown")

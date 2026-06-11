@@ -179,12 +179,38 @@ def _build_health(session: Session) -> dict:
     }
 
 
+def _cost_phase_title(details_json: Optional[str]) -> Optional[str]:
+    """Compact per-phase $ summary for the Cost-column tooltip, e.g.
+    'enrich $0.84 (343 calls) · region_tag $0.29 (309 calls)'. None when the
+    row predates the per-phase meter (no _cost_by_phase key)."""
+    if not details_json:
+        return None
+    try:
+        by_phase = json.loads(details_json).get("_cost_by_phase")
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(by_phase, dict) or not by_phase:
+        return None
+    parts = [
+        f"{phase} ${p.get('cost_usd', 0):.4f} ({p.get('calls', 0)} calls)"
+        for phase, p in sorted(
+            by_phase.items(), key=lambda kv: kv[1].get("cost_usd", 0), reverse=True
+        )
+    ]
+    return " · ".join(parts)
+
+
 def _build_rows(session: Session, limit: int = 50) -> list[dict]:
     rows = session.exec(
         select(JobRun).order_by(JobRun.started_at.desc()).limit(limit)
     ).all()
     out: list[dict] = []
     for r in rows:
+        tokens_title = (
+            f"{r.input_tokens:,} in / {r.output_tokens:,} out"
+            if r.input_tokens is not None else None
+        )
+        phase_title = _cost_phase_title(r.details_json) if r.cost_usd is not None else None
         out.append({
             "id": r.id,
             "job_name": r.job_name,
@@ -196,8 +222,8 @@ def _build_rows(session: Session, limit: int = 50) -> list[dict]:
             "has_details": bool(r.details_json),
             "cost": f"${r.cost_usd:.4f}" if r.cost_usd is not None else None,
             "tokens_title": (
-                f"{r.input_tokens:,} in / {r.output_tokens:,} out"
-                if r.input_tokens is not None else None
+                f"{phase_title} — {tokens_title}" if phase_title and tokens_title
+                else tokens_title
             ),
         })
     return out

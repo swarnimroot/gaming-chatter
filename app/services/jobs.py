@@ -76,6 +76,11 @@ def _finish_run(
     # Always close the cost frame for this run (even if the row vanished) so a
     # leaked frame can't bleed into the next run on this thread.
     totals = cost.close_run(run_id)
+    # Per-phase $ breakdown rides along in details_json so the /runs expand
+    # view (and the Cost-column tooltip) can show what the money bought.
+    if totals.get("by_phase"):
+        details = dict(details or {})
+        details["_cost_by_phase"] = totals["by_phase"]
     with Session(engine) as session:
         run = session.get(JobRun, run_id)
         if run is None:

@@ -63,17 +63,19 @@ def _empty_counts() -> dict[str, int]:
 
 def open_run(run_id: int) -> None:
     """Push a fresh accounting frame for `run_id` onto the calling thread."""
-    frame = {"run_id": run_id, "by_model": {}}
+    frame = {"run_id": run_id, "by_model": {}, "by_phase": {}}
     frame.update(_empty_counts())
     _stack().append(frame)
 
 
-def record(model: str, usage: Any) -> None:
+def record(model: str, usage: Any, phase: str = "other") -> None:
     """Add one Anthropic response's token usage to the innermost open run.
 
-    No-op when the calling thread has no open run. `usage` is the SDK usage
-    object; missing fields default to 0 so this never raises inside a live API
-    path.
+    `phase` is the spend category of the call site (enrich / region_tag /
+    cluster_label / synthesis / ...) so `/runs` can break a run's cost down by
+    what the money bought. No-op when the calling thread has no open run.
+    `usage` is the SDK usage object; missing fields default to 0 so this never
+    raises inside a live API path.
     """
     if usage is None:
         return
@@ -88,9 +90,14 @@ def record(model: str, usage: Any) -> None:
     }
     frame = stack[-1]
     per_model = frame["by_model"].setdefault(model, _empty_counts())
+    per_phase = frame["by_phase"].setdefault(phase, {}).setdefault(
+        model, dict(_empty_counts(), calls=0)
+    )
+    per_phase["calls"] += 1
     for k in _TOKEN_KEYS:
         frame[k] += counts[k]
         per_model[k] += counts[k]
+        per_phase[k] += counts[k]
 
 
 def _cost_for(model: str, m: dict[str, int]) -> float:
@@ -114,6 +121,13 @@ def _merge(dst: dict[str, Any], src: dict[str, Any]) -> None:
         d = dst["by_model"].setdefault(model, _empty_counts())
         for k in _TOKEN_KEYS:
             d[k] += m[k]
+    for phase, models in src.get("by_phase", {}).items():
+        dphase = dst["by_phase"].setdefault(phase, {})
+        for model, m in models.items():
+            d = dphase.setdefault(model, dict(_empty_counts(), calls=0))
+            d["calls"] += m["calls"]
+            for k in _TOKEN_KEYS:
+                d[k] += m[k]
 
 
 def close_run(run_id: int) -> dict[str, Any]:
@@ -137,14 +151,27 @@ def close_run(run_id: int) -> dict[str, Any]:
         # run_id not on the stack — restore what we popped and report nothing.
         for fr in reversed(leaked):
             stack.append(fr)
-        return {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "by_model": {}}
+        return {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+                "by_model": {}, "by_phase": {}}
     for lf in leaked:
         _merge(frame, lf)
     cost = sum(_cost_for(model, m) for model, m in frame["by_model"].items())
+    # Per-phase rollup (priced, aggregated across models) for /runs display.
+    by_phase: dict[str, dict[str, Any]] = {}
+    for phase, models in frame["by_phase"].items():
+        agg = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+        for model, m in models.items():
+            agg["calls"] += m["calls"]
+            agg["input_tokens"] += m["input"] + m["cache_read"] + m["cache_creation"]
+            agg["output_tokens"] += m["output"]
+            agg["cost_usd"] += _cost_for(model, m)
+        agg["cost_usd"] = round(agg["cost_usd"], 6)
+        by_phase[phase] = agg
     return {
         # Total input-side tokens processed (fresh + cached), informational.
         "input_tokens": frame["input"] + frame["cache_read"] + frame["cache_creation"],
         "output_tokens": frame["output"],
         "cost_usd": round(cost, 6),
         "by_model": frame["by_model"],
+        "by_phase": by_phase,
     }

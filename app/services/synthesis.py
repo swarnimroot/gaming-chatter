@@ -608,7 +608,7 @@ def _opus_once(system_prompt: str, user_text: str, max_tokens: int) -> WeeklySyn
         messages=[{"role": "user", "content": user_text}],
         output_format=WeeklySynthesis,
     )
-    cost.record(ANTHROPIC_SYNTHESIS_MODEL, message.usage)
+    cost.record(ANTHROPIC_SYNTHESIS_MODEL, message.usage, phase="synthesis")
     data = getattr(message, "parsed_output", None)
     if data is None:
         stop = getattr(message, "stop_reason", "unknown")
