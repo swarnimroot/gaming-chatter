@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  gaming-chatter nightly daily-pipeline trigger.
+
+  Runs scripts/trigger_daily.ps1 every day at 23:00 local time, which POSTs
+  to the running server's /runs/trigger-scheduled/daily endpoint. The
+  pipeline runs in-process (cost meter, chained weekly, etc.); this task is
+  only the OS-level alarm clock. Rationale: the laptop is a Modern Standby
+  (S0) machine, so screen-off suspends desktop apps and the in-process
+  APScheduler cron can be suspended past its 23:00 fire time — Task
+  Scheduler is exempt from that suspension (same mechanism as pulse-check's
+  daily collect, which fires clean unattended).
+
+  The endpoint is guarded (skips if a daily started <12h ago), so this task
+  plus the in-app cron can never double-run the same night.
+
+  Imports into Windows Task Scheduler. Before import:
+    1. Replace PLACEHOLDER_REPO_ROOT with the absolute path to the
+       gaming-chatter working copy.
+    2. Replace PLACEHOLDER_DOMAIN\PLACEHOLDER_USER with the Windows user
+       account the job should run under.
+    3. Save the file with UTF-8 encoding (matches the declaration above).
+
+  Import command (PowerShell):
+    Register-ScheduledTask -Xml (Get-Content -Path "PLACEHOLDER_REPO_ROOT\scripts\daily_trigger.xml" -Raw) -TaskName "gaming-chatter daily trigger" -Force
+
+  Each poke's result lands under data/trigger_log/trigger_<timestamp>.log.
+  StartWhenAvailable catches up a missed 23:00 the next time the machine is
+  available; if the server is down the poke fails (logged) and the app's
+  startup catch-up self-heals on next boot.
+
+  Trigger: 23:00 every day.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>gaming-chatter nightly daily-pipeline trigger. POSTs to the local server's guarded endpoint at 23:00; the pipeline runs in-process. Logs to data/trigger_log/.</Description>
+    <Author>gaming-chatter operator</Author>
+    <URI>\gaming-chatter\daily-trigger</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-06-12T23:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>PLACEHOLDER_DOMAIN\PLACEHOLDER_USER</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>-NoProfile -ExecutionPolicy Bypass -File "PLACEHOLDER_REPO_ROOT\scripts\trigger_daily.ps1"</Arguments>
+      <WorkingDirectory>PLACEHOLDER_REPO_ROOT</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

@@ -5,7 +5,7 @@
 **Single Python process.** One FastAPI app embeds:
 
 - HTTP server (Uvicorn) for the web UI + API
-- APScheduler for daily ingest + Monday synthesis jobs, with catch-up on startup for missed runs while the laptop was off
+- APScheduler for the daily ingest job (23:00 local; weekly synthesis chained inline off each daily), with **startup catch-up** for runs missed while the laptop was off **and `misfire_grace_time=None` + a `run_daily_pipeline_scheduled` guard** so a job that misfires during Modern Standby (S0) sleep still runs on wake without double-firing (see DECISIONS 2026-06-15)
 - scrapers-lib as a library import for ingest
 - httpx client to Ollama at `localhost:11434` for local LLM
 - Anthropic SDK for the weekly synthesis pass
@@ -115,7 +115,7 @@ UI shell ported from claude.ai/design 2026-05-11 (one-time delivery), maintained
 
 ## External dependencies
 
-- **scrapers-lib** at `..\scrapers-lib` (Python lib, v1.7.0+). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (caption-API path with **audio-fallback via yt-dlp + faster-whisper `small.en`** as of scrapers-lib v1.7.0 / gaming-chatter Phase 3c.14 — opt in via `audio_fallback=True` kwarg, requires the `[youtube-audio]` optional install extra), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused.
+- **scrapers-lib** at `..\scrapers-lib` (Python lib, v1.7.0+). Uses `tier1` modules: `rss` (news sites AND subreddits via Reddit's public RSS endpoint), `youtube` (caption-API path with **audio-fallback via yt-dlp + faster-whisper `small.en`** as of scrapers-lib v1.7.0 / gaming-chatter Phase 3c.14 — opt in via `audio_fallback=True` kwarg, requires the `[youtube-audio]` optional install extra), `article` (justext). The `tier1.reddit` module (PRAW) is currently NOT used — see `DECISIONS.md` 2026-05-07 (PRAW API rejected). Tier2/Tier3 unused. *(Reddit subreddit `.rss` fetches are serialized in-app behind a 65s rate-gate + 429 backstop in `app/services/scrapers.py` — Reddit's unauthenticated endpoint allows only 1 req/60s per IP as of 2026-06-15; see DECISIONS 2026-06-15. The gate lives in gaming-chatter, not scrapers-lib.)*
 - **yt-dlp** — already a transitive dep via `scrapers_lib[youtube-audio]`. `tier1.youtube` wraps it for per-video transcript+audio fetch. **One-off backfill scripts** (`scripts/backfill_youtube.py`, Phase 3c.35) call `yt_dlp.YoutubeDL` directly for channel-level video enumeration with `extract_flat=True` — capability the scrapers-lib wrapper doesn't expose. Daily ingest still goes through `tier1.youtube` exclusively. If channel-enum becomes a recurring need beyond backfill, upstream an `enumerate_channel_videos()` helper into scrapers-lib.
 - **Ollama** at `http://localhost:11434`. Models resident: `nomic-embed-text` for 768-dim embeddings (primary local model post-2026-05-12). `qwen2.5:7b` was retained for `label_cluster()` pre-Phase-3c.4; it can be unloaded now since label generation migrated to Sonnet 4.6 (2026-05-13). `OLLAMA_KEEP_ALIVE=24h` for the embed model.
 - **Anthropic API** via SDK + env var (loaded from local `.env` via python-dotenv). Used for per-item enrichment (Haiku 4.5), game tagging (Haiku 4.5), cluster labels (Sonnet 4.6 — shipped 2026-05-13), exec-summary modal TLDR (Haiku 4.5; Opus 4.7 once synthesis has run for the week), and weekly synthesis + critic (Opus 4.7 — shipped 2026-05-13). API key never committed — `.env` is gitignored.

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed — Reddit unauthenticated-RSS rate limit dropped to 1 req/60s; serialize reddit fetches (2026-06-15)
+
+Between 06-11 and 06-13, Reddit's unauthenticated `.rss` endpoint dropped to **1 request / 60s per IP**, a single bucket shared across ALL subreddits — proven via response headers (`x-ratelimit-used:1 / x-ratelimit-remaining:0.0 / x-ratelimit-reset:59`; isolated request = 200, so not an IP block). The 06-13/06-14/06-15 scheduled dailies all finished `degraded` solely on the resulting 9 Reddit 429s.
+
+- **`app/services/scrapers.py` — process-wide 65s rate-gate.** `_is_reddit_url` + `_reddit_rate_gate` (`threading.Lock` + `monotonic`) serialize reddit `.rss` fetches; wired into `fetch_source`'s rss branch. Non-reddit RSS + YouTube paths unchanged.
+- **429 backstop** in `_fetch_reddit_rss`: sleeps `x-ratelimit-reset + 2s` (Reddit sends `x-ratelimit-reset`, not `Retry-After`) and retries once.
+- **`/runs` "Ingest only" confirm text "~1 min" → "~10 min"** — the gate adds ~10 min idle wall-clock (no CPU/$) for 10 subreddits.
+- 8 new unit tests (`tests/test_reddit_gate.py`).
+
+### Fixed — Daily scheduler hardened against Modern Standby misfires (2026-06-15)
+
+The 2026-06-11 23:00 daily did not fire: the laptop is **Modern Standby (S0)**, screen-off suspends uvicorn, and APScheduler's default `misfire_grace_time=1s` discarded the late job on wake.
+
+- **`app/main.py` / `app/services/jobs.py`** — daily cron now uses `misfire_grace_time=None` and targets a new **`run_daily_pipeline_scheduled`** guard: skips if a daily started <12h ago with status running/ok/degraded; a recent `failed` does NOT block (a failed night still retries).
+- **`app/routers/runs.py`** — new `POST /runs/trigger-scheduled/daily` endpoint for an optional Windows Task Scheduler poke. **`app/db/models.py`** — `JobRun.triggered_by` doc now includes `'schtask'`.
+- **`scripts/daily_trigger.xml` + `scripts/trigger_daily.ps1`** added but **DEFERRED/UNUSED** — the in-process cron fired on time 3/3 nights (XML-encoding registration failed once); kept ready-to-enable.
+- 8 new unit tests (`tests/test_scheduled_guard.py`).
+- **Observed (live `job_runs`):** scheduled dailies fired on time 3 nights — id=8 (night of 06-12) $1.18 new=275, id=9 (06-13) $0.37 new=107, id=10 (06-14) $0.38 new=104, all `degraded` only on the Reddit 429s. First chained **metered weekly** id=11 ok **$0.484492**, synthesized 2026-W24 — the cost model's last estimated figure, now measured.
+
 ### Changed — `/runs` cost display + ingest dialog estimate (2026-06-11)
 
 - **Cost column reduced to one decimal** (`$0.6`, `$1.3`) — the 4-decimal figure was noise at a glance; full per-phase 4-dp detail remains in the tooltip.

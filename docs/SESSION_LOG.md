@@ -4,6 +4,36 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-06-15 — Reddit RSS rate-limit fix (1/60s) · daily-scheduler hardened for Modern Standby · first metered scheduled dailies + weekly observed
+
+**Context.** Two problems surfaced after the 06-10 activation: (1) the 2026-06-11 23:00 daily did NOT fire; (2) starting 06-13, Reddit `.rss` fetches began 429'ing en masse. Both diagnosed and fixed; the scheduler otherwise ran clean for 3 nights.
+
+**Reddit RSS rate-limit fix (`app/services/scrapers.py`).**
+- Reddit's unauthenticated `.rss` endpoint now allows **1 request / 60s per IP** — a single bucket shared across ALL subreddits. PROVEN via response headers: an isolated request returns `x-ratelimit-used:1 / x-ratelimit-remaining:0.0 / x-ratelimit-reset:59`. Not an IP block (isolated request = 200); 6s spacing still 429'd 9/10; a burst = first 200, rest 429.
+- "Why now": on 06-11 the same code fetched 10 feeds in 8s (impossible under 1/60s) → Reddit lowered the limit server-side between 06-11 and 06-13. Reddit sends `x-ratelimit-reset` (seconds), NOT `Retry-After`.
+- Fix: process-wide **65s rate-gate** (`_is_reddit_url`, `_reddit_rate_gate` via `threading.Lock` + `monotonic`) + a `_fetch_reddit_rss` 429 backstop that sleeps `x-ratelimit-reset + 2s` and retries once. Wired into `fetch_source`'s rss branch. Non-reddit RSS + YouTube paths unchanged. Adds ~10 min idle wall-clock (no CPU/$) to ingest for 10 subreddits.
+- `/runs` "Ingest only" confirm text updated **"~1 min" → "~10 min"** (`app/routers/runs.py`).
+
+**Scheduler hardening (`app/main.py`, `app/services/jobs.py`, `app/routers/runs.py`, `app/db/models.py`).**
+- Root cause of the missed 06-11 daily: the laptop is **Modern Standby (S0)** — screen-off suspends uvicorn, and APScheduler's default `misfire_grace_time=1s` discarded the late job on wake.
+- Fix: the daily cron now uses `misfire_grace_time=None` and targets a new `run_daily_pipeline_scheduled` guard — it skips if a daily started <12h ago with status running/ok/degraded; a recent `failed` does NOT block (so a failed night still retries).
+- New endpoint `POST /runs/trigger-scheduled/daily` for an optional Windows Task Scheduler poke. `JobRun.triggered_by` now also documents `'schtask'`.
+- New artifacts `scripts/daily_trigger.xml` + `scripts/trigger_daily.ps1` are **DEFERRED/UNUSED** — the in-process cron fired on time 3/3 nights, so the OS-level poke is not enabled (registration also failed once on XML encoding). Kept ready-to-enable if a future missed-daily recurs.
+
+**Observed runtime (live, from `job_runs`).**
+- Scheduler is ACTIVE and worked: dailies fired on time 3 nights — **id=8** (night of 06-12) degraded **$1.18** new=275; **id=9** (06-13) degraded **$0.37** new=107; **id=10** (06-14) degraded **$0.38** new=104. All `degraded` ONLY because of the 9 Reddit 429s (everything else OK).
+- First chained **metered weekly**: **id=11** ok **$0.484492**, synthesized **2026-W24** (chained off id=10). This was the cost model's last *estimated* number — now measured.
+- Caveat: the 104–107 new-item counts on id=9/id=10 were **depressed by the Reddit outage**; post-fix nights are the true volume baseline. (Cost model not re-derived this session.)
+
+**Verified.** 20 unit tests pass — 8 new `tests/test_scheduled_guard.py`, 8 new `tests/test_reddit_gate.py`, plus pre-existing.
+
+**Where we left off / next.**
+- Scheduler ACTIVE; Reddit gate live; no dev work outstanding.
+- User actions only: (a) OPTIONAL — enable the Windows Task Scheduler poke (`scripts/daily_trigger.xml` / `trigger_daily.ps1`) if a missed-daily recurs despite the misfire fix; (b) OPTIONAL — Anthropic Console monthly spend cap; (c) watch the first post-Reddit-fix night for clean (non-`degraded`) status and true volume.
+- Two new DECISIONS entries (2026-06-15): Reddit rate-gate; scheduler/Task-Scheduler.
+
+---
+
 ## 2026-06-11 — degraded-run diagnosis · cost model CORRECTED (~$1.15/night, not $0.30) · per-phase cost breakdown on `/runs` · recovery runs
 
 **Context.** Overnight the PC restarted mid-run; on reboot startup-catchup fired a catch-up daily (id=5) that finished `degraded` ($1.25, the first metered cost row). User flagged the $1+ cost and asked whether $2–3/night (~$1,000/yr) was realistic.

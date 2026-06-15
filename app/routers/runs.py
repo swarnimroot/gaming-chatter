@@ -55,7 +55,7 @@ _TRIGGER_MAP: dict[str, tuple] = {
     "release_refresh":   (jobs_svc.run_release_refresh,   "Release refresh",     False,
         "Refreshes the game/platform release data. ~2–5 min, no LLM cost. Continue?"),
     "ingest_only":       (jobs_svc.run_ingest_only,       "Ingest only",         False,
-        "Fetches fresh items from all sources. ~1 min, no LLM cost. Continue?"),
+        "Fetches fresh items from all sources. ~10 min, no LLM cost (Reddit feeds are rate-gated to 1/min to avoid 429s). Continue?"),
     "enrich_only":       (jobs_svc.run_enrich_only,       "Enrich + embed only", False,
         "Runs Haiku enrichment + embeddings over pending items (incl. Whisper transcription). ~3–5 hours and spends Anthropic API money. Continue?"),
     "cluster_only":      (jobs_svc.run_cluster_only,      "Cluster only",        True,
@@ -278,6 +278,18 @@ def runs_trigger(
         f'<a href="/runs">Refresh /runs</a> in a few seconds.'
         f'</div>'
     )
+
+
+@router.post("/runs/trigger-scheduled/daily", response_class=HTMLResponse)
+def runs_trigger_scheduled_daily(bg: BackgroundTasks):
+    """Automated daily trigger for the Windows Task Scheduler poke
+    (scripts/trigger_daily.ps1). Unlike the manual trigger above, this goes
+    through jobs.run_daily_pipeline_scheduled, which dedups against the
+    in-process APScheduler cron so two automated triggers can't double-spend
+    the same night. Localhost-only app; no auth by design."""
+    bg.add_task(jobs_svc.run_daily_pipeline_scheduled, triggered_by="schtask")
+    log.info("schtask trigger queued: daily_pipeline (guarded)")
+    return HTMLResponse("queued")
 
 
 @router.get("/runs/details/{run_id}", response_class=HTMLResponse)

@@ -61,7 +61,7 @@ async def lifespan(app_: FastAPI):
     if _scheduler_enabled():
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
-        from app.services.jobs import run_daily_pipeline, run_startup_catchup
+        from app.services.jobs import run_daily_pipeline_scheduled, run_startup_catchup
         # tz=None -> APScheduler uses system local time (the laptop's clock, CST).
         # Daily at 23:00 so the brief is ready in the morning. There is NO separate
         # weekly cron: the daily chains the weekly brief once a week closes (see
@@ -70,12 +70,19 @@ async def lifespan(app_: FastAPI):
         # CST the week's UTC boundary has already rolled, so Sunday's run delivers
         # the weekly Monday morning. See DECISIONS 2026-06-10.
         _scheduler = BackgroundScheduler(timezone=None)
+        # misfire_grace_time=None -> run the daily no matter how late the
+        # scheduler thread resumes. This laptop is a Modern Standby (S0) machine:
+        # screen-off suspends desktop apps even with sleep disabled, and
+        # APScheduler's default 1s grace silently skipped the 2026-06-11 23:00
+        # run. The guarded entry (run_daily_pipeline_scheduled) dedups against
+        # the Windows Task Scheduler poke so a late replay can't double-spend.
         _scheduler.add_job(
-            run_daily_pipeline,
+            run_daily_pipeline_scheduled,
             CronTrigger(hour=23, minute=0),
             id="daily_pipeline",
             max_instances=1,
             coalesce=True,
+            misfire_grace_time=None,
         )
         _scheduler.start()
         log.info("APScheduler started: daily=23:00 local; weekly chained off daily")

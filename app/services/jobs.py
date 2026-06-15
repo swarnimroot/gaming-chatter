@@ -699,6 +699,40 @@ def _is_daily_overdue(now: datetime) -> tuple[bool, str]:
     return False, f"last daily_pipeline {age.total_seconds()/3600:.1f}h ago — not overdue"
 
 
+# Dedup window for AUTOMATED daily triggers (the in-process APScheduler cron +
+# the Windows Task Scheduler poke). Both target 23:00 — and a misfired cron can
+# replay hours late after a Modern Standby resume (misfire_grace_time=None) —
+# so an automated trigger arriving within this window of a running/ok/degraded
+# daily is a duplicate, not a catch-up. Manual /runs triggers bypass this on
+# purpose. See DECISIONS 2026-06-12.
+_DAILY_DEDUP_HOURS = 12
+
+
+def run_daily_pipeline_scheduled(triggered_by: str = "scheduler") -> Optional[dict]:
+    """Guarded entry for automated daily triggers. Skips (returns None) when a
+    daily already started inside the dedup window and didn't fail; otherwise
+    delegates to run_daily_pipeline. A recent 'failed' daily does NOT block —
+    the other automated path is allowed to retry that night."""
+    with Session(engine) as session:
+        last = session.exec(
+            select(JobRun)
+            .where(
+                JobRun.job_name == "daily_pipeline",
+                JobRun.status.in_(("running", "ok", "degraded")),  # type: ignore[attr-defined]
+            )
+            .order_by(JobRun.started_at.desc())
+        ).first()
+    if last is not None:
+        age = datetime.utcnow() - last.started_at
+        if age < timedelta(hours=_DAILY_DEDUP_HOURS):
+            log.info(
+                "scheduled daily skipped: daily id=%s (%s) started %.1fh ago (< %dh dedup window)",
+                last.id, last.status, age.total_seconds() / 3600, _DAILY_DEDUP_HOURS,
+            )
+            return None
+    return run_daily_pipeline(triggered_by=triggered_by)
+
+
 def run_startup_catchup() -> dict:
     """Fire an overdue daily job on boot (in a background thread). The daily
     chains the weekly brief itself, so there's no separate weekly catch-up.
