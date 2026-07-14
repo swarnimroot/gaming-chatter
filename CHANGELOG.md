@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed — YouTube feed 404 soft-block: browser User-Agent + single 404 retry (2026-07-13)
+
+Since the night of 2026-06-16, YouTube's unauthenticated `feeds/videos.xml?channel_id=...` endpoint has intermittently **404-soft-blocked all 6 channels together** for multi-day streaks (~45% of nights fully dark), then self-recovered. Diagnosed 2026-07-13: channel IDs are valid (all return `200` live), our request timing is identical on fail vs. ok days, and YouTube returns `404` (not `429`) — an IP-reputation soft-block with no published rate to gate around. The scrapers-lib default feed UA identifies as a bot (`scrapers-lib/1.7.0`).
+
+- **`app/services/scrapers.py` — new `_fetch_youtube_rss`.** Fetches the channel feed with a **full browser User-Agent** instead of the bot UA and **retries once on 404** (3s delay), parsing via `_rss.parse_rss_feed`. Wired into `fetch_source`'s `youtube` branch; mirrors `_fetch_reddit_rss`. Non-404 errors and a retry-surviving 404 propagate unchanged.
+- **Mitigation, not a guarantee** — the constant bot UA vs. streaky failures points to IP-reputation throttling the browser UA reduces but may not eliminate. If dark streaks persist, next levers are a later-in-day YouTube-only catch-up re-fetch or the authenticated YouTube Data API.
+- 5 new unit tests (`tests/test_youtube_fetch.py`).
+
 ### Fixed — Reddit unauthenticated-RSS rate limit dropped to 1 req/60s; serialize reddit fetches (2026-06-15)
 
 Between 06-11 and 06-13, Reddit's unauthenticated `.rss` endpoint dropped to **1 request / 60s per IP**, a single bucket shared across ALL subreddits — proven via response headers (`x-ratelimit-used:1 / x-ratelimit-remaining:0.0 / x-ratelimit-reset:59`; isolated request = 200, so not an IP block). The 06-13/06-14/06-15 scheduled dailies all finished `degraded` solely on the resulting 9 Reddit 429s.

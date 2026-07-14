@@ -4,6 +4,29 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-07-13 — YouTube feed 404 soft-block diagnosed + mitigated (browser UA + 404 retry)
+
+**Context.** Triggered by checking whether the daily was running: the 06-16 daily was `degraded` because all 6 YouTube sources (ids 25–30) 404'd. Investigation showed this had been recurring since 06-16.
+
+**Diagnosis (from `job_runs` + `run_log`, ~26 dailies).**
+- YouTube's `feeds/videos.xml?channel_id=...` endpoint intermittently **404-soft-blocks by IP reputation** — all 6 channels go dark *together* in **multi-day streaks** (~45% of nights fully dark), then self-recover. E.g. 07-07→07-10 dark, 07-11→07-13 green.
+- **Channel IDs are valid** — hit all 6 live, every one returned `200` with content. Not stale IDs.
+- **Not our timing** — all 6 fire in the same ~2.6s window at 04:09 on both fail (07-10) and ok (07-11) days.
+- **404, not 429** — no published rate to gate around; scrapers-lib's default feed UA identifies as a bot (`scrapers-lib/1.7.0`).
+
+**Fix (`app/services/scrapers.py`).** New `_fetch_youtube_rss` — fetches the feed with a **full browser User-Agent** (not the bot UA) and **retries once on 404** (3s delay), parsing via `_rss.parse_rss_feed`. Wired into `fetch_source`'s `youtube` branch; mirrors `_fetch_reddit_rss`. Non-404 errors and a retry-surviving 404 propagate unchanged. **Mitigation, not a guarantee** — constant UA + streaky failures ⇒ likely IP-reputation throttling the UA only reduces.
+
+**Also answered:** no video/audio is retained on disk — pipeline stores text only (title/URL/description + transcripts). Caption-less videos get audio-only pulled into an auto-deleted tempdir for local faster-whisper; persistent disk = transcript text in SQLite + one-time cached whisper weights.
+
+**Verified.** 5 new tests (`tests/test_youtube_fetch.py`); live fetch of 15 items through the new path; **full suite 25 passed**. Docs updated: DECISIONS 2026-07-13, CHANGELOG, this log, CLAUDE.md status.
+
+**Where we left off / next.**
+- Ships on the **next scheduled daily** (23:00 CST) after the user restarts the server — no manual run required.
+- **Watch over 1–2 weeks:** does the browser UA shrink the dark streaks? If not, escalate to a later-in-day YouTube-only catch-up re-fetch, or the authenticated YouTube Data API (deferred).
+- Server start remains the user's (`python -m uvicorn app.main:app --port 8001`, no `--reload`).
+
+---
+
 ## 2026-06-15 — Reddit RSS rate-limit fix (1/60s) · daily-scheduler hardened for Modern Standby · first metered scheduled dailies + weekly observed
 
 **Context.** Two problems surfaced after the 06-10 activation: (1) the 2026-06-11 23:00 daily did NOT fire; (2) starting 06-13, Reddit `.rss` fetches began 429'ing en masse. Both diagnosed and fixed; the scheduler otherwise ran clean for 3 nights.

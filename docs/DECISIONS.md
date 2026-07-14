@@ -4,6 +4,29 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-07-13 — YouTube feed 404 soft-block: browser User-Agent + single 404 retry (mitigation, not guarantee)
+
+**Context — YouTube's `feeds/videos.xml` endpoint intermittently 404-blocks all channels for multi-day streaks.** Starting the night of 2026-06-16, the 6 YouTube sources (ids 25–30) began going dark *together*, all returning `404 Not Found` on their `channel_id=...` feed URLs. Investigated 2026-07-13 over ~26 dailies: the pattern is **all-or-nothing across the 6 channels, in multi-day streaks** (~45% of nights fully dark; e.g. 07-07→07-10 dark, 07-11→07-13 green), then self-recovers. Diagnosis:
+- **Channel IDs are valid** — all 6 return `200` with real content when hit live / from a browser; stale IDs would fail permanently and individually, not flap in unison.
+- **Not our request pattern** — all 6 fire within the same ~2.6s window at 04:09 on *both* fail and success days (compared 07-10 vs 07-11 from `run_log`).
+- **404, not 429** — YouTube's soft-block signature on the feed endpoint; it throttles by IP reputation and lifts on its own. No published rate to gate around (unlike Reddit).
+- The scrapers-lib default feed fetch sends a bot-identifying UA (`Mozilla/5.0 (compatible; scrapers-lib/1.7.0; +https://github.com/)`).
+
+**Decision.** Add `_fetch_youtube_rss` in `app/services/scrapers.py` (in-project, respecting the "don't modify scrapers-lib" constraint): fetch the feed with a **full browser User-Agent** instead of the bot UA, and **retry once on 404** after a 3s delay; parse via `_rss.parse_rss_feed`. Wired into `fetch_source`'s `youtube` branch. Mirrors the existing `_fetch_reddit_rss` shape. Non-404 errors, and a 404 surviving the retry, propagate unchanged.
+
+**This is a mitigation, not a guarantee.** Because the bot UA is *constant* yet failures cluster into streaks, the dominant driver is likely IP-reputation throttling that a browser UA reduces but may not eliminate. First/cheapest lever; effectiveness to be judged over the next 1–2 weeks. If dark streaks persist, escalate to a later-in-day catch-up re-fetch of YouTube-only sources, or the authenticated YouTube Data API.
+
+**Data-loss note.** Feeds carry only the latest ~15 videos and each success re-pulls + dedups, so a recovering streak catches up videos still in the window (07-11 pulled 61 items after a 4-day gap). Only videos that scroll out during a *long* streak are permanently lost. No media is retained on disk — text only; audio for caption-less videos is downloaded to an auto-deleted tempdir for local Whisper.
+
+**Verified:** 5 unit tests (`tests/test_youtube_fetch.py`: success/no-retry, browser-UA sent, 404-retry-then-success, 404-twice-raises, non-404 pass-through); live fetch of 15 items through the new path; full suite 25 passed.
+
+**Alternatives rejected:**
+- **Rate-gate YouTube like Reddit.** Rejected — timing is identical on fail vs. ok days, so spacing isn't the trigger; there's no fixed per-IP rate to gate against.
+- **Re-resolve channel IDs / treat as stale.** Rejected — the IDs are provably valid (200 on recovery); re-resolving would be churn with no effect.
+- **YouTube Data API now.** Deferred — adds an API key + quota management for a problem the cheap UA fix may resolve; revisit only if streaks persist.
+
+---
+
 ## 2026-06-15 — Daily scheduler hardened for Modern Standby; Windows Task Scheduler deferred (in-process cron fires on time)
 
 **Context — the 2026-06-11 23:00 daily silently never ran.** The laptop is a Modern Standby (S0) machine: with the screen off, Windows suspends desktop apps (uvicorn included) even though classic "sleep" is disabled and the lid is open + plugged in. When the APScheduler thread resumed past 23:00, APScheduler's default `misfire_grace_time=1s` classified the job as misfired and discarded it. No run, no error row — just a missing daily.
