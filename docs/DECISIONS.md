@@ -4,6 +4,20 @@ Append-only. Newest entries on top. Each entry: date, decision, rationale, alter
 
 ---
 
+## 2026-07-22 — VG247 disabled (dead feed), not purged — historical items retained
+
+**Context.** VG247's feed (`https://www.vg247.com/feed`) has produced **no items since 2026-06-05** (~7 weeks). On 2026-06-09 (Decision 2) the silent-window was widened 7d → 14d *specifically* so VG247's low-volume ~weekly cadence wouldn't false-flag as `silent`; it has now gone dry well beyond that window, so the `silent` verdict is correct — not a false alarm — and keeps the source-health banner permanently lit.
+
+**Decision.** **Disable** VG247, don't purge. `sources` id=12 `enabled` → 0; the `sources.yaml` entry is set `enabled: false` with a dated note. The seed is insert-only — `yaml_loader.seed_sources` skips existing rows — so the yaml edit is for config honesty + robustness on any future re-seed, *not* the mechanism; the DB row is the live source of truth. `ingest_all` filters `enabled == True`, so fetching stops; the health verdict flips `silent` → `disabled`, dropping out of the alert banner (2 → 1). Active sources 31 → 30.
+
+**Why disable, not purge.** VG247's **122 historical items** are woven into already-synthesized weekly reports (clusters, mention counts, "see all stories" for past weeks). Disabling stops the noise while keeping that corpus intact and is fully reversible. A full purge (as done for r/GamesIndustry on 2026-06-10) would retroactively shift historical week item-counts/clusters — not warranted for a source that was contributing real content until five weeks ago.
+
+**Alternatives rejected.**
+- **Widen the silent-window again.** Rejected — VG247 is genuinely dormant (~7 weeks), not merely quiet; loosening further would blind the `silent` check for every source.
+- **Full purge.** Rejected — destroys historical corpus for no benefit and loses reversibility; disable achieves the goal (stop the recurring flag) at zero data cost.
+
+---
+
 ## 2026-07-13 — YouTube feed 404 soft-block: browser User-Agent + single 404 retry (mitigation, not guarantee)
 
 **Context — YouTube's `feeds/videos.xml` endpoint intermittently 404-blocks all channels for multi-day streaks.** Starting the night of 2026-06-16, the 6 YouTube sources (ids 25–30) began going dark *together*, all returning `404 Not Found` on their `channel_id=...` feed URLs. Investigated 2026-07-13 over ~26 dailies: the pattern is **all-or-nothing across the 6 channels, in multi-day streaks** (~45% of nights fully dark; e.g. 07-07→07-10 dark, 07-11→07-13 green), then self-recovers. Diagnosis:

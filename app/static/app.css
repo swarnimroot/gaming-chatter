@@ -112,7 +112,9 @@ body.gc-shell-body button:focus-visible { outline: none; box-shadow: 0 0 0 2px #
 .gc-sb-logo-name { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }
 .gc-sb-tagline { font-size: 10px; color: rgba(255,255,255,0.45); padding: 0 12px 14px; letter-spacing: 0.06em; text-transform: uppercase; }
 .gc-sb-section-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.45); padding: 8px 12px 6px; }
-.gc-sb-week-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 12px; }
+/* Cap the read-out list at ~4 rows (row ≈ 50px + 2px gap) so a growing
+   report archive scrolls internally instead of pushing Navigate off-screen. */
+.gc-sb-week-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 12px; max-height: 208px; overflow-y: auto; }
 .gc-sb-week {
   display: flex; flex-direction: column; align-items: flex-start;
   background: transparent; border: none; color: rgba(255,255,255,0.78);

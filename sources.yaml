@@ -85,7 +85,7 @@ sources:
   - name: "VG247"
     type: rss
     url: "https://www.vg247.com/feed"
-    enabled: true
+    enabled: false  # disabled 2026-07-22 — feed silent (0 items/2wk), verdict 'silent'
 
   - name: "TheGamer"
     type: rss

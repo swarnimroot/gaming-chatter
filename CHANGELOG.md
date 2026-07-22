@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Removed — VG247 source disabled (dead feed, last item 2026-06-05) (2026-07-22)
+
+VG247 stopped publishing to its feed after **2026-06-05** — 0 new items for ~7 weeks, well past the 14-day silent-window that was widened on 2026-06-09 *specifically* to accommodate its low-volume cadence (DECISIONS 2026-06-09 Decision 2). The source-health grid correctly flags it `silent`, keeping the "needs attention" banner permanently lit.
+
+- **Disabled, not purged.** `sources` id=12 `enabled` → 0; `sources.yaml` entry set `enabled: false` (with a dated note). Its **122 historical items are kept** so already-synthesized weekly reports stay intact; the change is reversible. (Contrast r/GamesIndustry 2026-06-10, which was fully purged.)
+- Verdict flips `silent` → `disabled` (dropped from the alert banner, 2 → 1); `ingest_all` skips it via the `enabled == True` filter. Active sources 31 → 30.
+
+### Changed — Sidebar Read-out list scrollable (2026-07-22)
+
+The left-sidebar Read-out list had no height cap, so each new weekly report pushed the Navigate buttons further down and eventually off-screen. `.gc-sb-week-list` now caps at ~4 rows (`max-height: 208px; overflow-y: auto`) and scrolls internally; Navigate stays pinned. CSS-only.
+
 ### Fixed — YouTube feed 404 soft-block: browser User-Agent + single 404 retry (2026-07-13)
 
 Since the night of 2026-06-16, YouTube's unauthenticated `feeds/videos.xml?channel_id=...` endpoint has intermittently **404-soft-blocked all 6 channels together** for multi-day streaks (~45% of nights fully dark), then self-recovered. Diagnosed 2026-07-13: channel IDs are valid (all return `200` live), our request timing is identical on fail vs. ok days, and YouTube returns `404` (not `429`) — an IP-reputation soft-block with no published rate to gate around. The scrapers-lib default feed UA identifies as a bot (`scrapers-lib/1.7.0`).

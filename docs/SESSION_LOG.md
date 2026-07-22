@@ -4,6 +4,18 @@ Append-only. Newest entries on top. Each entry: date, what was done, where we le
 
 ---
 
+## 2026-07-22 — Manual W29 weekly (redundant) · sidebar read-out scroll cap · VG247 disabled
+
+**Weekly W29.** User noticed Monday 07-20's scheduled weekly hadn't fired; ran `weekly_extension` manually for **2026-W29** via `/runs` (id=49, `ok`, $0.469). Confirmed the synthesis window is a single ISO week `[Mon 07-13, Mon 07-20)` keyed on `items.published_at` — not "everything since last run" — so it backfilled the missed report without pulling this-week's partial data. **Lesson:** id=48 (chained off a daily at 15:26 the same day) had **already** synthesized W29 via `_previous_week_needs_synthesis()`, so the manual run was a ~$0.47 duplicate. Check `job_runs` for an existing `weekly_extension` at the target `week_id` before manually triggering — the daily self-heal usually covers a missed Monday.
+
+**Sidebar read-out scroll (`app/static/app.css`).** `.gc-sb-week-list` capped at ~4 rows (`max-height: 208px; overflow-y: auto`) so a growing report archive scrolls internally instead of pushing the Navigate nav off-screen. CSS-only.
+
+**VG247 disabled.** VG247 (source id=12) last published **2026-06-05** — silent ~7 weeks, past the 14-day window widened on 2026-06-09 to protect it, so it now legitimately trips `silent` and kept the "needs attention" banner lit. Disabled (not purged): `sources.enabled=0` + `sources.yaml enabled:false`; 122 historical items kept (past reports intact), reversible. Verdict → `disabled`, banner 2 → 1. Remaining flagged source: r/PCGaming (`error`, a Reddit 429 that self-clears). Active sources 31 → 30. See DECISIONS 2026-07-22.
+
+**Where we left off / next.** Changes committed + pushed. No server restart needed — the banner reads DB live and VG247's skip takes effect on the next ingest. Server start remains the user's (`python -m uvicorn app.main:app --port 8001`, no `--reload`).
+
+---
+
 ## 2026-07-13 — YouTube feed 404 soft-block diagnosed + mitigated (browser UA + 404 retry)
 
 **Context.** Triggered by checking whether the daily was running: the 06-16 daily was `degraded` because all 6 YouTube sources (ids 25–30) 404'd. Investigation showed this had been recurring since 06-16.
